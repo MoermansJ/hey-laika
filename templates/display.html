@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bittle Display</title>
+<style>
+  body { margin:0; height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#000; color:#fff; font-family:"Segoe UI",system-ui,sans-serif; text-align:center; }
+  #content { font-size:clamp(1.5rem, 5vw, 3.5rem); padding:2rem; max-width:90vw; word-wrap:break-word; }
+  img, video { max-width:95vw; max-height:95vh; }
+</style>
+</head>
+<body>
+<div id="content">…</div>
+<script>
+async function poll() {
+  try {
+    const c = await (await fetch("/current")).json();
+    const el = document.getElementById("content");
+    if (c.type === "image") el.innerHTML = `<img src="${c.value}" alt="">`;
+    else if (c.type === "video") el.innerHTML = `<video src="${c.value}" autoplay loop muted></video>`;
+    else el.textContent = c.value;
+  } catch (e) { /* server briefly unavailable; keep last content */ }
+}
+poll();
+setInterval(poll, 5000);
+</script>
+</body>
+</html>

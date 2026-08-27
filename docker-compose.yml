@@ -1,0 +1,35 @@
+services:
+  bittle:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      # SQLite lives on the mounted volume so data survives container rebuilds
+      - SQLITE_DB_PATH=/data/bittle.db
+    volumes:
+      - bittle-data:/data
+      # Dev convenience: live-mount source (comment out for a production-like run)
+      - ./app:/app/app
+      - ./templates:/app/templates
+      - ./static:/app/static
+    restart: unless-stopped
+    # USB serial passthrough is Linux-host only; on Windows/WSL2 keep
+    # BITTLE_COMMUNICATION_METHOD=mock or wifi inside the container.
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+
+  # Phase 7: PostgreSQL (uncomment when migrating off SQLite)
+  # db:
+  #   image: postgres:15
+  #   environment:
+  #     POSTGRES_DB: bittle
+  #     POSTGRES_USER: bittle
+  #     POSTGRES_PASSWORD: change-me
+  #   volumes:
+  #     - pg-data:/var/lib/postgresql/data
+
+volumes:
+  bittle-data:
+  # pg-data:

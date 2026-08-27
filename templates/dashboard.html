@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bittle Control Panel</title>
+<style>
+  :root { --bg:#12141a; --card:#1c1f27; --text:#e8e8ec; --muted:#9aa0ad; --accent:#f5a623; --good:#4caf82; --bad:#e05a5a; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:"Segoe UI",system-ui,sans-serif; padding:1.5rem; }
+  h1 { margin-bottom:1rem; font-size:1.5rem; } h1 span { color:var(--accent); }
+  .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
+  .card { background:var(--card); border-radius:12px; padding:1.25rem; }
+  .card h2 { font-size:1rem; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:.75rem; }
+  .stat { display:flex; justify-content:space-between; padding:.3rem 0; }
+  .bar { height:10px; background:#2a2e3a; border-radius:5px; overflow:hidden; margin:.15rem 0 .5rem; }
+  .bar i { display:block; height:100%; background:var(--accent); transition:width .4s; }
+  button { background:#2a2e3a; color:var(--text); border:1px solid #3a3f4e; border-radius:8px; padding:.5rem .9rem; margin:.2rem; cursor:pointer; font-size:.9rem; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#12141a; font-weight:600; }
+  .pill { padding:.15rem .6rem; border-radius:99px; font-size:.8rem; }
+  .pill.on { background:var(--good); color:#0d2018; } .pill.off { background:#3a3f4e; color:var(--muted); }
+  #log { max-height:280px; overflow-y:auto; font-size:.85rem; line-height:1.5; }
+  #log div { border-bottom:1px solid #2a2e3a; padding:.25rem 0; }
+  #log .t { color:var(--muted); margin-right:.4rem; font-size:.75rem; }
+  .mood { font-size:1.6rem; }
+</style>
+</head>
+<body>
+<h1>🐕 <span>Bittle</span> AI Companion — Control Panel</h1>
+<div class="grid">
+  <div class="card">
+    <h2>Status</h2>
+    <div class="stat"><span>Bittle connection</span><span id="conn" class="pill off">…</span></div>
+    <div class="stat"><span>Mode</span><span id="mode">…</span></div>
+    <div class="stat"><span>Decision engine</span><span id="engine">…</span></div>
+    <div class="stat"><span>Autonomous</span><span id="auto" class="pill off">stopped</span></div>
+    <div style="margin-top:.75rem">
+      <button class="primary" onclick="post('/api/autonomous/start')">▶ Start autonomous</button>
+      <button onclick="post('/api/autonomous/stop')">⏹ Stop</button>
+      <button onclick="get('/api/personality/behavior')">🎲 One decision</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Personality</h2>
+    <div class="stat"><span>Mood</span><span class="mood" id="mood">😐</span></div>
+    <div>Energy <span id="energy-v" style="float:right"></span><div class="bar"><i id="energy"></i></div></div>
+    <div>Happiness <span id="happiness-v" style="float:right"></span><div class="bar"><i id="happiness"></i></div></div>
+    <div>Boredom <span id="boredom-v" style="float:right"></span><div class="bar"><i id="boredom"></i></div></div>
+    <div>Curiosity <span id="curiosity-v" style="float:right"></span><div class="bar"><i id="curiosity"></i></div></div>
+  </div>
+
+  <div class="card">
+    <h2>Interact</h2>
+    <button onclick="post('/api/personality/interact/pet')">🖐 Pet</button>
+    <button onclick="post('/api/personality/interact/play')">🎾 Play</button>
+    <button onclick="post('/api/personality/interact/talk')">💬 Talk</button>
+    <button onclick="post('/api/personality/interact/feed')">🍖 Feed</button>
+    <h2 style="margin-top:1rem">Animations</h2>
+    <div id="animations">Loading…</div>
+  </div>
+
+  <div class="card" style="grid-column:1/-1">
+    <h2>Activity log</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+const moods = {happy:"😄", neutral:"😐", bored:"🥱", tired:"😴", curious:"🧐", grumpy:"😾"};
+
+async function get(url) { const r = await fetch(url); refresh(); return r.json(); }
+async function post(url) { const r = await fetch(url, {method:"POST"}); refresh(); return r.json(); }
+
+function setBar(name, value) {
+  document.getElementById(name).style.width = value + "%";
+  document.getElementById(name + "-v").textContent = Math.round(value);
+}
+
+async function refresh() {
+  try {
+    const h = await (await fetch("/api/health")).json();
+    const conn = document.getElementById("conn");
+    conn.textContent = h.bittle.connected ? "connected" : "disconnected";
+    conn.className = "pill " + (h.bittle.connected ? "on" : "off");
+    document.getElementById("mode").textContent = h.bittle.mode + (h.mock_mode ? " (mock)" : "");
+    document.getElementById("engine").textContent = h.llm_enabled ? ("Claude · " + h.model) : "simulated (no API key)";
+    const auto = document.getElementById("auto");
+    auto.textContent = h.autonomous ? "running" : "stopped";
+    auto.className = "pill " + (h.autonomous ? "on" : "off");
+
+    const p = h.personality;
+    document.getElementById("mood").textContent = (moods[p.mood] || "😐") + " " + p.mood;
+    for (const k of ["energy","happiness","boredom","curiosity"]) setBar(k, p[k]);
+
+    const log = await (await fetch("/api/activity")).json();
+    document.getElementById("log").innerHTML = log.map(e =>
+      `<div><span class="t">${e.at.slice(11,19)}</span>[${e.kind}] ${e.message}</div>`).join("");
+  } catch (e) { console.error(e); }
+}
+
+async function loadAnimations() {
+  const anims = await (await fetch("/api/choreography/list")).json();
+  document.getElementById("animations").innerHTML = anims.map(a =>
+    `<button title="${a.description}" onclick="post('/api/choreography/execute/${a.name}')">${a.name.replace(/_/g," ")}</button>`).join("");
+}
+
+loadAnimations();
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
