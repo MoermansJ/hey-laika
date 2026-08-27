@@ -32,4 +32,15 @@ def test_mock_decision_is_valid():
     decision = engine.get_next_behavior(available)
     assert decision["behavior"] in available
     assert decision["reason"]
-    assert decision["source"] == "mock"  # no API key in tests
+    assert decision["source"] == "mock"  # DECISION_ENGINE=mock in tests
+
+
+def test_claude_engine_without_key_raises(monkeypatch):
+    from app.config import Config
+    from app.personality_engine import MissingCredentialsError
+
+    monkeypatch.setattr(Config, "DECISION_ENGINE", "claude")
+    monkeypatch.setattr(Config, "ANTHROPIC_API_KEY", "")
+    import pytest
+    with pytest.raises(MissingCredentialsError):
+        PersonalityEngine().get_next_behavior(["sit"])

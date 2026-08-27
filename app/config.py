@@ -24,6 +24,9 @@ class Config:
     BITTLE_WIFI_HOST = os.getenv("BITTLE_WIFI_HOST", "192.168.1.100")
 
     # Claude
+    # DECISION_ENGINE: "claude" requires ANTHROPIC_API_KEY and raises
+    # MissingCredentialsError without it; "mock" is an explicit offline opt-in.
+    DECISION_ENGINE = os.getenv("DECISION_ENGINE", "claude").strip().lower()
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
     CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
 
@@ -50,6 +53,5 @@ class Config:
         return f"sqlite:///{db_path.as_posix()}"
 
     @classmethod
-    def llm_enabled(cls) -> bool:
-        """Claude is used only when a key is present; otherwise mock decisions."""
-        return bool(cls.ANTHROPIC_API_KEY)
+    def claude_engine(cls) -> bool:
+        return cls.DECISION_ENGINE != "mock"

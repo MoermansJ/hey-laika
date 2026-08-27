@@ -11,7 +11,7 @@ from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
 from app.config import Config
 from app.models import init_db
-from app.personality_engine import PersonalityEngine
+from app.personality_engine import MissingCredentialsError, PersonalityEngine
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -98,12 +98,25 @@ class AutonomousLoop:
                              f"[{source}] {decision['behavior']}: {decision['reason']}")
                 set_display(f"{decision['behavior']} — {decision['reason']}")
                 execute_animation(decision["behavior"])
+            except MissingCredentialsError as exc:
+                # Credentials won't fix themselves mid-loop — halt instead of
+                # failing every interval.
+                logger.error("Autonomous mode halted: %s", exc)
+                log_activity("error", f"Autonomous mode halted: {exc}")
+                set_display("Missing credentials — check ANTHROPIC_API_KEY in .env")
+                self._stop.set()
+                break
             except Exception:
                 logger.exception("Autonomous loop iteration failed")
             self._stop.wait(Config.AUTONOMOUS_INTERVAL)
 
 
 autonomous = AutonomousLoop()
+
+
+@app.errorhandler(MissingCredentialsError)
+def handle_missing_credentials(exc):
+    return jsonify({"error": "missing_credentials", "message": str(exc)}), 503
 
 
 # ---------- Health & status ----------
@@ -117,8 +130,9 @@ def health():
         "autonomous": autonomous.running,
         "environment": Config.ENVIRONMENT,
         "mock_mode": Config.MOCK_MODE,
-        "llm_enabled": Config.llm_enabled(),
-        "model": Config.CLAUDE_MODEL if Config.llm_enabled() else None,
+        "decision_engine": Config.DECISION_ENGINE,
+        "api_key_configured": bool(Config.ANTHROPIC_API_KEY),
+        "model": Config.CLAUDE_MODEL if Config.claude_engine() else None,
     })
 
 

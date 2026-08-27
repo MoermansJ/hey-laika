@@ -30,7 +30,8 @@ Copy `.env.example` to `.env` and edit. Key settings:
 
 | Variable | Meaning |
 |---|---|
-| `ANTHROPIC_API_KEY` | Leave empty for the simulated decision engine; set it to let Claude drive behavior |
+| `DECISION_ENGINE` | `claude` (default — requires `ANTHROPIC_API_KEY`, raises a missing-credentials error without it) or `mock` (explicit offline simulation) |
+| `ANTHROPIC_API_KEY` | Required when `DECISION_ENGINE=claude` |
 | `CLAUDE_MODEL` | Model for decisions (default `claude-opus-5`) |
 | `MOCK_MODE` | `True` = no hardware needed |
 | `BITTLE_COMMUNICATION_METHOD` | `mock` \| `serial` \| `wifi` |

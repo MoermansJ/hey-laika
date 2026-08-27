@@ -85,7 +85,9 @@ async function refresh() {
     conn.textContent = h.bittle.connected ? "connected" : "disconnected";
     conn.className = "pill " + (h.bittle.connected ? "on" : "off");
     document.getElementById("mode").textContent = h.bittle.mode + (h.mock_mode ? " (mock)" : "");
-    document.getElementById("engine").textContent = h.llm_enabled ? ("Claude · " + h.model) : "simulated (no API key)";
+    document.getElementById("engine").textContent = h.decision_engine === "claude"
+      ? ("Claude · " + h.model + (h.api_key_configured ? "" : " — ⚠ API key missing"))
+      : "mock (simulated)";
     const auto = document.getElementById("auto");
     auto.textContent = h.autonomous ? "running" : "stopped";
     auto.className = "pill " + (h.autonomous ? "on" : "off");

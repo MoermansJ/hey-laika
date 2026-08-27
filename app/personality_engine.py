@@ -1,8 +1,10 @@
 """Personality engine — Claude-driven autonomous behavior decisions.
 
-If ANTHROPIC_API_KEY is set, decisions come from Claude via the Anthropic SDK
-(multi-turn history persisted to the database). Without a key, a weighted
-mock decision engine keeps the whole system fully functional offline.
+With DECISION_ENGINE=claude (the default), decisions come from Claude via the
+Anthropic SDK, with multi-turn history persisted to the database; a missing or
+rejected ANTHROPIC_API_KEY raises MissingCredentialsError rather than being
+silently papered over. DECISION_ENGINE=mock is an explicit offline opt-in that
+uses a weighted simulated decision engine instead.
 """
 import json
 import logging
@@ -20,6 +22,11 @@ from app.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class MissingCredentialsError(RuntimeError):
+    """The Claude decision engine is selected but no usable API key is available."""
+
 
 SYSTEM_PROMPT = """You are the mind of Bittle, a small robot dog companion.
 You decide what Bittle does next based on its current personality state and
@@ -129,18 +136,39 @@ class PersonalityEngine:
     # ---------- decisions ----------
 
     def get_next_behavior(self, available_behaviors: list[str]) -> dict:
-        """Ask Claude (or the mock engine) which behavior to perform next."""
+        """Ask the configured decision engine which behavior to perform next.
+
+        Raises MissingCredentialsError when DECISION_ENGINE=claude and the API
+        key is absent or rejected — credential problems are never masked.
+        """
         state = self.get_state()
-        if Config.llm_enabled():
-            try:
-                decision = self._ask_claude(state, available_behaviors)
-                if decision:
-                    self._log_decision(decision, source="claude")
-                    return decision
-            except Exception as exc:
-                logger.warning("Claude decision failed, using mock: %s", exc)
-        decision = self._mock_decision(state, available_behaviors)
-        self._log_decision(decision, source="mock")
+
+        if not Config.claude_engine():
+            decision = self._mock_decision(state, available_behaviors)
+            self._log_decision(decision, source="mock")
+            return decision
+
+        if not Config.ANTHROPIC_API_KEY:
+            raise MissingCredentialsError(
+                "DECISION_ENGINE=claude but ANTHROPIC_API_KEY is not set. "
+                "Add your key to .env, or set DECISION_ENGINE=mock to run offline."
+            )
+
+        try:
+            decision = self._ask_claude(state, available_behaviors)
+        except MissingCredentialsError:
+            raise
+        except Exception as exc:
+            # Transient failures (network, overload) shouldn't kill the loop,
+            # but they are logged loudly and marked as fallback decisions.
+            logger.warning("Claude decision failed (%s); one-off mock fallback", exc)
+            decision = None
+
+        if decision is None:
+            decision = self._mock_decision(state, available_behaviors)
+            self._log_decision(decision, source="mock_fallback")
+        else:
+            self._log_decision(decision, source="claude")
         return decision
 
     def _log_decision(self, decision: dict, source: str) -> None:
@@ -173,6 +201,8 @@ class PersonalityEngine:
         return [{"role": r.role, "content": r.content} for r in reversed(rows)]
 
     def _ask_claude(self, state: dict, available: list[str]) -> dict | None:
+        import anthropic
+
         client = self._get_client()
         user_message = json.dumps({
             "personality_state": state,
@@ -186,14 +216,19 @@ class PersonalityEngine:
 
         # Server-side fallback: if a safety classifier declines, the request is
         # re-served by Anthropic's recommended fallback model in the same call.
-        response = client.beta.messages.create(
-            model=Config.CLAUDE_MODEL,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
+        try:
+            response = client.beta.messages.create(
+                model=Config.CLAUDE_MODEL,
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=messages,
+                betas=["server-side-fallback-2026-07-01"],
+                fallbacks="default",
+            )
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
+            raise MissingCredentialsError(
+                f"Anthropic rejected the configured API key: {exc}"
+            ) from exc
 
         if response.stop_reason == "refusal":
             logger.warning("Claude declined the request (refusal); using mock decision")
