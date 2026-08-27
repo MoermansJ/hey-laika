@@ -84,6 +84,7 @@ class AutonomousLoop:
         if not self.running:
             return False
         self._stop.set()
+        self._thread.join(timeout=3)
         log_activity("autonomous", "Autonomous mode stopped")
         return True
 
