@@ -14,10 +14,12 @@ public final class Dtos {
 
     public record RobotStatus(String robotId, boolean connected, String mode,
                               String lastCommand, Integer commandsSent,
-                              Boolean autonomous, String mood) {
+                              Boolean autonomous, String mood, Double battery,
+                              String signal, Long uptimeSeconds) {
 
         public static RobotStatus unreachable(String robotId) {
-            return new RobotStatus(robotId, false, null, null, null, null, null);
+            return new RobotStatus(robotId, false, null, null, null, null, null,
+                    null, null, null);
         }
     }
 

@@ -29,7 +29,8 @@ class RobotControllerTest {
     void statusIsProxiedFromAgent() throws Exception {
         var agent = mock(RobotAgent.class);
         when(agent.status())
-                .thenReturn(new RobotStatus("bittle-1", true, "mock", "kbalance", 5, false, "happy"));
+                .thenReturn(new RobotStatus("bittle-1", true, "mock", "kbalance", 5, false,
+                        "happy", 87.5, "strong", 120L));
         when(fleetManager.get("bittle-1")).thenReturn(agent);
 
         mvc.perform(get("/api/robots/bittle-1/status"))

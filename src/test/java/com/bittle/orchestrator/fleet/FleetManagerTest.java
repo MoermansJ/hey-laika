@@ -36,7 +36,8 @@ class FleetManagerTest {
         var up = mock(RobotAgent.class);
         when(up.id()).thenReturn("up");
         when(up.statusOrUnreachable())
-                .thenReturn(new RobotStatus("up", true, "mock", null, 3, true, "happy"));
+                .thenReturn(new RobotStatus("up", true, "mock", null, 3, true, "happy",
+                        90.0, "strong", 60L));
         var down = mock(RobotAgent.class);
         when(down.id()).thenReturn("down");
         when(down.statusOrUnreachable()).thenReturn(RobotStatus.unreachable("down"));
