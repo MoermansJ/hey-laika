@@ -1,14 +1,13 @@
-# Secrets are injected via env_file at runtime, never baked into the image
-.env
-*.env.local
-
-.git/
-.venv/
-venv/
-__pycache__/
+.git
+.venv
+venv
+__pycache__
 *.py[cod]
-.pytest_cache/
+.pytest_cache
+.env
 *.db
-*.sqlite3
-.idea/
-.vscode/
+docs
+tests
+README.md
+BITTLE_PROJECT_SETUP.md
+CONTEXT.md
