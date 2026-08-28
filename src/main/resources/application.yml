@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: bittle-orchestrator
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bittle_fleet
+    username: bittle
+    password: bittle
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Robot instances managed by this platform. Each entry points at the Python
+# adapter service that implements the robot's hardware/AI logic. Override in
+# Docker via e.g. BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000
+bittle:
+  robots:
+    - id: bittle-1
+      name: Bittle 1
+      type: bittle_x_v2
+      service-url: http://localhost:5001

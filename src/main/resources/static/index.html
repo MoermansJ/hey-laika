@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bittle Fleet</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐕</text></svg>">
+</head>
+<body>
+  <header>
+    <h1>🐕 Bittle Fleet</h1>
+    <div id="fleet-stats" class="muted">loading…</div>
+  </header>
+
+  <main>
+    <section id="robot-list" class="panel">
+      <h2>Robots</h2>
+      <div id="robots"></div>
+    </section>
+
+    <section id="robot-detail" class="panel hidden">
+      <div class="detail-header">
+        <h2 id="detail-name"></h2>
+        <span id="detail-status" class="chip"></span>
+        <span id="detail-mood" class="chip"></span>
+        <span id="detail-mode" class="chip"></span>
+      </div>
+
+      <div id="speech" class="speech-bubble">…</div>
+
+      <div class="columns">
+        <div>
+          <h3>Personality</h3>
+          <div id="personality-bars"></div>
+
+          <h3>Interact</h3>
+          <div class="button-row" id="interactions">
+            <button data-interact="pet">🖐️ Pet</button>
+            <button data-interact="play">🎾 Play</button>
+            <button data-interact="talk">💬 Talk</button>
+            <button data-interact="feed">🦴 Feed</button>
+          </div>
+
+          <h3>Autonomous mode</h3>
+          <div class="button-row">
+            <button id="autonomous-toggle">Start autonomous</button>
+            <button id="behavior-once">🧠 Decide once</button>
+          </div>
+
+          <h3>Raw command</h3>
+          <div class="button-row">
+            <input id="raw-command" type="text" placeholder="e.g. kbalance" spellcheck="false">
+            <button id="raw-send">Send</button>
+          </div>
+        </div>
+
+        <div>
+          <h3>Animations</h3>
+          <div id="animations" class="animation-grid"></div>
+        </div>
+
+        <div>
+          <h3>Activity</h3>
+          <ul id="activity" class="activity-feed"></ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

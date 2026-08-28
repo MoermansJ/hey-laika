@@ -1,0 +1,74 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: bittle-postgres
+    environment:
+      POSTGRES_DB: bittle_fleet
+      POSTGRES_USER: bittle
+      POSTGRES_PASSWORD: bittle
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - bittle-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bittle -d bittle_fleet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Python adapter service — one instance per robot
+  python-bittle-1:
+    build: ../dog
+    container_name: bittle-python-1
+    ports:
+      - "5001:5000"
+    environment:
+      - ROBOT_ID=bittle-1
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DECISION_ENGINE=${DECISION_ENGINE:-claude}
+      - MOCK_MODE=${MOCK_MODE:-True}
+      - ENVIRONMENT=development
+      - SQLITE_DB_PATH=/data/bittle.db
+    volumes:
+      - bittle-1-data:/data
+    networks:
+      - bittle-network
+    restart: unless-stopped
+
+  # To add a second robot: copy the block above, set ROBOT_ID=bittle-2,
+  # port 5002:5000, its own volume — and add it to the orchestrator's
+  # BITTLE_ROBOTS_1_* variables below.
+
+  orchestrator:
+    build: .
+    container_name: bittle-orchestrator
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/bittle_fleet
+      - SPRING_DATASOURCE_USERNAME=bittle
+      - SPRING_DATASOURCE_PASSWORD=bittle
+      - BITTLE_ROBOTS_0_ID=bittle-1
+      - BITTLE_ROBOTS_0_NAME=Bittle 1
+      - BITTLE_ROBOTS_0_TYPE=bittle_x_v2
+      - BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      python-bittle-1:
+        condition: service_healthy
+    networks:
+      - bittle-network
+    restart: unless-stopped
+
+networks:
+  bittle-network:
+    driver: bridge
+
+volumes:
+  pg-data:
+  bittle-1-data:
