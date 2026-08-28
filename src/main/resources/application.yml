@@ -5,7 +5,9 @@ spring:
   application:
     name: bittle-orchestrator
   datasource:
-    url: jdbc:postgresql://localhost:5432/bittle_fleet
+    # Local dev default matches the compose postgres host mapping (15432);
+    # in Docker this is overridden via SPRING_DATASOURCE_URL.
+    url: jdbc:postgresql://localhost:15432/bittle_fleet
     username: bittle
     password: bittle
   jpa:
@@ -30,4 +32,4 @@ bittle:
     - id: bittle-1
       name: Bittle 1
       type: bittle_x_v2
-      service-url: http://localhost:5001
+      service-url: http://localhost:15001

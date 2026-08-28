@@ -8,7 +8,10 @@ services:
       POSTGRES_USER: bittle
       POSTGRES_PASSWORD: bittle
     ports:
-      - "5432:5432"
+      # 5432 falls in a Windows excluded port range on this host; the stack
+      # talks to postgres over the docker network, this mapping is only for
+      # host-side inspection.
+      - "15432:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
     networks:
@@ -25,7 +28,10 @@ services:
     build: ../dog
     container_name: bittle-python-1
     ports:
-      - "5001:5000"
+      # Host port for direct debugging of the adapter. Note: 5001-ish ports
+      # fall in a Windows excluded port range (netsh interface ipv4 show
+      # excludedportrange), hence 15001.
+      - "15001:5000"
     environment:
       - ROBOT_ID=bittle-1
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
@@ -40,7 +46,7 @@ services:
     restart: unless-stopped
 
   # To add a second robot: copy the block above, set ROBOT_ID=bittle-2,
-  # port 5002:5000, its own volume — and add it to the orchestrator's
+  # port 15002:5000, its own volume — and add it to the orchestrator's
   # BITTLE_ROBOTS_1_* variables below.
 
   orchestrator:

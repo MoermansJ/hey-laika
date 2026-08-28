@@ -6,19 +6,19 @@ implements the robot-specific hardware and AI logic; the orchestrator is a
 thin coordination layer that registers robots, proxies commands, and serves
 the (temporary) web UI.
 
-**Stack:** Java 21 · Spring Boot 3.5 · Spring Data JPA · PostgreSQL · Docker
+**Stack:** Java 21 - Spring Boot 3.5 - Spring Data JPA - PostgreSQL - Docker
 
 ```
-Browser ── http://localhost:8080  (static UI + REST API)
-             │
+Browser -- http://localhost:8080  (static UI + REST API)
+             |
      Orchestrator (this project)
-     ├─ FleetManager        in-memory registry of RobotAgents
-     ├─ RobotAgent          one per robot, delegates to its adapter
-     ├─ PythonServiceClient HTTP client to the adapter services
-     └─ PostgreSQL          fleet metadata (robots table)
-             │
+     |- FleetManager        in-memory registry of RobotAgents
+     |- RobotAgent          one per robot, delegates to its adapter
+     |- PythonServiceClient HTTP client to the adapter services
+     |- PostgreSQL          fleet metadata (robots table)
+             |
      Python adapter service(s), one per robot  (../dog)
-     └─ /api/robots/{robotId}/...  — hardware, Claude decisions, personality
+     |- /api/robots/{robotId}/...  -- hardware, Claude decisions, personality
 ```
 
 ## Run the full stack
@@ -29,14 +29,18 @@ docker compose up --build
 # open http://localhost:8080
 ```
 
-Services: orchestrator (8080), python adapter for bittle-1 (5001), PostgreSQL
-(5432, `bittle`/`bittle`, db `bittle_fleet`).
+Services: orchestrator (8080), python adapter for bittle-1 (host port 15001),
+PostgreSQL (host port 15432, `bittle`/`bittle`, db `bittle_fleet`).
+
+Note: the adapter and postgres host ports are 15001/15432 because 5001 and
+5432 fall in Windows excluded port ranges on this machine
+(`netsh interface ipv4 show excludedportrange`).
 
 ## Local development
 
 ```bash
 # needs a reachable PostgreSQL (docker compose up postgres) and the Python
-# adapter running on port 5001 (see ../dog)
+# adapter reachable on port 15001 (docker compose up python-bittle-1)
 ./mvnw spring-boot:run
 ./mvnw test
 ```
@@ -52,7 +56,7 @@ bittle:
     - id: bittle-1
       name: Bittle 1
       type: bittle_x_v2
-      service-url: http://localhost:5001
+      service-url: http://localhost:15001
 ```
 
 Docker env equivalent: `BITTLE_ROBOTS_0_ID`, `BITTLE_ROBOTS_0_NAME`,
@@ -79,5 +83,5 @@ additional robots, and add a matching Python service to `docker-compose.yml`).
 | `/api/robots/{id}/activity` | GET | Recent activity log |
 | `/api/robots/{id}/display` | GET | What the robot is currently "saying" |
 
-Adapter error responses (unknown animation, missing API key, …) are forwarded
-verbatim; an unreachable adapter yields `502 adapter_unavailable`.
+Adapter error responses (unknown animation, missing API key, ...) are
+forwarded verbatim; an unreachable adapter yields `502 adapter_unavailable`.
