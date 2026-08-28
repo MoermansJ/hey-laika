@@ -36,6 +36,7 @@ choreography = ChoreographyLibrary()
 personality = PersonalityEngine()
 
 # In-memory state surfaced to the orchestrator UI
+_started_at = time.time()
 _display_content = {"type": "text", "value": "Hello! I'm Bittle 🐕", "updatedAt": None}
 _activity_log: list[dict] = []
 _activity_lock = threading.Lock()
@@ -165,6 +166,7 @@ def health():
 @robot_scoped
 def robot_status(robot_id: str):
     hw = bittle.get_status()
+    telemetry = bittle.get_telemetry()
     return jsonify({
         "robotId": robot_id,
         "connected": hw.get("connected", False),
@@ -173,6 +175,9 @@ def robot_status(robot_id: str):
         "commandsSent": hw.get("commands_sent"),
         "autonomous": autonomous.running,
         "mood": personality.get_state()["mood"],
+        "battery": telemetry.get("battery"),
+        "signal": telemetry.get("signal"),
+        "uptimeSeconds": int(time.time() - _started_at),
     })
 
 

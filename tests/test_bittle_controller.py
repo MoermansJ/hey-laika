@@ -15,3 +15,10 @@ def test_mock_controller_tracks_commands():
     assert status["connected"] is True
     assert status["last_command"] == "kbalance"
     assert status["commands_sent"] == 2
+
+
+def test_mock_controller_simulates_telemetry():
+    c = MockBittleController()
+    telemetry = c.get_telemetry()
+    assert 0 <= telemetry["battery"] <= 100
+    assert telemetry["signal"] == "strong"

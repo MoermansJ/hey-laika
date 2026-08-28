@@ -29,14 +29,22 @@ class BaseBittleController(ABC):
     @abstractmethod
     def get_status(self) -> dict: ...
 
+    def get_telemetry(self) -> dict:
+        """Battery/signal readout; None where the transport can't measure it."""
+        return {"battery": None, "signal": None}
+
 
 class MockBittleController(BaseBittleController):
     mode = "mock"
+
+    # Simulated battery drain rate; wraps back to full as if swapped/recharged.
+    BATTERY_DRAIN_PER_MINUTE = 1.5
 
     def __init__(self):
         self.connected = False
         self.last_command: str | None = None
         self.command_log: list[dict] = []
+        self._battery_since = time.time()
 
     def connect(self) -> bool:
         self.connected = True
@@ -63,6 +71,11 @@ class MockBittleController(BaseBittleController):
             "last_command": self.last_command,
             "commands_sent": len(self.command_log),
         }
+
+    def get_telemetry(self) -> dict:
+        minutes = (time.time() - self._battery_since) / 60
+        battery = 100.0 - (minutes * self.BATTERY_DRAIN_PER_MINUTE) % 100.0
+        return {"battery": round(battery, 1), "signal": "strong"}
 
 
 class SerialBittleController(BaseBittleController):

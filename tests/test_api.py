@@ -30,6 +30,9 @@ def test_status_for_own_robot_id(client):
     assert data["robotId"] == RID
     assert data["connected"] is True
     assert data["mode"] == "mock"
+    assert 0 <= data["battery"] <= 100
+    assert data["signal"] == "strong"
+    assert data["uptimeSeconds"] >= 0
 
 
 def test_wrong_robot_id_is_rejected(client):
