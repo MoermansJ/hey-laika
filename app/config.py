@@ -17,6 +17,11 @@ class Config:
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     DEBUG = _bool("DEBUG", True)
 
+    # Identity: which robot instance this service is the adapter for. The
+    # orchestrator addresses services by this id; requests for any other id
+    # are rejected with 404.
+    ROBOT_ID = os.getenv("ROBOT_ID", "bittle-1").strip()
+
     # Hardware
     MOCK_MODE = _bool("MOCK_MODE", True)
     BITTLE_COMMUNICATION_METHOD = os.getenv("BITTLE_COMMUNICATION_METHOD", "mock")

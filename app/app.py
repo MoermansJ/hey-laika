@@ -1,10 +1,19 @@
-"""Main Flask application for the Bittle AI Companion."""
+"""Flask API for one Bittle robot instance.
+
+This service is the hardware/AI adapter for exactly ONE robot, identified by
+Config.ROBOT_ID. All robot routes are scoped as /api/robots/<robot_id>/... and
+validate that the id in the URL matches this instance — the Java orchestrator
+addresses fleet members by routing to the right service.
+
+There is no UI here; the orchestrator serves the frontend.
+"""
 import logging
 import threading
 import time
 from datetime import datetime, timezone
+from functools import wraps
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from app.bittle_controller import create_bittle_controller
@@ -17,7 +26,7 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, template_folder="../templates", static_folder="../static")
+app = Flask(__name__)
 CORS(app)
 
 init_db()
@@ -26,8 +35,8 @@ bittle.connect()
 choreography = ChoreographyLibrary()
 personality = PersonalityEngine()
 
-# In-memory state shared with the display page and the activity log
-_display_content = {"type": "text", "value": "Hello! I'm Bittle 🐕", "updated_at": None}
+# In-memory state surfaced to the orchestrator UI
+_display_content = {"type": "text", "value": "Hello! I'm Bittle 🐕", "updatedAt": None}
 _activity_log: list[dict] = []
 _activity_lock = threading.Lock()
 
@@ -46,7 +55,7 @@ def set_display(value: str, content_type: str = "text") -> None:
     _display_content.update({
         "type": content_type,
         "value": value,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
     })
 
 
@@ -56,7 +65,7 @@ def execute_animation(name: str) -> bool:
         return False
     for frame in frames:
         bittle.send_command(frame.command)
-        # In mock mode don't actually sleep full durations; keep the UI snappy.
+        # In mock mode don't actually sleep full durations; keep responses snappy.
         time.sleep(0.05 if Config.MOCK_MODE else frame.duration)
     personality.apply_behavior_effects(name)
     return True
@@ -114,114 +123,161 @@ class AutonomousLoop:
 autonomous = AutonomousLoop()
 
 
+def robot_scoped(fn):
+    """Reject requests addressed to a robot this instance doesn't serve."""
+    @wraps(fn)
+    def wrapper(robot_id: str, *args, **kwargs):
+        if robot_id != Config.ROBOT_ID:
+            return jsonify({
+                "error": "unknown_robot",
+                "message": (f"Robot '{robot_id}' is not served here; "
+                            f"this service handles '{Config.ROBOT_ID}'."),
+            }), 404
+        return fn(robot_id, *args, **kwargs)
+    return wrapper
+
+
 @app.errorhandler(MissingCredentialsError)
 def handle_missing_credentials(exc):
     return jsonify({"error": "missing_credentials", "message": str(exc)}), 503
 
 
-# ---------- Health & status ----------
+# ---------- Health (unscoped — used by Docker/orchestrator probes) ----------
 
 @app.get("/api/health")
 def health():
     return jsonify({
         "status": "healthy",
-        "bittle": bittle.get_status(),
-        "personality": personality.get_state(),
-        "autonomous": autonomous.running,
+        "service": "bittle-python",
+        "robotId": Config.ROBOT_ID,
         "environment": Config.ENVIRONMENT,
-        "mock_mode": Config.MOCK_MODE,
-        "decision_engine": Config.DECISION_ENGINE,
-        "api_key_configured": bool(Config.ANTHROPIC_API_KEY),
+        "mockMode": Config.MOCK_MODE,
+        "decisionEngine": Config.DECISION_ENGINE,
+        "apiKeyConfigured": bool(Config.ANTHROPIC_API_KEY),
         "model": Config.CLAUDE_MODEL if Config.claude_engine() else None,
+        "autonomous": autonomous.running,
     })
 
 
-@app.get("/api/personality")
-def get_personality():
-    return jsonify(personality.get_state())
+# ---------- Robot-scoped API ----------
+
+@app.get("/api/robots/<robot_id>/status")
+@robot_scoped
+def robot_status(robot_id: str):
+    hw = bittle.get_status()
+    return jsonify({
+        "robotId": robot_id,
+        "connected": hw.get("connected", False),
+        "mode": hw.get("mode"),
+        "lastCommand": hw.get("last_command"),
+        "commandsSent": hw.get("commands_sent"),
+        "autonomous": autonomous.running,
+        "mood": personality.get_state()["mood"],
+    })
 
 
-@app.get("/bittle/status")
-def bittle_status():
-    return jsonify(bittle.get_status())
+@app.get("/api/robots/<robot_id>/personality")
+@robot_scoped
+def robot_personality(robot_id: str):
+    state = personality.get_state()
+    return jsonify({
+        "robotId": robot_id,
+        "energy": state["energy"],
+        "happiness": state["happiness"],
+        "boredom": state["boredom"],
+        "curiosity": state["curiosity"],
+        "mood": state["mood"],
+    })
 
 
-# ---------- Behavior ----------
-
-@app.get("/api/personality/behavior")
-def next_behavior():
+@app.get("/api/robots/<robot_id>/behavior")
+@robot_scoped
+def robot_next_behavior(robot_id: str):
     decision = personality.get_next_behavior(choreography.names())
     log_activity("behavior",
                  f"[{decision.get('source', 'mock')}] {decision['behavior']}: {decision['reason']}")
-    return jsonify(decision)
+    return jsonify({
+        "robotId": robot_id,
+        "behavior": decision["behavior"],
+        "reason": decision["reason"],
+        "source": decision.get("source", "mock"),
+    })
 
 
-@app.post("/api/personality/interact/<interaction_type>")
-def interact(interaction_type: str):
+@app.post("/api/robots/<robot_id>/command")
+@robot_scoped
+def robot_command(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    command = data.get("command")
+    if not command:
+        return jsonify({"error": "bad_request", "message": "'command' is required"}), 400
+    success = bittle.send_command(command)
+    log_activity("command", f"Raw command: {command}")
+    return jsonify({"robotId": robot_id, "command": command, "success": success})
+
+
+@app.post("/api/robots/<robot_id>/interact/<interaction_type>")
+@robot_scoped
+def robot_interact(robot_id: str, interaction_type: str):
     try:
         state = personality.record_interaction(interaction_type)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
     log_activity("interaction", f"User interaction: {interaction_type}")
-    return jsonify({"ok": True, "personality": state})
+    return jsonify({"robotId": robot_id, "interaction": interaction_type,
+                    "personality": state})
 
 
-@app.get("/api/choreography/list")
-def list_choreography():
-    return jsonify(choreography.list_animations())
+@app.get("/api/robots/<robot_id>/choreography/list")
+@robot_scoped
+def robot_choreography_list(robot_id: str):
+    return jsonify({"robotId": robot_id, "animations": choreography.list_animations()})
 
 
-@app.post("/api/choreography/execute/<animation>")
-def run_choreography(animation: str):
+@app.post("/api/robots/<robot_id>/choreography/execute/<animation>")
+@robot_scoped
+def robot_choreography_execute(robot_id: str, animation: str):
     if not execute_animation(animation):
-        return jsonify({"error": f"Unknown animation: {animation}"}), 404
+        return jsonify({"error": "not_found",
+                        "message": f"Unknown animation: {animation}"}), 404
     log_activity("animation", f"Executed animation: {animation}")
-    return jsonify({"ok": True, "animation": animation})
+    return jsonify({"robotId": robot_id, "animation": animation, "success": True})
 
 
-# ---------- Autonomous mode ----------
-
-@app.post("/api/autonomous/start")
-def autonomous_start():
-    started = autonomous.start()
-    return jsonify({"running": autonomous.running, "changed": started})
-
-
-@app.post("/api/autonomous/stop")
-def autonomous_stop():
-    stopped = autonomous.stop()
-    return jsonify({"running": autonomous.running, "changed": stopped})
+@app.post("/api/robots/<robot_id>/autonomous/start")
+@robot_scoped
+def robot_autonomous_start(robot_id: str):
+    changed = autonomous.start()
+    return jsonify({"robotId": robot_id, "running": autonomous.running,
+                    "changed": changed})
 
 
-@app.get("/api/autonomous/status")
-def autonomous_status():
-    return jsonify({"running": autonomous.running,
-                    "interval_seconds": Config.AUTONOMOUS_INTERVAL})
+@app.post("/api/robots/<robot_id>/autonomous/stop")
+@robot_scoped
+def robot_autonomous_stop(robot_id: str):
+    changed = autonomous.stop()
+    return jsonify({"robotId": robot_id, "running": autonomous.running,
+                    "changed": changed})
 
 
-# ---------- Activity log & display ----------
+@app.get("/api/robots/<robot_id>/autonomous/status")
+@robot_scoped
+def robot_autonomous_status(robot_id: str):
+    return jsonify({"robotId": robot_id, "running": autonomous.running,
+                    "intervalSeconds": Config.AUTONOMOUS_INTERVAL})
 
-@app.get("/api/activity")
-def activity():
+
+@app.get("/api/robots/<robot_id>/activity")
+@robot_scoped
+def robot_activity(robot_id: str):
     with _activity_lock:
-        return jsonify(list(reversed(_activity_log)))
+        return jsonify({"robotId": robot_id, "activity": list(reversed(_activity_log))})
 
 
-@app.get("/current")
-def current_display():
-    return jsonify(_display_content)
-
-
-# ---------- Web UI ----------
-
-@app.get("/")
-def dashboard():
-    return render_template("dashboard.html")
-
-
-@app.get("/display")
-def display():
-    return render_template("display.html")
+@app.get("/api/robots/<robot_id>/display")
+@robot_scoped
+def robot_display(robot_id: str):
+    return jsonify({"robotId": robot_id, **_display_content})
 
 
 if __name__ == "__main__":
