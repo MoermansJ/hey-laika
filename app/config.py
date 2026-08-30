@@ -36,6 +36,15 @@ class Config:
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
     CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
 
+    # Voice feature ("Hey Laika") — local LLM + optional TTS
+    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+    # Lightest workable model, deliberately temporary; swap via env when the
+    # voice hardware arrives and quality starts to matter (e.g. mistral).
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "60"))
+    ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+
     # Database
     DATABASE_TYPE = os.getenv("DATABASE_TYPE", "sqlite")
     SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "./bittle.db")

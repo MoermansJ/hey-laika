@@ -16,9 +16,14 @@ from functools import wraps
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+from pathlib import Path
+
 from app.action_executor import execute_action
 from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
+from app.voice import (BEEP_PATTERNS, TtsNotConfiguredError, ollama_health,
+                       play_beep, query_ollama, save_tts_audio,
+                       synthesize_speech)
 from app.config import Config
 from app.models import init_db
 from app.personality_engine import MissingCredentialsError, PersonalityEngine
@@ -392,6 +397,128 @@ def robot_execute_action(robot_id: str):
         "actualDurationMs": actual_ms,
         "message": message,
     })
+
+
+# ---------- Voice ("Hey Laika") — MVP with stubbed audio I/O ----------
+
+@app.post("/api/robots/<robot_id>/sound")
+@robot_scoped
+def robot_sound(robot_id: str):
+    """Buzzer feedback patterns (wake-word / recording / processing / ready)."""
+    data = request.get_json(silent=True) or {}
+    pattern = data.get("pattern", "beep_wake_word")
+    if pattern not in BEEP_PATTERNS:
+        return jsonify({"error": "bad_request",
+                        "message": f"Unknown pattern '{pattern}'; one of "
+                                   f"{sorted(BEEP_PATTERNS)}"}), 400
+    success = play_beep(bittle, pattern)
+    return jsonify({"robotId": robot_id, "pattern": pattern,
+                    "command": BEEP_PATTERNS[pattern], "success": success})
+
+
+@app.get("/api/robots/<robot_id>/voice/health")
+@robot_scoped
+def robot_voice_health(robot_id: str):
+    return jsonify({
+        "robotId": robot_id,
+        "ollama": ollama_health(),
+        "ttsConfigured": bool(Config.ELEVENLABS_API_KEY),
+        "microphone": "stubbed (text input via /voice/demo)",
+        "speaker": "stubbed (buzzer beeps + optional TTS file)",
+    })
+
+
+@app.post("/api/robots/<robot_id>/voice/demo")
+@robot_scoped
+def robot_voice_demo(robot_id: str):
+    """End-to-end voice chain without hardware: text in, LLM reply out.
+
+    Stubs: wake-word + recording are simulated (buzzer feedback only) and the
+    input text stands in for a Whisper transcription. Real: local Ollama, the
+    buzzer, and (optionally, with an API key) Eleven Labs TTS.
+    """
+    started = time.time()
+    data = request.get_json(silent=True) or {}
+    user_input = (data.get("input") or "").strip()
+    if not user_input:
+        return jsonify({"error": "bad_request",
+                        "message": "'input' is required"}), 400
+
+    wake_start = time.time()
+    play_beep(bittle, "beep_wake_word")      # [STUB] wake-word detected
+    wake_time = time.time() - wake_start
+
+    record_start = time.time()
+    play_beep(bittle, "recording")           # [STUB] recording
+    record_time = time.time() - record_start
+
+    ollama_start = time.time()
+    response_text, error = query_ollama(
+        user_input,
+        model=data.get("model"),
+        temperature=float(data.get("temperature", 0.7)))
+    ollama_time = time.time() - ollama_start
+    if error:
+        log_activity("voice", f"Voice demo failed: {error}")
+        return jsonify({"status": "error", "error": "llm_unavailable",
+                        "message": error}), 502
+
+    audio_url = None
+    tts_time = 0.0
+    tts_error = None
+    if data.get("use_tts"):
+        tts_start = time.time()
+        try:
+            audio_url = save_tts_audio(synthesize_speech(response_text),
+                                       Path(app.static_folder))
+        except TtsNotConfiguredError as exc:
+            tts_error = str(exc)
+        except Exception as exc:
+            tts_error = f"TTS failed: {exc}"
+        tts_time = time.time() - tts_start
+
+    play_beep(bittle, "ready")
+    log_activity("voice", f"Voice: '{user_input[:60]}' -> "
+                          f"'{response_text[:60]}'")
+    set_display(response_text)
+
+    return jsonify({
+        "status": "success",
+        "robotId": robot_id,
+        "userInput": user_input,
+        "transcribedText": user_input,     # stub: no Whisper yet
+        "response": response_text,
+        "model": data.get("model") or Config.OLLAMA_MODEL,
+        "audioUrl": audio_url,
+        "ttsError": tts_error,
+        "latencySec": {
+            "wakeWord": round(wake_time, 2),
+            "recording": round(record_time, 2),
+            "ollama": round(ollama_time, 2),
+            "tts": round(tts_time, 2),
+            "total": round(time.time() - started, 2),
+        },
+    })
+
+
+@app.post("/api/robots/<robot_id>/voice/speak")
+@robot_scoped
+def robot_voice_speak(robot_id: str):
+    """Standalone TTS: text -> MP3 under /static/responses/."""
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "bad_request",
+                        "message": "'text' is required"}), 400
+    try:
+        audio_url = save_tts_audio(synthesize_speech(text),
+                                   Path(app.static_folder))
+    except TtsNotConfiguredError as exc:
+        return jsonify({"error": "tts_not_configured", "message": str(exc)}), 503
+    except Exception as exc:
+        return jsonify({"error": "tts_failed", "message": str(exc)}), 502
+    return jsonify({"robotId": robot_id, "status": "success",
+                    "audioUrl": audio_url})
 
 
 @app.get("/api/robots/<robot_id>/activity")
