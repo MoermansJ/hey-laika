@@ -26,6 +26,7 @@ class Config:
     MOCK_MODE = _bool("MOCK_MODE", True)
     BITTLE_COMMUNICATION_METHOD = os.getenv("BITTLE_COMMUNICATION_METHOD", "mock")
     BITTLE_SERIAL_PORT = os.getenv("BITTLE_SERIAL_PORT", "COM3")
+    BITTLE_SERIAL_BAUD = int(os.getenv("BITTLE_SERIAL_BAUD", "115200"))
     BITTLE_WIFI_HOST = os.getenv("BITTLE_WIFI_HOST", "192.168.1.100")
 
     # Claude

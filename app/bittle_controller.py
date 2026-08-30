@@ -1,17 +1,53 @@
 """Hardware abstraction layer for the Petoi Bittle.
 
 Three implementations behind one interface:
-- MockBittleController   — no hardware, logs commands (Phase 0)
-- SerialBittleController — USB serial (Phase 1)
-- WiFiBittleController   — ESP8266 WiFi module (Phase 4)
+- MockBittleController   — no hardware, logs commands and tracks virtual joints
+- SerialBittleController — USB serial (validated against firmware B10_251121)
+- WiFiBittleController   — ESP8266 WiFi module (wrong protocol for Bittle X;
+                           real firmware speaks WebSocket on :81 — needs rewrite)
+
+Serial protocol facts validated live 2026-08-30 (docs/VALIDATION_RESULTS.md in
+the orchestrator repo):
+- 115200 8N1, lines end \r\n; opening the port does NOT reboot the board
+- lowercase tokens are ASCII lines; uppercase are binary int8 args + '~'
+- the firmware echoes the command token on COMPLETION (moves are interpolated
+  at ~4 ms/degree); skills echo a bare 'k' after a skill-name line
+- commands sent while the firmware is busy are silently DROPPED, so every
+  exchange must be a locked write→await-echo transaction
+- unsolicited lines (voice module 'X…') can appear mid-stream and must be
+  tolerated; 'p' echoes uppercase 'P'
 """
 import logging
+import struct
+import threading
 import time
 from abc import ABC, abstractmethod
 
 from app.config import Config
 
 logger = logging.getLogger(__name__)
+
+JOINT_COUNT = 16
+# Bittle X has 9 physical servos; indices 1-7 are placeholders in every frame.
+PHYSICAL_JOINTS = (0, 8, 9, 10, 11, 12, 13, 14, 15)
+INT8_MIN, INT8_MAX = -125, 125
+
+# Firmware serial buffer limit: chunk writes to 20 bytes with a small gap.
+_WRITE_CHUNK = 20
+_WRITE_GAP_S = 0.001
+
+# Echo timeouts by command family. Move echoes signal completion and scale
+# with distance (~4 ms/deg), so 3s covers any single move with margin.
+_TIMEOUT_SKILL = 8.0
+_TIMEOUT_DEFAULT = 3.0
+
+
+def _echo_token(command: str) -> str:
+    """The token the firmware echoes for an ASCII command line."""
+    if not command:
+        return ""
+    # Skills ('kbalance') echo a bare 'k' after a skill-name line.
+    return command[0]
 
 
 class BaseBittleController(ABC):
@@ -33,6 +69,22 @@ class BaseBittleController(ABC):
         """Battery/signal readout; None where the transport can't measure it."""
         return {"battery": None, "signal": None}
 
+    def get_info(self) -> dict:
+        """Model/firmware identity where the transport can query it."""
+        return {"model": None, "firmwareVersion": None}
+
+    def move_joints(self, moves: list[tuple[int, int]]) -> bool:
+        """Move joints simultaneously; not supported on this transport."""
+        return False
+
+    def read_joint_angles(self) -> list[int] | None:
+        """Current firmware-target angles (16 values); None if unsupported.
+
+        Note: these are COMMANDED angles — the servos have no position
+        feedback, so a stalled joint still reads its target.
+        """
+        return None
+
 
 class MockBittleController(BaseBittleController):
     mode = "mock"
@@ -45,6 +97,7 @@ class MockBittleController(BaseBittleController):
         self.last_command: str | None = None
         self.command_log: list[dict] = []
         self._battery_since = time.time()
+        self._joint_angles = [0] * JOINT_COUNT
 
     def connect(self) -> bool:
         self.connected = True
@@ -63,6 +116,18 @@ class MockBittleController(BaseBittleController):
         self.command_log = self.command_log[-200:]
         logger.info("[mock] -> %s", command)
         return True
+
+    def move_joints(self, moves: list[tuple[int, int]]) -> bool:
+        for index, angle in moves:
+            self._joint_angles[index] = angle
+        return self.send_command(
+            "I " + " ".join(f"{i}:{a}" for i, a in moves))
+
+    def read_joint_angles(self) -> list[int] | None:
+        return list(self._joint_angles)
+
+    def get_info(self) -> dict:
+        return {"model": "Bittle X (mock)", "firmwareVersion": "mock"}
 
     def get_status(self) -> dict:
         return {
@@ -85,36 +150,163 @@ class SerialBittleController(BaseBittleController):
         self.port = port
         self.baudrate = baudrate
         self._serial = None
+        self._lock = threading.RLock()
+        self.last_command: str | None = None
+        self.commands_sent = 0
+        self._info: dict = {"model": None, "firmwareVersion": None}
 
     def connect(self) -> bool:
         import serial  # lazy import so mock mode needs no hardware deps
 
         try:
-            self._serial = serial.Serial(self.port, self.baudrate, timeout=2)
-            time.sleep(2)  # Bittle's board resets on serial open
-            return True
+            with self._lock:
+                self._serial = serial.Serial(self.port, self.baudrate,
+                                             timeout=0.05)
+                # Validated: no DTR reboot on open; a short settle + buffer
+                # drain clears any in-flight noise from a previous session.
+                time.sleep(0.5)
+                self._serial.reset_input_buffer()
+                found, payload = self._transact(b"?\n", "?", _TIMEOUT_DEFAULT)
+                if found and len(payload) >= 2:
+                    self._info = {"model": payload[0],
+                                  "firmwareVersion": payload[1]}
+                logger.info("Serial connected on %s: %s", self.port, self._info)
+                return True
         except serial.SerialException as exc:
             logger.error("Serial connect failed on %s: %s", self.port, exc)
             self._serial = None
             return False
 
     def disconnect(self) -> None:
-        if self._serial:
-            self._serial.close()
-            self._serial = None
+        with self._lock:
+            if self._serial:
+                self._serial.close()
+                self._serial = None
+
+    # ---- transaction core -------------------------------------------------
+
+    def _write_chunked(self, payload: bytes) -> None:
+        for i in range(0, len(payload), _WRITE_CHUNK):
+            self._serial.write(payload[i:i + _WRITE_CHUNK])
+            if i + _WRITE_CHUNK < len(payload):
+                time.sleep(_WRITE_GAP_S)
+
+    def _transact(self, payload: bytes, echo: str,
+                  timeout: float) -> tuple[bool, list[str]]:
+        """Write one command and read until its echo line arrives.
+
+        Holds the port lock for the whole exchange: the firmware drops any
+        command received while busy, so concurrent callers must queue here.
+        Returns (echo_seen, payload_lines_before_echo).
+        """
+        with self._lock:
+            if self._serial is None:
+                raise RuntimeError("serial port not open")
+            self._serial.reset_input_buffer()
+            self._write_chunked(payload)
+            buf = b""
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                waiting = self._serial.in_waiting
+                chunk = self._serial.read(waiting or 1)
+                if not chunk:
+                    continue
+                buf += chunk
+                text = buf.decode(errors="ignore")
+                text = text.replace("\r\n", "\n").replace("\r", "\n")
+                lines = text.split("\n")
+                # Only lines terminated by a newline are complete.
+                complete, partial = lines[:-1], lines[-1]
+                for pos, line in enumerate(complete):
+                    # Case-insensitive: 'p' echoes 'P'; skills echo bare 'k'.
+                    if line.strip().lower() == echo.lower():
+                        payload_lines = [l for l in complete[:pos] if l.strip()]
+                        return True, payload_lines
+            leftovers = buf.decode(errors="ignore")
+            logger.warning("No '%s' echo within %.1fs; got %r",
+                           echo, timeout, leftovers[:200])
+            return False, [l for l in leftovers.splitlines() if l.strip()]
+
+    # ---- public API -------------------------------------------------------
 
     def send_command(self, command: str) -> bool:
         if self._serial is None and not self.connect():
             return False
+        timeout = _TIMEOUT_SKILL if command.startswith(("k", "K", "X")) \
+            else _TIMEOUT_DEFAULT
         try:
-            self._serial.write((command + "\n").encode("ascii"))
-            return True
+            found, _ = self._transact((command + "\n").encode("ascii"),
+                                      _echo_token(command), timeout)
         except Exception as exc:
-            logger.error("Serial write failed: %s", exc)
+            logger.error("Serial command failed: %s", exc)
             return False
+        self.last_command = command
+        self.commands_sent += 1
+        return found
+
+    def move_joints(self, moves: list[tuple[int, int]]) -> bool:
+        """Simultaneous joint move via the binary 'I' command.
+
+        The echo arrives on motion COMPLETION (firmware interpolates), so a
+        True return means the joints have reached their targets.
+        """
+        if not moves:
+            return True
+        for index, angle in moves:
+            if index not in PHYSICAL_JOINTS:
+                raise ValueError(f"invalid joint index {index}")
+            if not INT8_MIN <= angle <= INT8_MAX:
+                raise ValueError(f"angle {angle} outside {INT8_MIN}..{INT8_MAX}")
+        if self._serial is None and not self.connect():
+            return False
+        payload = b"I" + b"".join(
+            struct.pack("bb", i, a) for i, a in moves) + b"~"
+        try:
+            found, _ = self._transact(payload, "I", _TIMEOUT_DEFAULT)
+        except Exception as exc:
+            logger.error("Serial move failed: %s", exc)
+            return False
+        self.last_command = "I " + " ".join(f"{i}:{a}" for i, a in moves)
+        self.commands_sent += 1
+        return found
+
+    def read_joint_angles(self) -> list[int] | None:
+        if self._serial is None and not self.connect():
+            return None
+        try:
+            found, payload = self._transact(b"j\n", "j", _TIMEOUT_DEFAULT)
+        except Exception as exc:
+            logger.error("Serial joint read failed: %s", exc)
+            return None
+        if not found:
+            return None
+        # Response: '=', a tab-separated index header, then the comma-separated
+        # angle row; unsolicited 'X…' voice-module lines may interleave.
+        for line in payload:
+            if "," not in line:
+                continue
+            try:
+                values = [int(tok.strip().rstrip(","))
+                          for tok in line.split() if tok.strip().rstrip(",")]
+            except ValueError:
+                continue
+            if len(values) == JOINT_COUNT:
+                return values
+        logger.warning("j readback had no %d-value angle line: %r",
+                       JOINT_COUNT, payload)
+        return None
+
+    def get_info(self) -> dict:
+        return dict(self._info)
 
     def get_status(self) -> dict:
-        return {"connected": self._serial is not None, "mode": self.mode, "port": self.port}
+        return {
+            "connected": self._serial is not None,
+            "mode": self.mode,
+            "port": self.port,
+            "last_command": self.last_command,
+            "commands_sent": self.commands_sent,
+        }
 
 
 class WiFiBittleController(BaseBittleController):
@@ -155,7 +347,8 @@ class WiFiBittleController(BaseBittleController):
 def create_bittle_controller(config: type[Config] = Config) -> BaseBittleController:
     method = "mock" if config.MOCK_MODE else config.BITTLE_COMMUNICATION_METHOD
     if method == "serial":
-        return SerialBittleController(config.BITTLE_SERIAL_PORT)
+        return SerialBittleController(config.BITTLE_SERIAL_PORT,
+                                      config.BITTLE_SERIAL_BAUD)
     if method == "wifi":
         return WiFiBittleController(config.BITTLE_WIFI_HOST)
     return MockBittleController()
