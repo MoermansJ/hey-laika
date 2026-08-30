@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sequence Builder</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
+  <style>
+    :root {
+      color-scheme: light;
+      --page:    #f2f4f3;
+      --surface: #fbfcfb;
+      --ink:     #171a19;
+      --ink-2:   #4d5553;
+      --muted:   #7d8683;
+      --grid:    #d5dad7;
+      --ring:    rgba(23,26,25,0.10);
+      --good:    #17803d;
+      --critical:#b3372e;
+      --warn:    #a06a00;
+      --seq:     #2a78d6;
+      /* movement categories */
+      --c-posture: #2a78d6;
+      --c-gait:    #c65a11;
+      --c-head:    #17808a;
+      --c-trick:   #7b4fc9;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --page:    #101312;
+        --surface: #1a1e1c;
+        --ink:     #f2f4f3;
+        --ink-2:   #b9c1bd;
+        --muted:   #808a86;
+        --grid:    #2e3532;
+        --ring:    rgba(242,244,243,0.12);
+        --good:    #46a36a;
+        --critical:#d05a50;
+        --warn:    #c98500;
+        --seq:     #3987e5;
+        --c-posture: #3987e5;
+        --c-gait:    #e87428;
+        --c-head:    #3aa8b2;
+        --c-trick:   #9b78e0;
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --page:    #101312;
+      --surface: #1a1e1c;
+      --ink:     #f2f4f3;
+      --ink-2:   #b9c1bd;
+      --muted:   #808a86;
+      --grid:    #2e3532;
+      --ring:    rgba(242,244,243,0.12);
+      --good:    #46a36a;
+      --critical:#d05a50;
+      --warn:    #c98500;
+      --seq:     #3987e5;
+      --c-posture: #3987e5;
+      --c-gait:    #e87428;
+      --c-head:    #3aa8b2;
+      --c-trick:   #9b78e0;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--page); color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      padding: 1rem 1.25rem 2rem;
+    }
+    a { color: var(--seq); }
+    h1 { font-size: 1.15rem; margin: 0; }
+    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .topbar .spacer { flex: 1; }
+    select, button, input[type="text"] {
+      font: inherit; color: var(--ink); background: var(--surface);
+      border: 1px solid var(--ring); border-radius: 6px;
+      padding: 0.35rem 0.7rem;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--muted); }
+    button.primary { border-color: var(--good); color: var(--good); font-weight: 600; }
+    button.danger  { border-color: var(--critical); color: var(--critical); }
+    button:disabled { opacity: 0.45; cursor: default; }
+    .chip { font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
+            border: 1px solid var(--ring); color: var(--ink-2); }
+    .chip.warn { color: var(--warn); border-color: var(--warn); }
+    .chip.on   { color: var(--good); border-color: var(--good); }
+
+    .card { background: var(--surface); border: 1px solid var(--ring);
+            border-radius: 10px; padding: 0.8rem 0.9rem; margin-bottom: 0.9rem; }
+    .card h2 { font-size: 0.85rem; margin: 0 0 0.6rem; color: var(--ink-2); font-weight: 600; }
+    .hint { font-size: 0.72rem; color: var(--muted); }
+
+    /* Palette */
+    .palette { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .palette .cat-label { width: 100%; font-size: 0.68rem; color: var(--muted);
+                          text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.3rem; }
+    .pal-block {
+      --c: var(--c-posture);
+      border: 1px solid var(--c); border-left: 4px solid var(--c);
+      color: var(--ink); background: var(--surface);
+      border-radius: 6px; padding: 0.3rem 0.6rem; font-size: 0.78rem;
+      cursor: grab; user-select: none;
+    }
+    .pal-block:active { cursor: grabbing; }
+    .pal-block .dur { color: var(--muted); font-size: 0.68rem; margin-left: 0.3rem; }
+
+    /* Timeline */
+    .timeline-wrap { position: relative; overflow-x: auto; padding-bottom: 0.4rem; }
+    .ruler { display: flex; height: 18px; font-size: 0.62rem; color: var(--muted); }
+    .ruler span { flex: none; border-left: 1px solid var(--grid); padding-left: 3px; }
+    .timeline {
+      display: flex; align-items: stretch; gap: 4px; min-height: 92px;
+      padding: 8px; border: 1.5px dashed var(--grid); border-radius: 8px;
+      min-width: 100%; width: max-content;
+    }
+    .timeline.dragover { border-color: var(--seq); }
+    .tl-empty { color: var(--muted); font-size: 0.8rem; align-self: center; padding: 0 1rem; }
+    .tl-block {
+      --c: var(--c-posture);
+      position: relative; flex: none; border-radius: 7px;
+      border: 1.5px solid var(--c); border-top: 5px solid var(--c);
+      background: var(--surface); padding: 0.4rem 0.55rem;
+      font-size: 0.75rem; cursor: grab; user-select: none;
+      display: flex; flex-direction: column; justify-content: space-between;
+      overflow: hidden;
+    }
+    .tl-block .bname { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tl-block .bdur { color: var(--muted); font-size: 0.68rem;
+                      font-variant-numeric: tabular-nums; }
+    .tl-block.selected { outline: 2px solid var(--seq); outline-offset: 1px; }
+    .tl-block.playing { outline: 2px solid var(--good); outline-offset: 1px; }
+    .tl-block.played { opacity: 0.55; }
+    .drop-caret { flex: none; width: 3px; border-radius: 2px; background: var(--seq); }
+
+    /* Inspector */
+    .inspector { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+    .inspector label { font-size: 0.78rem; color: var(--ink-2); }
+    .inspector input[type="range"] { width: 220px; accent-color: var(--seq); }
+    .inspector .val { font-variant-numeric: tabular-nums; min-width: 4.5em; }
+
+    .lib-row { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+    #toast {
+      position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+      background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+      padding: 0.5rem 0.9rem; font-size: 0.8rem; display: none; z-index: 10;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.22);
+    }
+    #toast.err { border-color: var(--critical); color: var(--critical); }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="index.html" title="Back to console">←</a>
+    <h1>🎬 Sequence Builder</h1>
+    <select id="robot-select" title="Robot"></select>
+    <span id="loop-chip" class="chip warn" style="display:none">behavior loop running</span>
+    <span class="spacer"></span>
+    <span id="total-chip" class="chip">0.0 s</span>
+    <button id="btn-play" class="primary">▶ Play</button>
+    <button id="btn-stop" class="danger" disabled>■ Stop</button>
+  </div>
+
+  <section class="card">
+    <h2>Movements — drag onto the timeline</h2>
+    <div id="palette" class="palette"><span class="hint">loading…</span></div>
+  </section>
+
+  <section class="card">
+    <h2>Timeline</h2>
+    <div class="timeline-wrap">
+      <div id="ruler" class="ruler"></div>
+      <div id="timeline" class="timeline">
+        <span class="tl-empty">drag movements here — drag blocks to reorder</span>
+      </div>
+    </div>
+    <div id="inspector" class="inspector" style="display:none; margin-top:0.6rem">
+      <label id="insp-name"></label>
+      <input type="range" id="insp-dur" min="300" max="10000" step="100">
+      <span class="val" id="insp-val"></span>
+      <button id="insp-remove" class="danger">Remove</button>
+    </div>
+    <div class="hint" style="margin-top:0.5rem">
+      Click a block to edit its duration (holds and sweeps stretch; skills run at their
+      natural pace and idle out the remainder). Delete key removes the selected block.
+      Stop finishes the movement in flight, then halts.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Library</h2>
+    <div class="lib-row">
+      <input type="text" id="seq-name" placeholder="sequence name" size="18">
+      <button id="btn-save">Save</button>
+      <select id="seq-list"></select>
+      <button id="btn-load">Load</button>
+      <button id="btn-delete" class="danger">Delete</button>
+      <button id="btn-clear">Clear timeline</button>
+    </div>
+    <div class="hint" style="margin-top:0.4rem">Sequences are stored in this browser (localStorage).</div>
+  </section>
+
+  <div id="toast"></div>
+  <script src="builder.js"></script>
+</body>
+</html>
