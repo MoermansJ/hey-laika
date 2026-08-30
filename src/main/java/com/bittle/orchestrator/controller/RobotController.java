@@ -10,8 +10,17 @@ import com.bittle.orchestrator.dto.Dtos.DisplayContent;
 import com.bittle.orchestrator.dto.Dtos.InteractionResult;
 import com.bittle.orchestrator.dto.Dtos.RobotBehavior;
 import com.bittle.orchestrator.dto.Dtos.RobotPersonality;
+import com.bittle.orchestrator.behavior.BehaviorService;
+import com.bittle.orchestrator.dto.Dtos.ActionResult;
+import com.bittle.orchestrator.dto.Dtos.ExecuteActionRequest;
 import com.bittle.orchestrator.dto.Dtos.RobotStatus;
+import com.bittle.orchestrator.dto.Dtos.ServoMoveRequest;
+import com.bittle.orchestrator.dto.Dtos.ServoMoveResult;
+import com.bittle.orchestrator.dto.Dtos.ServoState;
 import com.bittle.orchestrator.fleet.FleetManager;
+import java.util.Map;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,9 +34,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class RobotController {
 
     private final FleetManager fleetManager;
+    private final BehaviorService behaviorService;
 
-    public RobotController(FleetManager fleetManager) {
+    public RobotController(FleetManager fleetManager, BehaviorService behaviorService) {
         this.fleetManager = fleetManager;
+        this.behaviorService = behaviorService;
     }
 
     @GetMapping("/status")
@@ -90,5 +101,37 @@ public class RobotController {
     @GetMapping("/display")
     public DisplayContent display(@PathVariable String robotId) {
         return fleetManager.get(robotId).display();
+    }
+
+    @GetMapping("/capabilities")
+    public Map<String, Object> capabilities(@PathVariable String robotId) {
+        return fleetManager.get(robotId).capabilities();
+    }
+
+    @GetMapping("/servo")
+    public ServoState servoState(@PathVariable String robotId) {
+        return fleetManager.get(robotId).servoState();
+    }
+
+    @PostMapping("/servo")
+    public ServoMoveResult moveServos(@PathVariable String robotId,
+                                      @RequestBody ServoMoveRequest request) {
+        return fleetManager.get(robotId).moveServos(request);
+    }
+
+    /**
+     * Direct movement execution for the choreography builder. Refused while
+     * the behavior loop drives the robot — the two would race on the servos.
+     */
+    @PostMapping("/execute_action")
+    public ResponseEntity<?> executeAction(@PathVariable String robotId,
+                                           @RequestBody ExecuteActionRequest request) {
+        if (behaviorService.loop(robotId).isRunning()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "behavior_loop_running",
+                    "message", "Stop the behavior loop before running a sequence."));
+        }
+        ActionResult result = fleetManager.get(robotId).executeAction(request);
+        return ResponseEntity.ok(result);
     }
 }
