@@ -14,8 +14,6 @@ services:
       - "15432:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
-    networks:
-      - bittle-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bittle -d bittle_fleet"]
       interval: 10s
@@ -41,29 +39,9 @@ services:
       - SQLITE_DB_PATH=/data/bittle.db
     volumes:
       - bittle-1-data:/data
-    networks:
-      - bittle-network
     restart: unless-stopped
 
-  python-bittle-2:
-    build: ../dog
-    container_name: bittle-python-2
-    ports:
-      - "15002:5000"
-    environment:
-      - ROBOT_ID=bittle-2
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - DECISION_ENGINE=${DECISION_ENGINE:-claude}
-      - MOCK_MODE=${MOCK_MODE:-True}
-      - ENVIRONMENT=development
-      - SQLITE_DB_PATH=/data/bittle.db
-    volumes:
-      - bittle-2-data:/data
-    networks:
-      - bittle-network
-    restart: unless-stopped
-
-  # To add another robot: copy a python-bittle-* block, set the next
+  # To add another robot: copy the python-bittle-* block, set the next
   # ROBOT_ID, host port, and volume — and add it to the orchestrator's
   # BITTLE_ROBOTS_<n>_* variables below.
 
@@ -80,26 +58,13 @@ services:
       - BITTLE_ROBOTS_0_NAME=Bittle 1
       - BITTLE_ROBOTS_0_TYPE=bittle_x_v2
       - BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000
-      - BITTLE_ROBOTS_1_ID=bittle-2
-      - BITTLE_ROBOTS_1_NAME=Bittle 2
-      - BITTLE_ROBOTS_1_TYPE=bittle_x_v2
-      - BITTLE_ROBOTS_1_SERVICEURL=http://python-bittle-2:5000
     depends_on:
       postgres:
         condition: service_healthy
       python-bittle-1:
         condition: service_healthy
-      python-bittle-2:
-        condition: service_healthy
-    networks:
-      - bittle-network
     restart: unless-stopped
-
-networks:
-  bittle-network:
-    driver: bridge
 
 volumes:
   pg-data:
   bittle-1-data:
-  bittle-2-data:
