@@ -1,5 +1,6 @@
 package com.bittle.orchestrator.client;
 
+import com.bittle.orchestrator.dto.Dtos.ActionResult;
 import com.bittle.orchestrator.dto.Dtos.ActivityLog;
 import com.bittle.orchestrator.dto.Dtos.AnimationList;
 import com.bittle.orchestrator.dto.Dtos.AnimationResult;
@@ -7,10 +8,14 @@ import com.bittle.orchestrator.dto.Dtos.AutonomousState;
 import com.bittle.orchestrator.dto.Dtos.CommandRequest;
 import com.bittle.orchestrator.dto.Dtos.CommandResult;
 import com.bittle.orchestrator.dto.Dtos.DisplayContent;
+import com.bittle.orchestrator.dto.Dtos.ExecuteActionRequest;
 import com.bittle.orchestrator.dto.Dtos.InteractionResult;
 import com.bittle.orchestrator.dto.Dtos.RobotBehavior;
 import com.bittle.orchestrator.dto.Dtos.RobotPersonality;
 import com.bittle.orchestrator.dto.Dtos.RobotStatus;
+import com.bittle.orchestrator.dto.Dtos.ServoMoveRequest;
+import com.bittle.orchestrator.dto.Dtos.ServoMoveResult;
+import com.bittle.orchestrator.dto.Dtos.ServoState;
 import com.bittle.orchestrator.exception.AdapterErrorException;
 import com.bittle.orchestrator.exception.AdapterUnavailableException;
 import java.util.Map;
@@ -96,9 +101,35 @@ public class PythonServiceClient {
                 .retrieve().body(ActivityLog.class));
     }
 
+    public ActionResult executeAction(String serviceUrl, String robotId,
+                                      ExecuteActionRequest request) {
+        return exchange(() -> http.post().uri(robotUri(serviceUrl, robotId, "/execute_action"))
+                .body(request)
+                .retrieve().body(ActionResult.class));
+    }
+
     public DisplayContent display(String serviceUrl, String robotId) {
         return exchange(() -> http.get().uri(robotUri(serviceUrl, robotId, "/display"))
                 .retrieve().body(DisplayContent.class));
+    }
+
+    /** The adapter's capability schema, passed through untyped so new
+     *  capability kinds don't require orchestrator releases. */
+    public Map<String, Object> capabilities(String serviceUrl, String robotId) {
+        return exchange(() -> http.get().uri(robotUri(serviceUrl, robotId, "/schema"))
+                .retrieve().body(Map.class));
+    }
+
+    public ServoState servoState(String serviceUrl, String robotId) {
+        return exchange(() -> http.get().uri(robotUri(serviceUrl, robotId, "/servo"))
+                .retrieve().body(ServoState.class));
+    }
+
+    public ServoMoveResult moveServos(String serviceUrl, String robotId,
+                                      ServoMoveRequest request) {
+        return exchange(() -> http.post().uri(robotUri(serviceUrl, robotId, "/servo"))
+                .body(request)
+                .retrieve().body(ServoMoveResult.class));
     }
 
     private static String robotUri(String serviceUrl, String robotId, String path) {

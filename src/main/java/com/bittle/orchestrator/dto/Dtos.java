@@ -69,4 +69,25 @@ public final class Dtos {
     public record FleetStats(int totalRobots, long connectedRobots, long autonomousRobots,
                              long timestamp) {
     }
+
+    public record ExecuteActionRequest(String action, long durationMs, long sequenceId) {
+    }
+
+    public record ActionResult(String robotId, String action, boolean success,
+                               Long actualDurationMs, String message) {
+    }
+
+    public record ServoJoint(int index, int angle) {
+    }
+
+    public record ServoMoveRequest(List<ServoJoint> joints) {
+    }
+
+    public record ServoMoveResult(String robotId, boolean success, Boolean clamped,
+                                  String message, List<ServoJoint> movedJoints) {
+    }
+
+    public record ServoState(String robotId, boolean success, String timestamp,
+                             List<ServoJoint> joints) {
+    }
 }

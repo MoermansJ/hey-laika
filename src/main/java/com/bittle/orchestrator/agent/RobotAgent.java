@@ -2,17 +2,23 @@ package com.bittle.orchestrator.agent;
 
 import com.bittle.orchestrator.client.PythonServiceClient;
 import com.bittle.orchestrator.config.RobotsProperties.RobotDefinition;
+import com.bittle.orchestrator.dto.Dtos.ActionResult;
 import com.bittle.orchestrator.dto.Dtos.ActivityLog;
 import com.bittle.orchestrator.dto.Dtos.AnimationList;
 import com.bittle.orchestrator.dto.Dtos.AnimationResult;
 import com.bittle.orchestrator.dto.Dtos.AutonomousState;
 import com.bittle.orchestrator.dto.Dtos.CommandResult;
 import com.bittle.orchestrator.dto.Dtos.DisplayContent;
+import com.bittle.orchestrator.dto.Dtos.ExecuteActionRequest;
 import com.bittle.orchestrator.dto.Dtos.InteractionResult;
 import com.bittle.orchestrator.dto.Dtos.RobotBehavior;
 import com.bittle.orchestrator.dto.Dtos.RobotInfo;
 import com.bittle.orchestrator.dto.Dtos.RobotPersonality;
 import com.bittle.orchestrator.dto.Dtos.RobotStatus;
+import com.bittle.orchestrator.dto.Dtos.ServoMoveRequest;
+import com.bittle.orchestrator.dto.Dtos.ServoMoveResult;
+import com.bittle.orchestrator.dto.Dtos.ServoState;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,7 +102,23 @@ public class RobotAgent {
         return client.activity(definition.serviceUrl(), definition.id());
     }
 
+    public ActionResult executeAction(ExecuteActionRequest request) {
+        return client.executeAction(definition.serviceUrl(), definition.id(), request);
+    }
+
     public DisplayContent display() {
         return client.display(definition.serviceUrl(), definition.id());
+    }
+
+    public Map<String, Object> capabilities() {
+        return client.capabilities(definition.serviceUrl(), definition.id());
+    }
+
+    public ServoState servoState() {
+        return client.servoState(definition.serviceUrl(), definition.id());
+    }
+
+    public ServoMoveResult moveServos(ServoMoveRequest request) {
+        return client.moveServos(definition.serviceUrl(), definition.id(), request);
     }
 }

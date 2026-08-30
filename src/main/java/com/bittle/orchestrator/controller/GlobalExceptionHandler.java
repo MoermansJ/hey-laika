@@ -30,6 +30,13 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", "adapter_unavailable", "message", e.getMessage()));
     }
 
+    /** Unknown action/event names on the behavior API. */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> badRequest(IllegalArgumentException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "bad_request", "message", e.getMessage()));
+    }
+
     /** Forward the adapter's own error responses (404 unknown animation, 503 missing key, ...). */
     @ExceptionHandler(AdapterErrorException.class)
     public ResponseEntity<String> adapterError(AdapterErrorException e) {

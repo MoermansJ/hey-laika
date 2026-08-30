@@ -24,6 +24,20 @@ management:
     health:
       show-details: always
 
+# Autonomous behavior loops (orchestrator-owned brain; see
+# docs/PERSONALITY_SYSTEM_DESIGN.md). Loops are started via the behavior API
+# unless auto-start is enabled.
+behavior:
+  decision-interval-ms: 2500
+  sleep-decision-interval-ms: 5000
+  failure-backoff-ms: 5000
+  history-size: 200
+  # Phase 1b: actions go to the adapter's execute_action endpoint and move
+  # the physical robot. auto-start is off so hardware motion begins only when
+  # a loop is started deliberately (Behavior Lab / POST /behavior/start).
+  auto-start: false
+  simulate-actions: false
+
 # Robot instances managed by this platform. Each entry points at the Python
 # adapter service that implements the robot's hardware/AI logic. Override in
 # Docker via e.g. BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000
