@@ -21,6 +21,7 @@ from app.choreography import ChoreographyLibrary
 from app.config import Config
 from app.models import init_db
 from app.personality_engine import MissingCredentialsError, PersonalityEngine
+from app.robot_schema import SERVO_LIMITS, build_schema
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -270,6 +271,89 @@ def robot_autonomous_stop(robot_id: str):
 def robot_autonomous_status(robot_id: str):
     return jsonify({"robotId": robot_id, "running": autonomous.running,
                     "intervalSeconds": Config.AUTONOMOUS_INTERVAL})
+
+
+@app.get("/api/robots/<robot_id>/schema")
+@robot_scoped
+def robot_schema(robot_id: str):
+    info = bittle.get_info()
+    return jsonify({
+        "robotId": robot_id,
+        "robotType": "bittle_x_v2",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "schema": build_schema(),
+        "metadata": {
+            "model": info.get("model"),
+            "firmwareVersion": info.get("firmwareVersion"),
+            "mode": bittle.get_status().get("mode"),
+            "servoCount": len(SERVO_LIMITS),
+            # Verified 2026-08-30: non-zero offsets stored in EEPROM. Do not
+            # query 'c' live here — it physically moves the robot.
+            "calibrated": True,
+        },
+    })
+
+
+@app.get("/api/robots/<robot_id>/servo")
+@robot_scoped
+def robot_servo_read(robot_id: str):
+    angles = bittle.read_joint_angles()
+    if angles is None:
+        return jsonify({"robotId": robot_id, "success": False,
+                        "message": "Failed to read joint angles"}), 502
+    return jsonify({
+        "robotId": robot_id,
+        "success": True,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        # Only physical joints; indices 1-7 are placeholders that report
+        # garbage until a skill zeroes them.
+        "joints": [{"index": i, "angle": angles[i]} for i in SERVO_LIMITS],
+    })
+
+
+@app.post("/api/robots/<robot_id>/servo")
+@robot_scoped
+def robot_servo_move(robot_id: str):
+    if autonomous.running:
+        return jsonify({"error": "autonomy_running",
+                        "message": "Stop autonomous mode before manual servo "
+                                   "control."}), 409
+    data = request.get_json(silent=True) or {}
+    joints = data.get("joints")
+    if not isinstance(joints, list) or not joints:
+        return jsonify({"error": "bad_request",
+                        "message": "'joints' must be a non-empty list"}), 400
+    moves: list[tuple[int, int]] = []
+    clamped = False
+    for joint in joints:
+        try:
+            index = int(joint["index"])
+            angle = int(joint["angle"])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({"error": "bad_request",
+                            "message": "each joint needs integer 'index' and "
+                                       "'angle'"}), 400
+        limits = SERVO_LIMITS.get(index)
+        if limits is None:
+            return jsonify({"error": "bad_request",
+                            "message": f"Invalid joint index {index}"}), 400
+        lo, hi = limits
+        safe = max(lo, min(hi, angle))
+        if safe != angle:
+            clamped = True
+            logger.warning("Clamped joint %d: %d -> %d", index, angle, safe)
+        moves.append((index, safe))
+    success = bittle.move_joints(moves)
+    log_activity("servo", "Servo move: " +
+                 ", ".join(f"{i}->{a}°" for i, a in moves))
+    return jsonify({
+        "robotId": robot_id,
+        "success": success,
+        "clamped": clamped,
+        "message": f"Moved {len(moves)} joint(s)" if success
+                   else "Move failed (no completion echo)",
+        "movedJoints": [{"index": i, "angle": a} for i, a in moves],
+    }), (200 if success else 502)
 
 
 @app.get("/api/robots/<robot_id>/activity")
