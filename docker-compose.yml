@@ -21,6 +21,19 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Local LLM for the "Hey Laika" voice feature. Temporary stand-in until
+  # real voice hardware + a bigger model; the adapter reaches it on
+  # OLLAMA_URL (default http://localhost:11434 when running natively).
+  # Start standalone with: docker compose up -d ollama
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bittle-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
   # Python adapter service — one instance per robot
   python-bittle-1:
     build: ../dog
@@ -68,3 +81,4 @@ services:
 volumes:
   pg-data:
   bittle-1-data:
+  ollama-data:
