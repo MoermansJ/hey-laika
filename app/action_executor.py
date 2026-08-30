@@ -44,6 +44,19 @@ def _pause(seconds: float) -> Step:
     return Step("pause", seconds=seconds)
 
 
+def _slow_sweep(amplitude: int, step_deg: int, pause_s: float) -> list[Step]:
+    """A visibly slow head pan: the firmware slews each move at ~250°/s, so
+    slowness comes from many small increments with pauses between them.
+    Sweeps center → +A → −A → center."""
+    steps: list[Step] = []
+    for target in (list(range(step_deg, amplitude + 1, step_deg))
+                   + list(range(amplitude - step_deg, -amplitude - 1, -step_deg))
+                   + list(range(-amplitude + step_deg, 1, step_deg))):
+        steps.append(_joints([(_HEAD, target)]))
+        steps.append(_pause(pause_s))
+    return steps
+
+
 # Steps per action. "hold" pads the remaining duration; gaits get their stand
 # restored afterwards so the orchestrator's posture model stays truthful.
 ACTION_PLANS: dict[str, list[Step]] = {
@@ -67,6 +80,17 @@ ACTION_PLANS: dict[str, list[Step]] = {
     "wake_up":    [_joints([(_HEAD, 15)]), _pause(0.3), _joints([(_HEAD, 0)]),
                    _pause(-1)],
     "seek_attention": [_skill("khi"), _pause(-1), _skill("kbalance")],
+
+    # Idle-cycle actions (orchestrator's primary active behavior).
+    # Low: small, quick side-to-side glances while sitting.
+    "look_around_low": [_joints([(_HEAD, 18)]), _pause(0.35),
+                        _joints([(_HEAD, -18)]), _pause(0.35),
+                        _joints([(_HEAD, 18)]), _pause(0.35),
+                        _joints([(_HEAD, -18)]), _pause(0.35),
+                        _joints([(_HEAD, 0)]), _pause(-1)],
+    # Slow: wide stepped sweep while standing.
+    "look_around_slow": _slow_sweep(35, 7, 0.12) + [_pause(-1)],
+    "stretch": [_skill("kstr"), _pause(-1), _skill("kbalance")],
 }
 
 

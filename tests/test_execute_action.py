@@ -22,8 +22,16 @@ def test_all_orchestrator_actions_have_plans():
     orchestrator_catalog = {
         "walk_slow", "walk_fast", "stand_up", "sit_down", "lie_down",
         "look_left", "look_right", "look_up", "play_bow", "backflip", "spin",
-        "idle_calm", "sleep", "wake_up", "seek_attention"}
+        "idle_calm", "sleep", "wake_up", "seek_attention",
+        "look_around_low", "look_around_slow", "stretch"}
     assert orchestrator_catalog == set(ACTION_PLANS)
+
+
+def test_look_around_sweeps_recenter(client):
+    for action in ("look_around_low", "look_around_slow"):
+        resp = post_action(client, action, 200)
+        assert resp.get_json()["success"] is True, action
+        assert bittle.read_joint_angles()[0] == 0, action
 
 
 def test_skill_action_reaches_controller(client):
