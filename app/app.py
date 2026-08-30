@@ -16,6 +16,7 @@ from functools import wraps
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+from app.action_executor import execute_action
 from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
 from app.config import Config
@@ -354,6 +355,43 @@ def robot_servo_move(robot_id: str):
                    else "Move failed (no completion echo)",
         "movedJoints": [{"index": i, "angle": a} for i, a in moves],
     }), (200 if success else 502)
+
+
+@app.post("/api/robots/<robot_id>/execute_action")
+@robot_scoped
+def robot_execute_action(robot_id: str):
+    """Phase 1b: the orchestrator's behavior loop drives the hardware here.
+
+    The adapter's own autonomous loop is the deprecated old brain — running
+    both would race on the servos, so this endpoint refuses while it's active.
+    """
+    if autonomous.running:
+        return jsonify({"error": "autonomy_running",
+                        "message": "Stop the adapter's autonomous loop before "
+                                   "orchestrator-driven execution."}), 409
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")
+    if not action:
+        return jsonify({"error": "bad_request",
+                        "message": "'action' is required"}), 400
+    try:
+        duration_ms = int(data.get("durationMs") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request",
+                        "message": "'durationMs' must be an integer"}), 400
+    try:
+        success, actual_ms, message = execute_action(bittle, action, duration_ms)
+    except KeyError:
+        return jsonify({"error": "bad_request",
+                        "message": f"Unknown action: {action}"}), 400
+    log_activity("action", f"[orchestrator] {action}: {message}")
+    return jsonify({
+        "robotId": robot_id,
+        "action": action,
+        "success": success,
+        "actualDurationMs": actual_ms,
+        "message": message,
+    })
 
 
 @app.get("/api/robots/<robot_id>/activity")
