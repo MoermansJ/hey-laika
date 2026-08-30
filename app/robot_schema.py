@@ -113,9 +113,41 @@ SERVO_LIMITS = {s.index: (s.min, s.max) for s in BITTLE_SERVOS}
 SERVO_INDICES = tuple(SERVO_LIMITS)
 
 
+@dataclass
+class MovementCapability:
+    """A building block for the choreography timeline: one execute_action id
+    with display metadata and a default (stretchable) duration."""
+    id: str
+    displayName: str
+    category: str
+    defaultDurationMs: int
+
+
+# Every id must have a plan in action_executor.ACTION_PLANS (tested).
+BITTLE_MOVEMENTS = [
+    MovementCapability("stand_up", "Stand", "posture", 1000),
+    MovementCapability("sit_down", "Sit", "posture", 1500),
+    MovementCapability("lie_down", "Lie Down", "posture", 2000),
+    MovementCapability("idle_calm", "Hold", "posture", 1000),
+    MovementCapability("walk_slow", "Walk", "gait", 3000),
+    MovementCapability("walk_fast", "Walk (brisk)", "gait", 2000),
+    MovementCapability("spin", "Spin", "gait", 2000),
+    MovementCapability("look_left", "Look Left", "head", 800),
+    MovementCapability("look_right", "Look Right", "head", 800),
+    MovementCapability("look_up", "Head Scan", "head", 800),
+    MovementCapability("look_around_low", "Glance Around", "head", 2200),
+    MovementCapability("look_around_slow", "Slow Look Around", "head", 3600),
+    MovementCapability("stretch", "Stretch", "trick", 2600),
+    MovementCapability("play_bow", "Play Bow", "trick", 1500),
+    MovementCapability("backflip", "Jump", "trick", 2000),
+    MovementCapability("seek_attention", "Wave", "trick", 2000),
+]
+
+
 def build_schema() -> dict:
     return {
         "servos": [asdict(s) for s in BITTLE_SERVOS],
         "actions": [asdict(a) for a in BITTLE_ACTIONS],
         "sensors": [asdict(s) for s in BITTLE_SENSORS],
+        "movements": [asdict(m) for m in BITTLE_MOVEMENTS],
     }

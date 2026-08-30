@@ -27,6 +27,12 @@ def test_all_orchestrator_actions_have_plans():
     assert orchestrator_catalog == set(ACTION_PLANS)
 
 
+def test_every_schema_movement_has_a_plan():
+    from app.robot_schema import BITTLE_MOVEMENTS
+    for movement in BITTLE_MOVEMENTS:
+        assert movement.id in ACTION_PLANS, movement.id
+
+
 def test_look_around_sweeps_recenter(client):
     for action in ("look_around_low", "look_around_slow"):
         resp = post_action(client, action, 200)
