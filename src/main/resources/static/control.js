@@ -250,6 +250,67 @@ function renderMeta() {
       ? "Adapter is in mock mode — no hardware will move" : "";
 }
 
+// ---------- voice ("Hey Laika", simulated input) ----------
+
+function voiceLogAppend(kind, text, latencySec) {
+  const log = $("#voice-log");
+  const msg = document.createElement("div");
+  msg.className = `voice-msg ${kind}`;
+  const who = kind === "user" ? "you" : kind === "laika" ? "laika 🐕" : "error";
+  const lat = latencySec != null
+      ? `<span class="lat">${latencySec.toFixed(1)}s think</span>` : "";
+  msg.innerHTML = `<span class="who">${who}${lat}</span>${text}`;
+  log.appendChild(msg);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function refreshVoiceHealth() {
+  const chip = $("#voice-chip");
+  try {
+    const health = await api("/voice/health");
+    if (health.ollama?.reachable && health.ollama?.modelAvailable) {
+      chip.textContent = `${health.ollama.configuredModel} ready`;
+      chip.className = "chip on";
+      chip.title = "Local LLM reachable; mic/speaker stubbed";
+      return;
+    }
+    chip.textContent = health.ollama?.reachable
+        ? "model not pulled" : "LLM offline";
+    chip.className = "chip warn";
+    chip.title = health.ollama?.reachable
+        ? `Pull it with: docker exec bittle-ollama ollama pull ${health.ollama.configuredModel}`
+        : `Ollama unreachable at ${health.ollama?.url ?? "?"} — docker compose up -d ollama`;
+  } catch {
+    chip.textContent = "voice unavailable";
+    chip.className = "chip warn";
+  }
+}
+
+async function sendVoiceInput() {
+  const input = $("#voice-input");
+  const button = $("#voice-send");
+  const text = input.value.trim();
+  if (!text || button.disabled) return;
+  voiceLogAppend("user", text);
+  input.value = "";
+  button.disabled = true;
+  button.textContent = "🎤 …";
+  try {
+    const result = await api("/voice/demo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: text }),
+    });
+    voiceLogAppend("laika", result.response, result.latencySec?.ollama);
+  } catch (err) {
+    voiceLogAppend("error", err.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "🎤 Send";
+    input.focus();
+  }
+}
+
 // ---------- boot ----------
 
 async function loadRobot() {
@@ -290,9 +351,15 @@ async function boot() {
   state.robotId = robots[0]?.robotId;
   if (!state.robotId) return;
   bindTopbar();
+  $("#voice-send").onclick = sendVoiceInput;
+  $("#voice-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") sendVoiceInput();
+  });
   await loadRobot();
+  await refreshVoiceHealth();
   setInterval(pollReadback, READBACK_INTERVAL_MS);
   setInterval(refreshAutonomy, 5000);
+  setInterval(refreshVoiceHealth, 15000);
 }
 
 boot();

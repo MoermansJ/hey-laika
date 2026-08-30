@@ -132,6 +132,26 @@ public class PythonServiceClient {
                 .retrieve().body(ServoMoveResult.class));
     }
 
+    /** Voice MVP endpoints — untyped passthrough like capabilities. */
+    public Map<String, Object> voiceDemo(String serviceUrl, String robotId,
+                                         Map<String, Object> body) {
+        return exchange(() -> http.post().uri(robotUri(serviceUrl, robotId, "/voice/demo"))
+                .body(body)
+                .retrieve().body(Map.class));
+    }
+
+    public Map<String, Object> voiceHealth(String serviceUrl, String robotId) {
+        return exchange(() -> http.get().uri(robotUri(serviceUrl, robotId, "/voice/health"))
+                .retrieve().body(Map.class));
+    }
+
+    public Map<String, Object> sound(String serviceUrl, String robotId,
+                                     Map<String, Object> body) {
+        return exchange(() -> http.post().uri(robotUri(serviceUrl, robotId, "/sound"))
+                .body(body)
+                .retrieve().body(Map.class));
+    }
+
     private static String robotUri(String serviceUrl, String robotId, String path) {
         return serviceUrl + "/api/robots/" + robotId + path;
     }

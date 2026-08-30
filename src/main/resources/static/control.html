@@ -113,6 +113,23 @@
     .sensor .value { font-size: 1.1rem; margin-top: 0.1rem; }
     .sensor .value .unit { font-size: 0.7rem; color: var(--muted); }
 
+    .voice-row { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
+    .voice-row input { flex: 1; font: inherit; color: var(--ink);
+      background: var(--page); border: 1px solid var(--ring); border-radius: 6px;
+      padding: 0.45rem 0.7rem; }
+    .voice-log { display: flex; flex-direction: column; gap: 0.45rem;
+      max-height: 260px; overflow-y: auto; }
+    .voice-msg { max-width: 72ch; padding: 0.45rem 0.7rem; border-radius: 10px;
+      font-size: 0.82rem; border: 1px solid var(--ring); }
+    .voice-msg.user  { align-self: flex-end; background: var(--page); }
+    .voice-msg.laika { align-self: flex-start; background: var(--surface);
+      border-left: 3px solid var(--seq); }
+    .voice-msg.error { align-self: flex-start; color: var(--critical);
+      border-color: var(--critical); }
+    .voice-msg .who { font-size: 0.65rem; color: var(--muted); display: block;
+      margin-bottom: 0.15rem; }
+    .voice-msg .lat { font-size: 0.65rem; color: var(--muted); margin-left: 0.5rem; }
+
     .meta { font-size: 0.72rem; color: var(--muted); margin-top: 0.8rem; }
     .meta b { color: var(--ink-2); font-weight: 600; }
     #toast {
@@ -160,6 +177,18 @@
       </section>
     </div>
   </div>
+
+  <section class="card" style="margin-top:0.9rem">
+    <h2>Voice — “Hey Laika” <span id="voice-chip" class="chip">checking…</span></h2>
+    <div class="voice-row">
+      <input type="text" id="voice-input" placeholder="Simulate speech — e.g. “who’s a good dog?”" autocomplete="off">
+      <button id="voice-send" class="primary">🎤 Send</button>
+    </div>
+    <div id="voice-log" class="voice-log"></div>
+    <div class="hint">Simulates the wake-word → record → respond chain: the dog beeps at
+      each stage and the reply comes from the local LLM. Microphone and speaker are
+      stubbed until the INMP441/MAX98357A hardware arrives.</div>
+  </section>
 
   <div id="meta" class="meta"></div>
   <div id="toast"></div>

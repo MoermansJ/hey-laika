@@ -121,4 +121,16 @@ public class RobotAgent {
     public ServoMoveResult moveServos(ServoMoveRequest request) {
         return client.moveServos(definition.serviceUrl(), definition.id(), request);
     }
+
+    public Map<String, Object> voiceDemo(Map<String, Object> body) {
+        return client.voiceDemo(definition.serviceUrl(), definition.id(), body);
+    }
+
+    public Map<String, Object> voiceHealth() {
+        return client.voiceHealth(definition.serviceUrl(), definition.id());
+    }
+
+    public Map<String, Object> sound(Map<String, Object> body) {
+        return client.sound(definition.serviceUrl(), definition.id(), body);
+    }
 }

@@ -119,6 +119,23 @@ public class RobotController {
         return fleetManager.get(robotId).moveServos(request);
     }
 
+    @PostMapping("/voice/demo")
+    public Map<String, Object> voiceDemo(@PathVariable String robotId,
+                                         @RequestBody Map<String, Object> body) {
+        return fleetManager.get(robotId).voiceDemo(body);
+    }
+
+    @GetMapping("/voice/health")
+    public Map<String, Object> voiceHealth(@PathVariable String robotId) {
+        return fleetManager.get(robotId).voiceHealth();
+    }
+
+    @PostMapping("/sound")
+    public Map<String, Object> sound(@PathVariable String robotId,
+                                     @RequestBody Map<String, Object> body) {
+        return fleetManager.get(robotId).sound(body);
+    }
+
     /**
      * Direct movement execution for the choreography builder. Refused while
      * the behavior loop drives the robot — the two would race on the servos.
