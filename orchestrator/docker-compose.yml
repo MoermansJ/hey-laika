@@ -1,0 +1,95 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: bittle-postgres
+    environment:
+      POSTGRES_DB: bittle_fleet
+      POSTGRES_USER: bittle
+      POSTGRES_PASSWORD: bittle
+    ports:
+      # 5432 falls in a Windows excluded port range on this host; the stack
+      # talks to postgres over the docker network, this mapping is only for
+      # host-side inspection.
+      - "15432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bittle -d bittle_fleet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Local LLM for the "Hey Laika" voice feature. Temporary stand-in until
+  # real voice hardware + a bigger model. The adapter container gets
+  # OLLAMA_URL=http://ollama:11434 below; a natively-run adapter uses its
+  # localhost:11434 default via the published port.
+  # Start standalone with: docker compose up -d ollama
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bittle-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+  # Python adapter service — one instance per robot
+  python-bittle-1:
+    build: ../dog
+    container_name: bittle-python-1
+    ports:
+      # Host port for direct debugging of the adapter. Note: 5001-ish ports
+      # fall in a Windows excluded port range (netsh interface ipv4 show
+      # excludedportrange), hence 15001.
+      - "15001:5000"
+    environment:
+      - ROBOT_ID=bittle-1
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DECISION_ENGINE=${DECISION_ENGINE:-claude}
+      # Defaults drive the real robot over WiFi; set MOCK_MODE=True in .env
+      # to run without hardware. The BiBoard IP is DHCP-assigned — keep a
+      # router reservation for it or override BITTLE_WIFI_HOST in .env.
+      - MOCK_MODE=${MOCK_MODE:-False}
+      - BITTLE_COMMUNICATION_METHOD=${BITTLE_COMMUNICATION_METHOD:-wifi}
+      - BITTLE_WIFI_HOST=${BITTLE_WIFI_HOST:-192.168.0.246}
+      # In-network Ollama for the voice feature (config.py's localhost
+      # default would point at this container itself).
+      - OLLAMA_URL=http://ollama:11434
+      - ENVIRONMENT=development
+      - SQLITE_DB_PATH=/data/bittle.db
+    volumes:
+      - bittle-1-data:/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  # To add another robot: copy the python-bittle-* block, set the next
+  # ROBOT_ID, host port, and volume — and add it to the orchestrator's
+  # BITTLE_ROBOTS_<n>_* variables below.
+
+  orchestrator:
+    build: .
+    container_name: bittle-orchestrator
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/bittle_fleet
+      - SPRING_DATASOURCE_USERNAME=bittle
+      - SPRING_DATASOURCE_PASSWORD=bittle
+      - BITTLE_ROBOTS_0_ID=bittle-1
+      - BITTLE_ROBOTS_0_NAME=Bittle 1
+      - BITTLE_ROBOTS_0_TYPE=bittle_x_v2
+      - BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      python-bittle-1:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  bittle-1-data:
+  ollama-data:

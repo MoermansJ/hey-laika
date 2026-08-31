@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Behavior Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+  <style>
+    /* Tokens from the validated reference palette (light + dark selected). */
+    :root {
+      color-scheme: light;
+      --page:        #f9f9f7;
+      --surface:     #fcfcfb;
+      --ink:         #0b0b0b;
+      --ink-2:       #52514e;
+      --muted:       #898781;
+      --grid:        #e1e0d9;
+      --baseline:    #c3c2b7;
+      --ring:        rgba(11,11,11,0.10);
+      --good:        #0ca30c;
+      --critical:    #d03b3b;
+      --seq:         #2a78d6;
+      /* categorical slots, fixed order — energy..contentment */
+      --s-energy:      #2a78d6;
+      --s-happiness:   #eb6834;
+      --s-boredom:     #1baf7a;
+      --s-curiosity:   #eda100;
+      --s-hunger:      #e87ba4;
+      --s-contentment: #008300;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --page:        #0d0d0d;
+        --surface:     #1a1a19;
+        --ink:         #ffffff;
+        --ink-2:       #c3c2b7;
+        --muted:       #898781;
+        --grid:        #2c2c2a;
+        --baseline:    #383835;
+        --ring:        rgba(255,255,255,0.10);
+        --seq:         #3987e5;
+        --s-energy:      #3987e5;
+        --s-happiness:   #d95926;
+        --s-boredom:     #199e70;
+        --s-curiosity:   #c98500;
+        --s-hunger:      #d55181;
+        --s-contentment: #008300;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page);
+      color: var(--ink);
+      padding: 1rem 1.25rem 2rem;
+    }
+    a { color: var(--seq); }
+    h1 { font-size: 1.15rem; margin: 0; }
+    .topbar {
+      display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .topbar .spacer { flex: 1; }
+    select, button {
+      font: inherit; color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--ring);
+      border-radius: 6px; padding: 0.35rem 0.7rem; cursor: pointer;
+    }
+    button:hover { border-color: var(--muted); }
+    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    .chip {
+      font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
+      border: 1px solid var(--ring); color: var(--ink-2);
+    }
+    .chip.on  { color: var(--good); border-color: var(--good); }
+    .chip.off { color: var(--critical); border-color: var(--critical); }
+
+    .tiles {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.6rem; margin-bottom: 0.9rem;
+    }
+    .tile {
+      background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 8px; padding: 0.55rem 0.7rem;
+    }
+    .tile .name { font-size: 0.72rem; color: var(--ink-2); display: flex; align-items: center; gap: 0.35rem; }
+    .tile .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+    .tile .value { font-size: 1.45rem; margin: 0.1rem 0 0.3rem; }
+    .tile .meter { height: 4px; border-radius: 2px; background: var(--grid); overflow: hidden; }
+    .tile .meter > div { height: 100%; border-radius: 2px; }
+    .tile.state .value { font-size: 1.05rem; }
+
+    .grid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(260px, 1fr); gap: 0.9rem; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 8px; padding: 0.8rem 0.9rem;
+    }
+    .card h2 { font-size: 0.85rem; margin: 0 0 0.6rem; color: var(--ink-2); font-weight: 600; }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; margin-bottom: 0.5rem; }
+    .legend button {
+      display: flex; align-items: center; gap: 0.35rem;
+      border: none; background: none; padding: 0.1rem 0.2rem;
+      font-size: 0.78rem; color: var(--ink-2);
+    }
+    .legend button .swatch { width: 14px; height: 3px; border-radius: 2px; }
+    .legend button.off { opacity: 0.35; }
+
+    .chart-wrap { position: relative; }
+    #chart { width: 100%; height: 320px; display: block; touch-action: none; }
+    #tooltip {
+      position: absolute; pointer-events: none; display: none;
+      background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 6px; padding: 0.45rem 0.6rem; font-size: 0.75rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18); min-width: 150px; z-index: 5;
+    }
+    #tooltip .t-time { color: var(--muted); margin-bottom: 0.25rem; }
+    #tooltip .t-row { display: flex; justify-content: space-between; gap: 0.8rem; }
+    #tooltip .t-row .k { display: flex; align-items: center; gap: 0.3rem; color: var(--ink-2); }
+    #tooltip .t-action { margin-top: 0.3rem; border-top: 1px solid var(--grid); padding-top: 0.3rem; color: var(--ink); }
+    #tooltip .swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+    .controls { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem; }
+    .freq-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0; font-size: 0.75rem; }
+    .freq-row .fname { width: 7.5em; color: var(--ink-2); text-align: right; }
+    .freq-row .fbar-track { flex: 1; }
+    .freq-row .fbar { height: 10px; border-radius: 0 4px 4px 0; background: var(--seq); min-width: 2px; }
+    .freq-row .fcount { color: var(--muted); width: 2.5em; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+    th, td { text-align: left; padding: 0.3rem 0.45rem; border-bottom: 1px solid var(--grid); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+    td.time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    td .src { font-size: 0.65rem; border: 1px solid var(--ring); border-radius: 4px; padding: 0 0.25rem; color: var(--ink-2); }
+    td .fail { color: var(--critical); font-weight: 600; }
+    .table-scroll { max-height: 300px; overflow-y: auto; }
+    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="index.html" title="Back to console">←</a>
+    <h1>🧠 Behavior Lab</h1>
+    <select id="robot-select" title="Robot"></select>
+    <span id="loop-chip" class="chip">…</span>
+    <button id="btn-loop" class="primary">Start</button>
+    <span class="spacer"></span>
+    <span id="conn-chip" class="chip">connecting…</span>
+  </div>
+
+  <div id="tiles" class="tiles"></div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Personality over time <span id="window-label" style="font-weight:400"></span></h2>
+      <div id="legend" class="legend"></div>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+        <div id="tooltip"></div>
+      </div>
+      <div class="hint">Hover for values · markers along the top are non-idle actions · click legend entries to toggle series</div>
+    </section>
+
+    <section class="card">
+      <h2>Interact</h2>
+      <div class="controls">
+        <button data-event="owner_petted">🖐 Pet</button>
+        <button data-event="owner_called_out">📣 Call</button>
+        <button data-event="owner_played">🎾 Play</button>
+      </div>
+      <div class="controls">
+        <select id="action-select"></select>
+        <button id="btn-action">Do it</button>
+      </div>
+      <h2 style="margin-top:1rem">Action frequency</h2>
+      <div id="freq"></div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:0.9rem">
+    <h2>Recent decisions</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Action</th><th>Source</th><th>Posture</th><th>Reasoning</th></tr>
+        </thead>
+        <tbody id="decisions"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script src="vendor/stomp.umd.min.js"></script>
+  <script src="behavior.js"></script>
+</body>
+</html>

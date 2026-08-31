@@ -1,0 +1,9 @@
+Flask>=3.0
+Flask-CORS>=4.0
+gunicorn>=21.2 ; sys_platform != "win32"
+python-dotenv>=1.0
+requests>=2.31
+anthropic>=0.116
+pyserial>=3.5
+websocket-client>=1.7
+SQLAlchemy>=2.0

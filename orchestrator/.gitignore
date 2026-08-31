@@ -1,0 +1,12 @@
+# Environment / secrets — never commit
+.env
+*.env.local
+
+# Maven
+target/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+Thumbs.db
