@@ -18,6 +18,7 @@ the orchestrator repo):
   tolerated; 'p' echoes uppercase 'P'
 """
 import logging
+import re
 import struct
 import threading
 import time
@@ -43,6 +44,25 @@ _TIMEOUT_DEFAULT = 3.0
 # The WS task queue adds latency and the firmware's own task timeout is 45s;
 # observed: first skill after boot can exceed 8s before 'completed' arrives.
 _TIMEOUT_SKILL_WS = 20.0
+
+# Battery: firmware 'P' (T_POWER) prints "Voltage: x.xx V" from the pack
+# divider. 2S LiPo: ~8.35 V full, ~6.8 V at the firmware's low-power floor.
+# Linear map is approximate (LiPo curves sag under load) but good enough
+# for a gauge. Cached so status polling doesn't occupy the robot.
+_VOLTAGE_RE = re.compile(r"Voltage:\s*([0-9]+(?:\.[0-9]+)?)")
+_BATT_FULL_V = 8.35
+_BATT_EMPTY_V = 6.8
+_TELEMETRY_TTL_S = 20.0
+
+
+def _voltage_to_percent(voltage: float) -> float:
+    pct = (voltage - _BATT_EMPTY_V) / (_BATT_FULL_V - _BATT_EMPTY_V) * 100.0
+    return round(max(0.0, min(100.0, pct)), 1)
+
+
+def _parse_voltage(lines: list[str]) -> float | None:
+    match = _VOLTAGE_RE.search("\n".join(lines))
+    return float(match.group(1)) if match else None
 
 
 def _echo_token(command: str) -> str:
@@ -157,6 +177,8 @@ class SerialBittleController(BaseBittleController):
         self.last_command: str | None = None
         self.commands_sent = 0
         self._info: dict = {"model": None, "firmwareVersion": None}
+        self._telemetry: dict = {"battery": None, "signal": None}
+        self._telemetry_at = 0.0
 
     def connect(self) -> bool:
         import serial  # lazy import so mock mode needs no hardware deps
@@ -299,6 +321,22 @@ class SerialBittleController(BaseBittleController):
                        JOINT_COUNT, payload)
         return None
 
+    def get_telemetry(self) -> dict:
+        if time.time() - self._telemetry_at < _TELEMETRY_TTL_S:
+            return dict(self._telemetry)
+        telemetry = {"battery": None, "signal": None}
+        if self._serial is not None or self.connect():
+            try:
+                found, payload = self._transact(b"P~", "P", _TIMEOUT_DEFAULT)
+            except Exception as exc:
+                logger.error("Serial voltage read failed: %s", exc)
+                found, payload = False, []
+            voltage = _parse_voltage(payload) if found else None
+            if voltage is not None:
+                telemetry["battery"] = _voltage_to_percent(voltage)
+        self._telemetry, self._telemetry_at = telemetry, time.time()
+        return dict(telemetry)
+
     def get_info(self) -> dict:
         return dict(self._info)
 
@@ -336,6 +374,8 @@ class WiFiBittleController(BaseBittleController):
         self.last_command: str | None = None
         self.commands_sent = 0
         self._info: dict = {"model": None, "firmwareVersion": None}
+        self._telemetry: dict = {"battery": None, "signal": None}
+        self._telemetry_at = 0.0
 
     def connect(self) -> bool:
         import websocket  # lazy import so mock mode needs no hardware deps
@@ -499,6 +539,18 @@ class WiFiBittleController(BaseBittleController):
         logger.warning("j readback had no %d-value angle line: %r",
                        JOINT_COUNT, results)
         return None
+
+    def get_telemetry(self) -> dict:
+        if time.time() - self._telemetry_at < _TELEMETRY_TTL_S:
+            return dict(self._telemetry)
+        telemetry = {"battery": None, "signal": None}
+        results = self._send("P", _TIMEOUT_DEFAULT)
+        voltage = _parse_voltage(results) if results else None
+        if voltage is not None:
+            telemetry = {"battery": _voltage_to_percent(voltage),
+                         "signal": "wifi"}
+        self._telemetry, self._telemetry_at = telemetry, time.time()
+        return dict(telemetry)
 
     def get_info(self) -> dict:
         return dict(self._info)

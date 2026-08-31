@@ -159,6 +159,22 @@ def test_connect_ignores_junk_banner(monkeypatch):
     assert ctrl.get_info() == {"model": None, "firmwareVersion": None}
 
 
+def test_telemetry_reads_voltage_and_caches(controller):
+    controller._ws.handler = lambda f: replies(f, results=["Voltage: 7.85 V"])
+    telemetry = controller.get_telemetry()
+    assert telemetry["battery"] == pytest.approx(67.7, abs=0.1)
+    assert telemetry["signal"] == "wifi"
+    assert controller._ws.sent[0]["commands"] == ["P"]
+    # Within the TTL the cached reading is served — no second frame.
+    assert controller.get_telemetry() == telemetry
+    assert len(controller._ws.sent) == 1
+
+
+def test_voltage_percent_clamps():
+    assert bc._voltage_to_percent(9.0) == 100.0
+    assert bc._voltage_to_percent(2.26) == 0.0  # USB-only power reading
+
+
 def test_factory_serial_and_wifi_branches():
     class Cfg:
         MOCK_MODE = False

@@ -107,6 +107,16 @@ def test_p_echo_is_case_insensitive(controller):
     assert controller.send_command("p") is True
 
 
+def test_telemetry_parses_voltage(controller):
+    orig_write = controller._serial.write
+    controller._serial.write = lambda d: (orig_write(d),
+                                          feed(controller,
+                                               b"Voltage: 8.35 V\r\nP\r\n"))
+    telemetry = controller.get_telemetry()
+    assert telemetry["battery"] == 100.0
+    assert written(controller) == b"P~"
+
+
 def test_skill_echoes_bare_k(controller):
     orig_write = controller._serial.write
     controller._serial.write = lambda d: (orig_write(d),
