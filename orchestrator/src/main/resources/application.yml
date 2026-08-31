@@ -44,6 +44,6 @@ behavior:
 bittle:
   robots:
     - id: bittle-1
-      name: Bittle 1
+      name: Laika
       type: bittle_x_v2
       service-url: http://localhost:15001

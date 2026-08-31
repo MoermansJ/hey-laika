@@ -9,12 +9,15 @@
   const PAGES = [
     { href: "index.html", icon: "🏠", label: "Fleet Console" },
     { href: "behavior.html", icon: "🧠", label: "Behavior Lab" },
-    { href: "control.html", icon: "🎛️", label: "Control Panel" },
-    { href: "builder.html", icon: "🎬", label: "Sequence Builder" },
+    // Control Panel lives as a tab on the robot page (embedded); the
+    // Sequence Builder is unlisted for now, pending its rebirth as a
+    // behavior builder (greeting/lifecycle sequences).
   ];
   const KEY = "heyLaikaNavCollapsed";
   const current = (location.pathname.split("/").pop() || "index.html");
   if (current === "index.html" || current === "") return;
+  // Embedded mode (iframe inside the robot page's Control tab): no sidebar.
+  if (new URLSearchParams(location.search).has("embedded")) return;
 
   const css = `
     :root { --hlnav-w: 188px; --hlnav-w-collapsed: 52px; }

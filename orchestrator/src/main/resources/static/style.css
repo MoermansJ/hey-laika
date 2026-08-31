@@ -75,6 +75,20 @@ body.nav-collapsed .sidebar-header {
 body.nav-collapsed .sidebar-collapse { margin-left: 0; }
 body.nav-collapsed .nav-link { justify-content: center; padding: 0.55rem 0.4rem; }
 
+/* robot page tabs */
+.tab-bar { display: flex; gap: 0.4rem; margin: 0.75rem 0; border-bottom: 1px solid rgba(127,127,127,0.25); }
+.tab {
+  background: none; border: none; cursor: pointer; font: inherit;
+  color: var(--text-light); padding: 0.5rem 0.9rem;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.control-frame {
+  width: 100%; height: calc(100vh - 190px); border: 0;
+  border-radius: 10px; background: transparent;
+}
+
 .nav-menu { flex: 1; padding: 0.75rem 0.5rem; }
 
 .nav-link {

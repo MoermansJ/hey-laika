@@ -79,7 +79,7 @@ services:
       - SPRING_DATASOURCE_USERNAME=bittle
       - SPRING_DATASOURCE_PASSWORD=bittle
       - BITTLE_ROBOTS_0_ID=bittle-1
-      - BITTLE_ROBOTS_0_NAME=Bittle 1
+      - BITTLE_ROBOTS_0_NAME=Laika
       - BITTLE_ROBOTS_0_TYPE=bittle_x_v2
       - BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000
     depends_on:

@@ -111,10 +111,8 @@ function handleMessage(topic, body) {
       onStatusesChanged();
     } else if (kind === "personality") {
       state.personality[robotId] = body;
-      if (onRobotPage(robotId)) renderPersonality(robotId);
     } else if (kind === "display") {
       state.display[robotId] = body;
-      if (onRobotPage(robotId)) renderSpeech(robotId);
     } else if (kind === "activity") {
       state.activity[robotId] = body.activity || [];
       if (onRobotPage(robotId)) renderActivity(robotId);
@@ -136,7 +134,6 @@ function onStatusesChanged() {
   }
   if (state.page === "robot" && state.selected) {
     renderRobotHeader(state.selected);
-    renderTelemetry(state.selected);
   }
 }
 
@@ -224,16 +221,10 @@ async function pollTick() {
 
 /** One-shot REST fetch of a robot's detail — instant paint on page open. */
 async function refreshRobotDetail(robotId) {
-  const results = await Promise.allSettled([
-    api(`/api/robots/${robotId}/personality`),
-    api(`/api/robots/${robotId}/display`),
-    api(`/api/robots/${robotId}/activity`),
-  ]);
-  const [personality, display, activity] = results.map((r) =>
-      r.status === "fulfilled" ? r.value : null);
-  if (personality) handleMessage(`/topic/robot/${robotId}/personality`, personality);
-  if (display) handleMessage(`/topic/robot/${robotId}/display`, display);
-  if (activity) handleMessage(`/topic/robot/${robotId}/activity`, activity);
+  try {
+    const activity = await api(`/api/robots/${robotId}/activity`);
+    handleMessage(`/topic/robot/${robotId}/activity`, activity);
+  } catch { /* adapter offline; feed keeps last state */ }
 }
 
 // ---------- router ----------
@@ -272,11 +263,7 @@ function showRobotPage(robotId) {
       link.classList.toggle("active", link.dataset.robot === robotId));
 
   renderRobotHeader(robotId);
-  renderTelemetry(robotId);
-  renderPersonality(robotId);
-  renderSpeech(robotId);
   renderActivity(robotId);
-  loadAnimations(robotId);
   refreshRobotDetail(robotId);
   renderSidebarRobots();
 }
@@ -385,50 +372,13 @@ function robotInfo(robotId) {
 function renderRobotHeader(robotId) {
   const robot = robotInfo(robotId);
   const status = state.statuses[robotId] || {};
-  $("#robot-title").textContent = robot ? `${robot.name} · ${robot.type}` : robotId;
+  // Page title is the robot's configured name (dynamic per robot).
+  $("#robot-title").textContent = robot ? robot.name : robotId;
   const conn = $("#robot-chip-conn");
   conn.textContent = status.connected ? "connected" : "disconnected";
   conn.className = "chip " + (status.connected ? "ok" : "err");
   $("#robot-chip-mood").textContent = `mood: ${status.mood ?? "?"}`;
   $("#robot-chip-mode").textContent = `mode: ${status.mode ?? "?"}`;
-
-  const toggle = $("#autonomous-toggle");
-  toggle.textContent = status.autonomous ? "⏹ Stop autonomous" : "▶ Start autonomous";
-  toggle.classList.toggle("active", status.autonomous === true);
-}
-
-function renderTelemetry(robotId) {
-  const status = state.statuses[robotId] || {};
-  $("#telemetry").innerHTML = `
-    <div class="stat">
-      <div class="label">Battery <span>${fmtBattery(status.battery)}</span></div>
-      <div class="bar-track"><div class="bar-fill battery ${batteryClass(status.battery)}"
-           style="width:${status.battery ?? 0}%"></div></div>
-    </div>
-    <div class="telemetry-rows">
-      <div><span class="spec-key">Signal</span><span>${escapeHtml(status.signal ?? "—")}</span></div>
-      <div><span class="spec-key">Uptime</span><span>${fmtUptime(status.uptimeSeconds)}</span></div>
-      <div><span class="spec-key">Autonomous</span><span>${status.autonomous ? "on" : "off"}</span></div>
-      <div><span class="spec-key">Last command</span><span>${escapeHtml(status.lastCommand ?? "—")}</span></div>
-      <div><span class="spec-key">Commands sent</span><span>${status.commandsSent ?? "—"}</span></div>
-    </div>`;
-}
-
-function renderPersonality(robotId) {
-  const p = state.personality[robotId];
-  const container = $("#personality-bars");
-  if (!p) { container.innerHTML = "<span class='muted'>no data yet</span>"; return; }
-  container.innerHTML = ["energy", "happiness", "boredom", "curiosity"].map((key) => `
-    <div class="bar-row">
-      <div class="bar-label"><span>${key}</span><span>${Math.round(p[key])}%</span></div>
-      <div class="bar-track"><div class="bar-fill ${key}" style="width:${p[key]}%"></div></div>
-    </div>`).join("") +
-    `<div class="mood-line">${escapeHtml(p.mood)} ${moodEmoji(p.mood)}</div>`;
-}
-
-function renderSpeech(robotId) {
-  const display = state.display[robotId];
-  $("#robot-speech").textContent = display?.value || "…";
 }
 
 function renderActivity(robotId) {
@@ -440,33 +390,6 @@ function renderActivity(robotId) {
     li.innerHTML = `<span class="kind">${escapeHtml(entry.kind)}</span>` +
         `${escapeHtml(entry.message)}<span class="at">${at}</span>`;
     feed.appendChild(li);
-  });
-}
-
-async function loadAnimations(robotId) {
-  const container = $("#animations");
-  if (state.animations[robotId]) { renderAnimations(robotId); return; }
-  container.innerHTML = "<span class='muted'>loading…</span>";
-  try {
-    const data = await api(`/api/robots/${robotId}/choreography/list`);
-    state.animations[robotId] = data.animations || [];
-    renderAnimations(robotId);
-  } catch (e) {
-    container.innerHTML = `<span class='muted'>unavailable: ${escapeHtml(e.message)}</span>`;
-  }
-}
-
-function renderAnimations(robotId) {
-  const container = $("#animations");
-  container.innerHTML = "";
-  state.animations[robotId].forEach((anim) => {
-    const btn = document.createElement("button");
-    btn.innerHTML = `<span>${escapeHtml(anim.name)}</span>` +
-        `<span class="desc">${escapeHtml(anim.description)}</span>`;
-    btn.onclick = () => runAction(btn, () =>
-        api(`/api/robots/${robotId}/choreography/execute/${encodeURIComponent(anim.name)}`,
-            { method: "POST" }).then(() => toast(`▶ ${anim.name}`)));
-    container.appendChild(btn);
   });
 }
 
@@ -505,47 +428,6 @@ function renderDebug() {
 
 // ---------- actions ----------
 
-document.addEventListener("click", (event) => {
-  const target = event.target.closest("[data-interact]");
-  if (target && state.selected) {
-    runAction(target, () =>
-        api(`/api/robots/${state.selected}/interact/${target.dataset.interact}`, { method: "POST" })
-          .then(() => toast(`❤ ${target.dataset.interact}`)));
-  }
-});
-
-$("#autonomous-toggle").onclick = (event) => {
-  const status = state.statuses[state.selected] || {};
-  const verb = status.autonomous ? "stop" : "start";
-  runAction(event.target, () =>
-      api(`/api/robots/${state.selected}/autonomous/${verb}`, { method: "POST" })
-        .then(() => toast(`Autonomous ${verb}ed`)));
-};
-
-$("#behavior-once").onclick = (event) => {
-  runAction(event.target, () =>
-      api(`/api/robots/${state.selected}/behavior`)
-        .then((decision) => toast(`🧠 ${decision.behavior}: ${decision.reason}`)));
-};
-
-$("#raw-send").onclick = (event) => {
-  const command = $("#raw-command").value.trim();
-  if (!command) return;
-  runAction(event.target, () =>
-      api(`/api/robots/${state.selected}/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command }),
-      }).then((result) => {
-        toast(result.success ? `→ ${command}` : "Command failed", !result.success);
-        $("#raw-command").value = "";
-      }));
-};
-
-$("#raw-command").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") $("#raw-send").click();
-});
-
 $("#fleet-auto-start").onclick = (event) =>
     runAction(event.target, () => api("/api/fleet/autonomous/start", { method: "POST" })
       .then((result) => toast(`Autonomous started on ${Object.values(result).filter(Boolean).length} robot(s)`)));
@@ -555,6 +437,21 @@ $("#fleet-auto-stop").onclick = (event) =>
       .then(() => toast("Autonomous stopped fleet-wide")));
 
 $("#sidebar-open").onclick = () => $("#sidebar").classList.toggle("open");
+
+// Robot page tabs: Activity | Control (Control Panel embedded, lazy-loaded).
+document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab-bar .tab").forEach((t) =>
+        t.classList.toggle("active", t === tab));
+    document.querySelectorAll(".robot-tab").forEach((panel) =>
+        panel.classList.toggle("hidden",
+            panel.id !== `robot-tab-${tab.dataset.tab}`));
+    if (tab.dataset.tab === "control") {
+      const frame = $("#control-frame");
+      if (!frame.src) frame.src = "control.html?embedded=1";
+    }
+  });
+});
 
 // ---------- boot ----------
 
