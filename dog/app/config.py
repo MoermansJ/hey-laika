@@ -59,6 +59,10 @@ class Config:
     # Autonomous loop
     AUTONOMOUS_INTERVAL = int(os.getenv("AUTONOMOUS_INTERVAL", "15"))
 
+    # Host-managed lifecycle behavior: greet (stretch + jingle) when the
+    # robot comes online. Firmware is silent; personality lives here.
+    GREETING_ENABLED = _bool("GREETING_ENABLED", True)
+
     @classmethod
     def sqlalchemy_url(cls) -> str:
         if cls.DATABASE_TYPE == "postgres" and cls.DATABASE_URL:

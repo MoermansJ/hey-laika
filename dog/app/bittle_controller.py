@@ -398,6 +398,11 @@ class WiFiBittleController(BaseBittleController):
         self._info: dict = {"model": None, "firmwareVersion": None}
         self._telemetry: dict = {"battery": None, "signal": None}
         self._telemetry_at = 0.0
+        # Called (in a worker thread) whenever the robot transitions from
+        # unreachable to connected — the host-side "robot came online" event
+        # that boot/greeting behavior hangs off now that firmware is silent.
+        self.on_online = None
+        self._was_connected = False
 
     def connect(self) -> bool:
         import websocket  # lazy import so mock mode needs no hardware deps
@@ -411,6 +416,9 @@ class WiFiBittleController(BaseBittleController):
                 logger.error("WiFi WS connect failed to %s:%s: %s",
                              self.host, self.port, exc)
                 self._ws = None
+                # Robot genuinely unreachable: the next successful connect is
+                # a came-online transition (idle socket cycling is not).
+                self._was_connected = False
                 return False
             # '?' returns the boot banner; the model name and version are
             # the first two non-empty lines, same as over serial.
@@ -425,7 +433,11 @@ class WiFiBittleController(BaseBittleController):
                                   "firmwareVersion": text[1].split()[-1]}
             logger.info("WiFi WS connected to %s:%s: %s",
                         self.host, self.port, self._info)
-            return True
+            came_online = not self._was_connected
+            self._was_connected = True
+        if came_online and self.on_online is not None:
+            threading.Thread(target=self.on_online, daemon=True).start()
+        return True
 
     def disconnect(self) -> None:
         with self._lock:

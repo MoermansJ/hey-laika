@@ -22,6 +22,7 @@ from app.action_executor import execute_action
 from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
 from app.gait_learner import GaitLearner
+from app.greeting import BootGreeter
 from app.voice import (BEEP_PATTERNS, TtsNotConfiguredError, ollama_health,
                        play_beep, query_ollama, save_tts_audio,
                        synthesize_speech)
@@ -43,6 +44,8 @@ bittle.connect()
 choreography = ChoreographyLibrary()
 personality = PersonalityEngine()
 gait_learner = GaitLearner(bittle)
+greeter = BootGreeter(bittle, enabled=Config.GREETING_ENABLED)
+bittle.on_online = greeter.on_online
 
 # In-memory state surfaced to the orchestrator UI
 _started_at = time.time()
@@ -458,6 +461,37 @@ def gait_stop(robot_id: str):
 @robot_scoped
 def gait_model(robot_id: str):
     return jsonify({"robotId": robot_id, **gait_learner.get_model()})
+
+
+# ---------- Lifecycle behavior (host-managed, firmware is silent) ----------
+
+@app.get("/api/robots/<robot_id>/greeting")
+@robot_scoped
+def greeting_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **greeter.status()})
+
+
+@app.post("/api/robots/<robot_id>/greeting/run")
+@robot_scoped
+def greeting_run(robot_id: str):
+    """Manually trigger the go-mode greeting (also used for testing)."""
+    threading.Thread(target=greeter.run, daemon=True).start()
+    log_activity("greeting", "Go-mode greeting triggered")
+    return jsonify({"robotId": robot_id, "started": True})
+
+
+@app.post("/api/robots/<robot_id>/greeting/enable")
+@robot_scoped
+def greeting_enable(robot_id: str):
+    greeter.enabled = True
+    return jsonify({"robotId": robot_id, **greeter.status()})
+
+
+@app.post("/api/robots/<robot_id>/greeting/disable")
+@robot_scoped
+def greeting_disable(robot_id: str):
+    greeter.enabled = False
+    return jsonify({"robotId": robot_id, **greeter.status()})
 
 
 # ---------- Voice ("Hey Laika") — MVP with stubbed audio I/O ----------
