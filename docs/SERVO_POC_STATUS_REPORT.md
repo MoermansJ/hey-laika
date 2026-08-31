@@ -7,6 +7,20 @@
 
 ---
 
+> ## ⚠ Addendum (2026-08-31): most blockers below are RESOLVED
+>
+> This report is a point-in-time snapshot; the following has changed since:
+>
+> - **Robot connected and validated live** — firmware `B10_251121` over USB serial on 2026-08-30 (`docs/VALIDATION_RESULTS.md`), so §1's "never been connected" and §5's "completely untested" no longer hold.
+> - **Serial read path shipped** (blocker 2) — `SerialBittleController` is now a locked write→await-echo transaction engine with `j` readback and `?` handshake, covered by unit tests.
+> - **WiFi controller rewritten to the real protocol** (blocker 4) — `WiFiBittleController` now speaks the WebSocket `ws://<ip>:81` JSON/`b64:` task protocol this report prescribes, validated live driving the robot (stand/wave/sit) on 2026-08-31.
+> - **Docker deployment unblocked** (blocker 3) — the robot was provisioned onto WiFi (`w%SSID%password`, auto-reconnects each boot), so no COM passthrough is needed; compose passes `BITTLE_COMMUNICATION_METHOD=wifi` + `BITTLE_WIFI_HOST` to the adapter container.
+> - **`execute_action` implemented adapter-side** (blocker 5) and `simulate-actions: false` flipped in `application.yml`.
+> - **Controller tests exist** — `tests/test_serial_controller.py` and `tests/test_wifi_controller.py` (§5's "zero tests" is stale).
+> - §8's recommended plan Steps 0–1 are completed work.
+
+---
+
 ## 1. Hardware & Communication
 
 ### Bittle X V2 state

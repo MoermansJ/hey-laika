@@ -278,8 +278,8 @@ async function refreshVoiceHealth() {
         ? "model not pulled" : "LLM offline";
     chip.className = "chip warn";
     chip.title = health.ollama?.reachable
-        ? `Pull it with: docker exec bittle-ollama ollama pull ${health.ollama.configuredModel}`
-        : `Ollama unreachable at ${health.ollama?.url ?? "?"} — docker compose up -d ollama`;
+        ? `Pull it on the Ollama host: ollama pull ${health.ollama.configuredModel}`
+        : `Ollama unreachable at ${health.ollama?.url ?? "?"} — is the ollama service running?`;
   } catch {
     chip.textContent = "voice unavailable";
     chip.className = "chip warn";

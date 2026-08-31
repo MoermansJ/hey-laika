@@ -22,8 +22,9 @@ services:
     restart: unless-stopped
 
   # Local LLM for the "Hey Laika" voice feature. Temporary stand-in until
-  # real voice hardware + a bigger model; the adapter reaches it on
-  # OLLAMA_URL (default http://localhost:11434 when running natively).
+  # real voice hardware + a bigger model. The adapter container gets
+  # OLLAMA_URL=http://ollama:11434 below; a natively-run adapter uses its
+  # localhost:11434 default via the published port.
   # Start standalone with: docker compose up -d ollama
   ollama:
     image: ollama/ollama:latest
@@ -47,11 +48,21 @@ services:
       - ROBOT_ID=bittle-1
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DECISION_ENGINE=${DECISION_ENGINE:-claude}
-      - MOCK_MODE=${MOCK_MODE:-True}
+      # Defaults drive the real robot over WiFi; set MOCK_MODE=True in .env
+      # to run without hardware. The BiBoard IP is DHCP-assigned — keep a
+      # router reservation for it or override BITTLE_WIFI_HOST in .env.
+      - MOCK_MODE=${MOCK_MODE:-False}
+      - BITTLE_COMMUNICATION_METHOD=${BITTLE_COMMUNICATION_METHOD:-wifi}
+      - BITTLE_WIFI_HOST=${BITTLE_WIFI_HOST:-192.168.0.246}
+      # In-network Ollama for the voice feature (config.py's localhost
+      # default would point at this container itself).
+      - OLLAMA_URL=http://ollama:11434
       - ENVIRONMENT=development
       - SQLITE_DB_PATH=/data/bittle.db
     volumes:
       - bittle-1-data:/data
+    depends_on:
+      - ollama
     restart: unless-stopped
 
   # To add another robot: copy the python-bittle-* block, set the next

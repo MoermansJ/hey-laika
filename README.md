@@ -29,8 +29,10 @@ docker compose up --build
 # open http://localhost:8080
 ```
 
-Services: orchestrator (8080), python adapter for bittle-1 (host port 15001),
-PostgreSQL (host port 15432, `bittle`/`bittle`, db `bittle_fleet`).
+Services: orchestrator (8080), python adapter for bittle-1 (host port 15001;
+drives the robot over WiFi by default — set `MOCK_MODE=True` in `.env` to
+simulate), PostgreSQL (host port 15432, `bittle`/`bittle`, db `bittle_fleet`),
+Ollama (11434, local LLM for the voice feature).
 
 Note: the adapter and postgres host ports are 15001/15432 because 5001 and
 5432 fall in Windows excluded port ranges on this machine
