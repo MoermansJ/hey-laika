@@ -6,8 +6,8 @@ Three implementations behind one interface:
 - WiFiBittleController   — WebSocket client for the stock BiBoard firmware
                            (ws://<host>:81, JSON task frames, b64: binary)
 
-Serial protocol facts validated live 2026-08-30 (docs/VALIDATION_RESULTS.md in
-the orchestrator repo):
+Serial protocol facts validated live 2026-08-30 (docs/robot/VALIDATION_RESULTS.md
+in the orchestrator repo):
 - 115200 8N1, lines end \r\n; opening the port does NOT reboot the board
 - lowercase tokens are ASCII lines; uppercase are binary int8 args + '~'
 - the firmware echoes the command token on COMPLETION (moves are interpolated

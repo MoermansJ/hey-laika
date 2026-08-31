@@ -7,7 +7,7 @@ Updated: 2026-08-31
 Current state:
 - Hardware validated live: Bittle X, firmware B10_251121. Serial protocol
   (115200, echo-on-completion, binary I frames) captured in
-  orchestrator/docs/VALIDATION_RESULTS.md; servo API + /execute_action shipped
+  orchestrator/docs/robot/VALIDATION_RESULTS.md; servo API + /execute_action shipped
 - Robot provisioned onto home WiFi (auto-reconnects each boot; IP is
   DHCP-assigned — see BITTLE_WIFI_HOST in .env, reserve it on the router).
   WiFiBittleController rewritten to the stock firmware's WebSocket protocol
@@ -27,4 +27,4 @@ Next session:
 - Personality Phase 1b (adapter endpoint) and Phase 2 (Claude director);
   needs ANTHROPIC_API_KEY
 - Voice hardware (mic/speaker) when it arrives; swap Ollama model up
-- Spatial exploration MVP per orchestrator/docs/SPATIAL_MVP_REVIEW.md
+- Spatial exploration MVP per orchestrator/docs/reports/SPATIAL_MVP_REVIEW.md

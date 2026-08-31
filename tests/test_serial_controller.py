@@ -1,7 +1,7 @@
 """Unit tests for SerialBittleController against a scripted fake port.
 
 Response fixtures mirror real captures from firmware B10_251121
-(orchestrator/docs/VALIDATION_RESULTS.md): \r\n line endings, echo-on-
+(orchestrator/docs/robot/VALIDATION_RESULTS.md): \r\n line endings, echo-on-
 completion, tab/comma j-response layout, unsolicited X… noise lines.
 """
 import pytest
