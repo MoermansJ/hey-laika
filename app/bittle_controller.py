@@ -519,5 +519,6 @@ def create_bittle_controller(config: type[Config] = Config) -> BaseBittleControl
         return SerialBittleController(config.BITTLE_SERIAL_PORT,
                                       config.BITTLE_SERIAL_BAUD)
     if method == "wifi":
-        return WiFiBittleController(config.BITTLE_WIFI_HOST)
+        return WiFiBittleController(config.BITTLE_WIFI_HOST,
+                                    config.BITTLE_WIFI_PORT)
     return MockBittleController()

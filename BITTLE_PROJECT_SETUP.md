@@ -41,8 +41,9 @@ Building a complete management system for an AI robot dog (Petoi Bittle X V2) th
 - **Integration:** Multi-turn conversation with persistent history
 
 ### Hardware Communication
-- **Serial:** PySerial 3.5 (USB ↔ Bittle)
-- **WiFi:** Requests library (HTTP to WiFi module)
+- **Serial:** PySerial (USB ↔ Bittle)
+- **WiFi:** websocket-client (WebSocket to the BiBoard's onboard ESP32,
+  `ws://<ip>:81` — no extra module needed)
 - **Pattern:** Adapter pattern for multi-robot support
 
 ### Frontend
@@ -260,12 +261,11 @@ Main Flask application with endpoints:
 - `GET /display` → phone/projector display
 
 #### 8. `docker-compose.yml`
-Local development environment:
-- Flask service (port 5000)
-- Volume mounts for code + USB serial
+Local development environment (lives in `../orchestrator`):
+- Flask service (port 5000; robot reached over WiFi, so no USB passthrough)
 - Health checks
 - Logging configuration
-- Optional PostgreSQL service (commented out for Phase 0)
+- PostgreSQL + Ollama services
 
 #### 9. `Dockerfile`
 Production-ready image:
@@ -476,10 +476,11 @@ Should return:
 - Personality-based patterns
 - Mood visualization
 
-### Phase 4: WiFi Module (Days 13-14)
-- Install ESP8266 module
-- Change to `BITTLE_COMMUNICATION_METHOD=wifi`
-- Enable autonomous roaming
+### Phase 4: WiFi — ✅ DONE 2026-08-31 (no module needed)
+- ~~Install ESP8266 module~~ The BiBoard's onboard ESP32 does WiFi natively;
+  provisioned once over USB with `w%SSID%password`, auto-reconnects each boot
+- `BITTLE_COMMUNICATION_METHOD=wifi` — WebSocket client validated live
+- Autonomous roaming unlocked (no USB tether)
 
 ### Phase 5: Sensor Integration (Days 15-21)
 - Add sensor pack

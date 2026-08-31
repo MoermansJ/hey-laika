@@ -33,11 +33,16 @@ Copy `.env.example` to `.env` and edit. Key settings:
 | `ANTHROPIC_API_KEY` | Required when `DECISION_ENGINE=claude` |
 | `CLAUDE_MODEL` | Model for decisions (default `claude-opus-5`) |
 | `MOCK_MODE` | `True` = no hardware needed |
-| `BITTLE_COMMUNICATION_METHOD` | `mock` \| `serial` \| `wifi` |
+| `BITTLE_COMMUNICATION_METHOD` | `mock` \| `serial` (USB) \| `wifi` (WebSocket to the BiBoard's stock firmware) |
+| `BITTLE_WIFI_HOST` / `BITTLE_WIFI_PORT` | BiBoard address for `wifi` mode (default port 81) |
+| `BITTLE_SERIAL_PORT` / `BITTLE_SERIAL_BAUD` | USB port for `serial` mode (default `COM3` @ 115200) |
+| `OLLAMA_URL` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT` | Local LLM for the voice feature (defaults `http://localhost:11434`, `llama3.2:1b`) |
+| `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` | Optional TTS for voice replies |
 | `AUTONOMOUS_INTERVAL` | Seconds between autonomous decisions |
 
-`.env` is gitignored and excluded from the Docker image; secrets are injected
-at runtime via `env_file`.
+`.env` is gitignored and excluded from the Docker image; in compose, settings
+are injected per-service via `environment:` entries interpolated from the
+orchestrator repo's `.env`.
 
 ## API
 
@@ -56,6 +61,12 @@ camelCase keys to match the orchestrator's DTOs.
 | `/api/robots/<id>/choreography/list` | GET | List animations |
 | `/api/robots/<id>/choreography/execute/<name>` | POST | Execute animation |
 | `/api/robots/<id>/autonomous/start` / `stop` / `status` | POST/GET | Autonomous behavior loop |
+| `/api/robots/<id>/schema` | GET | Capability schema (servos, actions, moves) for UIs |
+| `/api/robots/<id>/servo` | GET/POST | Read commanded joint angles / move joints |
+| `/api/robots/<id>/execute_action` | POST | Execute a named high-level action plan |
+| `/api/robots/<id>/sound` | POST | Play a buzzer tone sequence |
+| `/api/robots/<id>/voice/health` | GET | Ollama reachability + model availability |
+| `/api/robots/<id>/voice/demo` / `voice/speak` | POST | "Hey Laika" text interaction / TTS |
 | `/api/robots/<id>/activity` | GET | Recent activity log |
 | `/api/robots/<id>/display` | GET | Current display text (what the dog "says") |
 
@@ -72,11 +83,15 @@ Flask (app/app.py)
 ## Tests
 
 ```bash
+pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
 ## Roadmap
 
-Phase 0 (this) → 1: USB hardware → 2: display streaming → 3: LEDs →
-4: WiFi module → 5: sensors → 6: polish → 7: cloud (Postgres/AWS).
-See `BITTLE_PROJECT_SETUP.md` for the full plan.
+Phases 0–1 and the WiFi transport are **done**: hardware validated over USB
+serial (firmware B10_251121), then moved to the BiBoard's onboard WiFi
+(WebSocket, no extra module needed). Remaining: display streaming → LEDs →
+sensors → polish → cloud (Postgres/AWS), plus the personality director and
+voice hardware. See `BITTLE_PROJECT_SETUP.md` for the original plan and
+`CONTEXT.md` for current state.
