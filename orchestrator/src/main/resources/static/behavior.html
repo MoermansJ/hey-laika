@@ -6,47 +6,30 @@
   <title>Behavior Lab</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
   <style>
-    /* Tokens from the validated reference palette (light + dark selected). */
+    /* Console design system (style.css palette) — fixed light, matching
+       the fleet console. Variable NAMES are load-bearing (behavior.js
+       reads the --s-* series colors); only values are console-mapped. */
     :root {
       color-scheme: light;
-      --page:        #f9f9f7;
-      --surface:     #fcfcfb;
-      --ink:         #0b0b0b;
-      --ink-2:       #52514e;
-      --muted:       #898781;
-      --grid:        #e1e0d9;
-      --baseline:    #c3c2b7;
-      --ring:        rgba(11,11,11,0.10);
-      --good:        #0ca30c;
-      --critical:    #d03b3b;
-      --seq:         #2a78d6;
+      --page:        #ecf0f1;   /* console --bg */
+      --surface:     #ffffff;   /* console --card */
+      --ink:         #2c3e50;   /* console --text */
+      --ink-2:       #46627f;
+      --muted:       #7f8c8d;   /* console --text-light */
+      --grid:        #e3e8ea;
+      --baseline:    #d5dbdb;   /* console --border */
+      --ring:        #d5dbdb;
+      --good:        #27ae60;
+      --critical:    #e74c3c;
+      --warn:        #f39c12;
+      --seq:         #3498db;   /* console --accent */
       /* categorical slots, fixed order — energy..contentment */
-      --s-energy:      #2a78d6;
-      --s-happiness:   #eb6834;
-      --s-boredom:     #1baf7a;
-      --s-curiosity:   #eda100;
-      --s-hunger:      #e87ba4;
-      --s-contentment: #008300;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        color-scheme: dark;
-        --page:        #0d0d0d;
-        --surface:     #1a1a19;
-        --ink:         #ffffff;
-        --ink-2:       #c3c2b7;
-        --muted:       #898781;
-        --grid:        #2c2c2a;
-        --baseline:    #383835;
-        --ring:        rgba(255,255,255,0.10);
-        --seq:         #3987e5;
-        --s-energy:      #3987e5;
-        --s-happiness:   #d95926;
-        --s-boredom:     #199e70;
-        --s-curiosity:   #c98500;
-        --s-hunger:      #d55181;
-        --s-contentment: #008300;
-      }
+      --s-energy:      #3498db;
+      --s-happiness:   #e67e22;
+      --s-boredom:     #9b59b6;
+      --s-curiosity:   #f39c12;
+      --s-hunger:      #e84393;
+      --s-contentment: #27ae60;
     }
 
     * { box-sizing: border-box; }
@@ -87,6 +70,7 @@
     .tile {
       background: var(--surface); border: 1px solid var(--ring);
       border-radius: 8px; padding: 0.55rem 0.7rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
     }
     .tile .name { font-size: 0.72rem; color: var(--ink-2); display: flex; align-items: center; gap: 0.35rem; }
     .tile .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
@@ -100,6 +84,7 @@
     .card {
       background: var(--surface); border: 1px solid var(--ring);
       border-radius: 8px; padding: 0.8rem 0.9rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
     }
     .card h2 { font-size: 0.85rem; margin: 0 0 0.6rem; color: var(--ink-2); font-weight: 600; }
 

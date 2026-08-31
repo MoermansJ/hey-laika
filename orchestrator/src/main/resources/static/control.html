@@ -6,36 +6,22 @@
   <title>Control Panel</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎛️</text></svg>">
   <style>
-    /* Tokens from the validated reference palette (light + dark selected). */
+    /* Console design system (style.css palette) — fixed light, matching
+       the fleet console this page is embedded in. */
     :root {
       color-scheme: light;
-      --page:        #f9f9f7;
-      --surface:     #fcfcfb;
-      --ink:         #0b0b0b;
-      --ink-2:       #52514e;
-      --muted:       #898781;
-      --grid:        #e1e0d9;
-      --baseline:    #c3c2b7;
-      --ring:        rgba(11,11,11,0.10);
-      --good:        #0ca30c;
-      --critical:    #d03b3b;
-      --warn:        #eda100;
-      --seq:         #2a78d6;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        color-scheme: dark;
-        --page:        #0d0d0d;
-        --surface:     #1a1a19;
-        --ink:         #ffffff;
-        --ink-2:       #c3c2b7;
-        --muted:       #898781;
-        --grid:        #2c2c2a;
-        --baseline:    #383835;
-        --ring:        rgba(255,255,255,0.10);
-        --warn:        #c98500;
-        --seq:         #3987e5;
-      }
+      --page:        #ecf0f1;   /* console --bg */
+      --surface:     #ffffff;   /* console --card */
+      --ink:         #2c3e50;   /* console --text */
+      --ink-2:       #46627f;
+      --muted:       #7f8c8d;   /* console --text-light */
+      --grid:        #e3e8ea;
+      --baseline:    #d5dbdb;   /* console --border */
+      --ring:        #d5dbdb;
+      --good:        #27ae60;
+      --critical:    #e74c3c;
+      --warn:        #f39c12;
+      --seq:         #3498db;   /* console --accent */
     }
 
     * { box-sizing: border-box; }
@@ -76,6 +62,7 @@
     .card {
       background: var(--surface); border: 1px solid var(--ring);
       border-radius: 8px; padding: 0.8rem 0.9rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
     }
     .card h2 { font-size: 0.85rem; margin: 0 0 0.6rem; color: var(--ink-2); font-weight: 600; }
 

@@ -26,7 +26,7 @@
     .hl-nav { position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
       width: var(--hlnav-w); box-sizing: border-box; overflow: hidden;
       display: flex; flex-direction: column; gap: 0.15rem; padding: 0.6rem 0.5rem;
-      background: rgba(16, 18, 24, 0.97); border-right: 1px solid rgba(127,127,127,0.25);
+      background: #2c3e50; border-right: 1px solid rgba(255,255,255,0.12);
       transition: width 0.18s ease; }
     body.hl-nav-collapsed .hl-nav { width: var(--hlnav-w-collapsed); }
     .hl-nav a, .hl-nav button { display: flex; align-items: center; gap: 0.55rem;
