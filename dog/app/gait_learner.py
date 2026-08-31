@@ -114,6 +114,7 @@ class GaitLearner:
         self.current_batch = 0
         self.recenter_mode = "manual"
         self.verify_every = 3
+        self.arena_half_m = 0.5
         # Pose estimate: x/y meters from home, heading deg (0 = start facing,
         # left positive). Forward unit vector for heading h: (-sin h, cos h).
         self._x = self._y = self._heading = 0.0
@@ -273,28 +274,76 @@ class GaitLearner:
                 return
             remaining = _norm(remaining - actual)
 
-    def _auto_recenter(self) -> None:
-        """Dead-reckon back to home, then restore the starting heading.
+    def _goto(self, tx: float, ty: float,
+              final_heading: float | None = None) -> None:
+        """Dead-reckon to a target point, optionally facing final_heading.
 
-        Iterative: the aiming turns are arcs (radius comparable to the
-        distances being corrected), so each round re-aims from the updated
-        pose. Converges to within roughly a stride of home.
+        Iterative: corrections themselves move the robot, so each round
+        re-aims from the updated pose. Aiming uses turn-in-place, so this
+        converges to within roughly a stride of the target.
         """
         for _ in range(3):
-            distance = self._home_distance()
+            dx, dy = tx - self._x, ty - self._y
+            distance = math.hypot(dx, dy)
             if distance < HOME_CLOSE_ENOUGH_M:
                 break
-            # Bearing of the home vector (-x, -y) in our convention.
-            bearing = math.degrees(math.atan2(self._x, -self._y))
+            # Bearing of the target vector in our convention.
+            bearing = math.degrees(math.atan2(-dx, dy))
             self._turn_by(_norm(bearing - self._heading))
-            distance = self._home_distance()  # aiming arcs moved us too
+            dx, dy = tx - self._x, ty - self._y
+            distance = math.hypot(dx, dy)
             if distance < HOME_CLOSE_ENOUGH_M:
                 break
             cycles = max(1, min(6, round((distance - STRIDE_FIRST_CYCLE)
                                          / STRIDE_PER_CYCLE) + 1))
             if self._measured_walk(cycles) is None:
                 break
-        self._turn_by(_norm(-self._heading))
+        if final_heading is not None:
+            self._turn_by(_norm(final_heading - self._heading))
+
+    def _auto_recenter(self) -> None:
+        self._goto(0.0, 0.0, final_heading=0.0)
+
+    _DIAGONALS = (45.0, 135.0, -45.0, -135.0)
+
+    def _prepare_trial(self, command: str) -> bool:
+        """Stage the trial so its predicted footprint stays on the arena.
+
+        Turns launch from home with the arc's chord aimed at a diagonal
+        (maximum room from center); walks are staged half the walk length
+        behind home along a diagonal so they pass through the middle.
+        Returns False (trial unsafe) if the footprint cannot fit at all.
+        """
+        parts = command.split()
+        kind = parts[0]
+        arg = int(parts[1]) if len(parts) > 1 else 1
+        # Component-wise safe reach from center; 1.3/1.2 factors absorb the
+        # known overshoot and stride variance conservatively.
+        half = self.arena_half_m - 0.08
+        if kind in ("kwkL", "kwkR"):
+            delta = arg if kind == "kwkL" else -arg
+            # 1.3 on the swept angle absorbs the known momentum overshoot;
+            # empirical 90° chords are ~0.57m and must pass the 0.5m arena.
+            swept = min(abs(delta) * 1.3, 179.0)
+            chord = 2 * _turn_radius_m(arg) * math.sin(math.radians(swept) / 2)
+            if chord > half * 1.41:
+                return False
+            # Chord bearing ≈ heading + delta/2; pick the diagonal needing
+            # the least pre-rotation from the current heading.
+            diag = min(self._DIAGONALS,
+                       key=lambda c: abs(_norm(c - delta / 2 - self._heading)))
+            self._goto(0.0, 0.0, final_heading=_norm(diag - delta / 2))
+        elif kind == "kwkF":
+            distance = (STRIDE_FIRST_CYCLE
+                        + STRIDE_PER_CYCLE * (arg - 1)) * 1.2
+            if distance > 2 * half * 1.41:
+                return False
+            diag = min(self._DIAGONALS,
+                       key=lambda c: abs(_norm(c - self._heading)))
+            rad = math.radians(diag)
+            self._goto((distance / 2) * math.sin(rad),
+                       -(distance / 2) * math.cos(rad), final_heading=diag)
+        return True
 
     # ---- model updates ----------------------------------------------------
 
@@ -353,7 +402,7 @@ class GaitLearner:
 
     def start(self, sequence: list[str] | None = None, iterations: int = 1,
               batch_size: int = 2, recenter: str = "manual",
-              verify_every: int = 3) -> bool:
+              verify_every: int = 3, arena_half_m: float = 0.5) -> bool:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return False
@@ -363,6 +412,7 @@ class GaitLearner:
             self.recenter_mode = recenter if recenter in ("auto", "manual") \
                 else "manual"
             self.verify_every = max(1, verify_every)
+            self.arena_half_m = max(0.3, float(arena_half_m))
             self.state = "running"
         self._stop.clear()
         self._continue.clear()
@@ -403,6 +453,14 @@ class GaitLearner:
                     logger.warning("Gait learning paused: %.2fV < %.2fV floor",
                                    voltage, LOW_VOLTAGE_FLOOR)
                     return
+                if self.recenter_mode == "auto" and \
+                        not self._prepare_trial(command):
+                    trial = {"command": command, "at": time.time(),
+                             "skipped": "footprint exceeds arena bounds"}
+                    with self._lock:
+                        self.trials.append(trial)
+                    logger.warning("Gait trial skipped as unsafe: %s", command)
+                    continue
                 trial = self._run_trial(command)
                 with self._lock:
                     self.trials.append(trial)
@@ -411,7 +469,8 @@ class GaitLearner:
 
                 last = index == len(self.pending) - 1
                 if self.recenter_mode == "auto":
-                    self._auto_recenter()
+                    if last:
+                        self._auto_recenter()
                     diverged = self._home_distance() > POSE_DIVERGENCE_M
                     if not last and (diverged or
                                      done_since_verify >= self.verify_every):
@@ -419,6 +478,8 @@ class GaitLearner:
                             logger.warning("Pose estimate diverged (%.2fm); "
                                            "requesting human recenter",
                                            self._home_distance())
+                        else:
+                            self._auto_recenter()
                         self._pause_for_human()
                         done_since_verify = 0
                 elif not last and (index + 1) % self.batch_size == 0:

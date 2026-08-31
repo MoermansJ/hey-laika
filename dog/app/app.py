@@ -422,7 +422,8 @@ def gait_start(robot_id: str):
         iterations=int(data.get("iterations") or 1),
         batch_size=int(data.get("batchSize") or 2),
         recenter=data.get("recenter") or "manual",
-        verify_every=int(data.get("verifyEvery") or 3))
+        verify_every=int(data.get("verifyEvery") or 3),
+        arena_half_m=float(data.get("arenaHalfM") or 0.5))
     if not started:
         return jsonify({"error": "busy",
                         "message": "A learning session is already running"}), 409

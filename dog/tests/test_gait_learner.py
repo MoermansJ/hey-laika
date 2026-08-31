@@ -145,6 +145,31 @@ def test_auto_recenter_verify_pause():
     assert status["trialsDone"] == 3
 
 
+def test_walk_trial_staged_behind_center():
+    ctrl = ScriptedController()
+    learner = make_learner(ctrl)
+    assert learner.start(sequence=["kwkF 6"], recenter="auto",
+                         verify_every=99)
+    run_to_state(learner, ("done",))
+    # Staging drives the dog behind center along a diagonal before the
+    # trial: a vt aim and at least one staging walk precede the trial walk.
+    first_trial_walk = ctrl.commands.index("kwkF 6")
+    staged = ctrl.commands[:first_trial_walk]
+    assert any(c in ("kvtL", "kvtR") for c in staged)
+    assert any(c.startswith("kwkF") for c in staged)
+
+
+def test_oversized_trial_skipped_as_unsafe():
+    ctrl = ScriptedController()
+    learner = make_learner(ctrl)
+    assert learner.start(sequence=["kwkL 90"], recenter="auto",
+                         arena_half_m=0.3, verify_every=99)
+    run_to_state(learner, ("done",))
+    trials = learner.get_model()["trials"]
+    assert trials[0].get("skipped") == "footprint exceeds arena bounds"
+    assert "kwkL 90" not in ctrl.commands  # never executed
+
+
 def test_vt_turn_closed_loop_stops_near_target():
     ctrl = ScriptedController()
     learner = make_learner(ctrl)
