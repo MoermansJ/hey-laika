@@ -40,12 +40,14 @@ CORS(app)
 
 init_db()
 bittle = create_bittle_controller()
+# Attach the lifecycle greeter BEFORE the first connect so "came online at
+# adapter startup" also greets.
+greeter = BootGreeter(bittle, enabled=Config.GREETING_ENABLED)
+bittle.on_online = greeter.on_online
 bittle.connect()
 choreography = ChoreographyLibrary()
 personality = PersonalityEngine()
 gait_learner = GaitLearner(bittle)
-greeter = BootGreeter(bittle, enabled=Config.GREETING_ENABLED)
-bittle.on_online = greeter.on_online
 
 # In-memory state surfaced to the orchestrator UI
 _started_at = time.time()
