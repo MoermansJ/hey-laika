@@ -446,9 +446,12 @@ document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
     document.querySelectorAll(".robot-tab").forEach((panel) =>
         panel.classList.toggle("hidden",
             panel.id !== `robot-tab-${tab.dataset.tab}`));
-    if (tab.dataset.tab === "control") {
-      const frame = $("#control-frame");
-      if (!frame.src) frame.src = "control.html?embedded=1";
+    // Embedded pages lazy-load on first tab activation.
+    const frames = { control: "control.html", voice: "voice.html" };
+    const src = frames[tab.dataset.tab];
+    if (src) {
+      const frame = $(`#${tab.dataset.tab}-frame`);
+      if (frame && !frame.src) frame.src = `${src}?embedded=1`;
     }
   });
 });

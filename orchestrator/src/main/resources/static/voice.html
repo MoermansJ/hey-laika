@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎤</text></svg>">
+  <style>
+    /* Console design system (style.css palette) — fixed light. */
+    :root {
+      color-scheme: light;
+      --page:     #ecf0f1;
+      --surface:  #ffffff;
+      --ink:      #2c3e50;
+      --ink-2:    #46627f;
+      --muted:    #7f8c8d;
+      --ring:     #d5dbdb;
+      --good:     #27ae60;
+      --critical: #e74c3c;
+      --warn:     #f39c12;
+      --seq:      #3498db;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem;
+    }
+    h1 { font-size: 1.15rem; margin: 0; }
+    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .topbar .spacer { flex: 1; }
+    select, button {
+      font: inherit; color: var(--ink); background: var(--surface);
+      border: 1px solid var(--ring); border-radius: 6px;
+      padding: 0.35rem 0.7rem; cursor: pointer;
+    }
+    button:hover { border-color: var(--muted); }
+    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    .chip {
+      font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
+      border: 1px solid var(--ring); color: var(--ink-2);
+    }
+    .chip.on   { color: var(--good); border-color: var(--good); }
+    .chip.warn { color: var(--warn); border-color: var(--warn); }
+    .card {
+      background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 8px; padding: 0.8rem 0.9rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    }
+    .voice-row { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
+    .voice-row input { flex: 1; font: inherit; color: var(--ink);
+      background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 6px; padding: 0.45rem 0.7rem; }
+    .voice-log { display: flex; flex-direction: column; gap: 0.45rem;
+      max-height: 55vh; overflow-y: auto; }
+    .voice-msg { max-width: 72ch; padding: 0.45rem 0.7rem; border-radius: 10px;
+      font-size: 0.85rem; border: 1px solid var(--ring); }
+    .voice-msg.user  { align-self: flex-end; background: var(--page); }
+    .voice-msg.laika { align-self: flex-start; background: var(--surface); }
+    .voice-msg.error { align-self: flex-start; color: var(--critical); }
+    .voice-msg .who { font-size: 0.65rem; color: var(--muted); display: block;
+      margin-bottom: 0.15rem; }
+    .voice-msg .lat { font-size: 0.65rem; color: var(--muted); margin-left: 0.5rem; }
+    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
+  </style>
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <div class="topbar">
+    <h1>🎤 Voice — “Hey Laika”</h1>
+    <select id="robot-select" title="Robot"></select>
+    <span id="voice-chip" class="chip">checking…</span>
+  </div>
+
+  <section class="card">
+    <div class="voice-row">
+      <input type="text" id="voice-input"
+             placeholder="Simulate speech — e.g. “who’s a good dog?”" autocomplete="off">
+      <button id="voice-send" class="primary">🎤 Send</button>
+    </div>
+    <div id="voice-log" class="voice-log"></div>
+    <div class="hint">Simulates the wake-word → record → respond chain: the dog beeps at
+      each stage and the reply comes from the local LLM. Microphone and speaker are
+      stubbed until the INMP441/MAX98357A hardware arrives.</div>
+  </section>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const state = { robotId: null };
+
+    async function api(path, options) {
+      const res = await fetch(`/api/robots/${state.robotId}${path}`, options);
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message = body?.message || body?.error || `HTTP ${res.status}`;
+        throw Object.assign(new Error(message), { status: res.status });
+      }
+      return body;
+    }
+
+    function voiceLogAppend(kind, text, latencySec) {
+      const log = $("#voice-log");
+      const msg = document.createElement("div");
+      msg.className = `voice-msg ${kind}`;
+      const who = kind === "user" ? "you" : kind === "laika" ? "laika 🐕" : "error";
+      const lat = latencySec != null
+          ? `<span class="lat">${latencySec.toFixed(1)}s think</span>` : "";
+      msg.innerHTML = `<span class="who">${who}${lat}</span>${text}`;
+      log.appendChild(msg);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function refreshVoiceHealth() {
+      const chip = $("#voice-chip");
+      try {
+        const health = await api("/voice/health");
+        if (health.ollama?.reachable && health.ollama?.modelAvailable) {
+          chip.textContent = `${health.ollama.configuredModel} ready`;
+          chip.className = "chip on";
+          chip.title = "Local LLM reachable; mic/speaker stubbed";
+          return;
+        }
+        chip.textContent = health.ollama?.reachable
+            ? "model not pulled" : "LLM offline";
+        chip.className = "chip warn";
+        chip.title = health.ollama?.reachable
+            ? `Pull it on the Ollama host: ollama pull ${health.ollama.configuredModel}`
+            : `Ollama unreachable at ${health.ollama?.url ?? "?"} — is the ollama service running?`;
+      } catch {
+        chip.textContent = "voice unavailable";
+        chip.className = "chip warn";
+      }
+    }
+
+    async function sendVoiceInput() {
+      const input = $("#voice-input");
+      const button = $("#voice-send");
+      const text = input.value.trim();
+      if (!text || button.disabled) return;
+      voiceLogAppend("user", text);
+      input.value = "";
+      button.disabled = true;
+      button.textContent = "🎤 …";
+      try {
+        const result = await api("/voice/demo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: text }),
+        });
+        voiceLogAppend("laika", result.response, result.latencySec?.ollama);
+      } catch (err) {
+        voiceLogAppend("error", err.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = "🎤 Send";
+        input.focus();
+      }
+    }
+
+    async function boot() {
+      const robots = await (await fetch("/api/fleet/robots")).json();
+      $("#robot-select").innerHTML = robots.map((r) =>
+          `<option value="${r.robotId}">${r.name}</option>`).join("");
+      state.robotId = robots[0]?.robotId;
+      if (!state.robotId) return;
+      $("#robot-select").onchange = (e) => { state.robotId = e.target.value; refreshVoiceHealth(); };
+      $("#voice-send").onclick = sendVoiceInput;
+      $("#voice-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendVoiceInput();
+      });
+      await refreshVoiceHealth();
+      setInterval(refreshVoiceHealth, 15000);
+    }
+    boot();
+  </script>
+</body>
+</html>
