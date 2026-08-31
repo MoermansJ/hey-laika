@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Orchestrator-owned behavior/personality API. This replaces the deprecated
  * adapter-proxied personality/behavior/autonomous endpoints (see
- * docs/PERSONALITY_SYSTEM_DESIGN.md §2.3).
+ * docs/design/PERSONALITY_SYSTEM_DESIGN.md §2.3).
  */
 @RestController
 @RequestMapping("/api/robots/{robotId}/behavior")

@@ -11,7 +11,7 @@
 >
 > This report is a point-in-time snapshot; the following has changed since:
 >
-> - **Robot connected and validated live** — firmware `B10_251121` over USB serial on 2026-08-30 (`docs/VALIDATION_RESULTS.md`), so §1's "never been connected" and §5's "completely untested" no longer hold.
+> - **Robot connected and validated live** — firmware `B10_251121` over USB serial on 2026-08-30 (`docs/robot/VALIDATION_RESULTS.md`), so §1's "never been connected" and §5's "completely untested" no longer hold.
 > - **Serial read path shipped** (blocker 2) — `SerialBittleController` is now a locked write→await-echo transaction engine with `j` readback and `?` handshake, covered by unit tests.
 > - **WiFi controller rewritten to the real protocol** (blocker 4) — `WiFiBittleController` now speaks the WebSocket `ws://<ip>:81` JSON/`b64:` task protocol this report prescribes, validated live driving the robot (stand/wave/sit) on 2026-08-31.
 > - **Docker deployment unblocked** (blocker 3) — the robot was provisioned onto WiFi (`w%SSID%password`, auto-reconnects each boot), so no COM passthrough is needed; compose passes `BITTLE_COMMUNICATION_METHOD=wifi` + `BITTLE_WIFI_HOST` to the adapter container.
@@ -88,7 +88,7 @@ Spring Boot 3 / Java 21 / Maven. Every handler does real work; the only simulate
 
 - **`FleetController`** (`/api/fleet`): robot registry, parallel status sweep, fleet stats, fleet-wide autonomous start/stop.
 - **`RobotController`** (`/api/robots/{id}/…`): pure passthrough to the Python adapter — status, personality, behavior, **raw `POST /command`**, interact, choreography, autonomous, activity, display. Marked legacy in the design doc but fully wired and used by the fleet console.
-- **`BehaviorController`** (`/api/robots/{id}/behavior/**`, uncommitted): orchestrator-owned personality system — Phase 1 of `docs/PERSONALITY_SYSTEM_DESIGN.md` v1.1. Per-robot behavior loop thread (2.5s reflex cycle), rule-based decision engine, 15-action catalog with posture/energy gating, manual action queue that pre-empts autonomy, STOMP broadcast per cycle. 15 unit tests green.
+- **`BehaviorController`** (`/api/robots/{id}/behavior/**`, uncommitted): orchestrator-owned personality system — Phase 1 of `docs/design/PERSONALITY_SYSTEM_DESIGN.md` v1.1. Per-robot behavior loop thread (2.5s reflex cycle), rule-based decision engine, 15-action catalog with posture/energy gating, manual action queue that pre-empts autonomy, STOMP broadcast per cycle. 15 unit tests green.
 - **Persistence:** one JPA entity (`robots` table, Postgres via `ddl-auto: update`). Personality state and decision history are in-memory only (Phase 4 is persistence).
 - **WebSocket:** push-only STOMP on `/ws`; fleet + per-robot topics at 2/3/5s cadence plus `/topic/robot/{id}/behavior` per loop cycle.
 - **Dev profile:** `application-dev.yml` (uncommitted) runs on in-memory H2 — no Docker/Postgres needed, the fastest POC harness.

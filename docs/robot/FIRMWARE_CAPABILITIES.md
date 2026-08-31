@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-31
 **Source:** full mine of `F:\projects\robot\opencat-esp32` (snapshot `B10_260820`, a modified Petoi fork). Our robot runs `B10_251121` — items marked ⚠ are newer-tree features that must be verified live before relying on them.
-**Already in use elsewhere:** serial + WiFi WS transports, `k` skills, `I/i` joint moves, `j` readback, `b` tones, `P` voltage, `?` banner, `w%` WiFi provisioning, `gp/gP` IMU stream, closed-loop turns, IMU exception lines, voice-module passthrough (see `SPATIAL_MVP_REVIEW.md`).
+**Already in use elsewhere:** serial + WiFi WS transports, `k` skills, `I/i` joint moves, `j` readback, `b` tones, `P` voltage, `?` banner, `w%` WiFi provisioning, `gp/gP` IMU stream, closed-loop turns, IMU exception lines, voice-module passthrough (see `../reports/SPATIAL_MVP_REVIEW.md`).
 
 Build flags on this board: `BITTLE` + `BiBoard_V1_0`, NVS persistence (no I2C EEPROM), `BT_BLE` + `BT_SSP` + `BT_CLIENT` + `WEB_SERVER` + gyro all on. **No IR pin, no NeoPixel pin** on this board revision.
 

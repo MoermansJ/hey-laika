@@ -25,7 +25,7 @@ management:
       show-details: always
 
 # Autonomous behavior loops (orchestrator-owned brain; see
-# docs/PERSONALITY_SYSTEM_DESIGN.md). Loops are started via the behavior API
+# docs/design/PERSONALITY_SYSTEM_DESIGN.md). Loops are started via the behavior API
 # unless auto-start is enabled.
 behavior:
   decision-interval-ms: 2500
