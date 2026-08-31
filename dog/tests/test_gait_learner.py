@@ -15,20 +15,30 @@ class ScriptedController:
         self.drift_per_cycle = drift_per_cycle
         self.voltage = voltage
         self.commands: list[str] = []
+        self.spin = 0.0  # deg advanced per gp read while a kvt gait runs
 
     def send_command(self, command):
         self.commands.append(command)
         parts = command.split()
-        if parts[0] in ("kwkL", "kvtL"):
+        if parts[0] == "kwkL":
             self.yaw += int(parts[1]) * self.turn_gain
-        elif parts[0] in ("kwkR", "kvtR"):
+        elif parts[0] == "kwkR":
             self.yaw -= int(parts[1]) * self.turn_gain
         elif parts[0] == "kwkF":
             self.yaw += int(parts[1]) * self.drift_per_cycle
-        return command != "kup"  # kup no-ops report failure on hardware
+        elif command == "kvtL":
+            self.spin = 8.0  # continuous turn-in-place, like real firmware
+        elif command == "kvtR":
+            self.spin = -8.0
+        elif command == "kup":
+            was_spinning = self.spin != 0.0
+            self.spin = 0.0
+            return was_spinning  # kup no-ops report failure on hardware
+        return True
 
     def query(self, command):
         if command == "gp":
+            self.yaw += self.spin
             return [f"ICM:\t0.1\t0.2\t9.8\t{self.yaw:.1f}\t1.0\t-0.5"]
         if command == "P":
             return [f"Voltage: {self.voltage} V"]
@@ -36,10 +46,12 @@ class ScriptedController:
 
 
 def make_learner(ctrl):
-    return GaitLearner(ctrl, settle_poll_s=0.01, settle_reads=1,
-                       max_turn_wait_s=0.5, rearm_wait_s=0.0,
-                       walk_s_per_cycle=0.0, post_turn_wait_s=0.0,
-                       walk_extra_s=0.0)
+    learner = GaitLearner(ctrl, settle_poll_s=0.01, settle_reads=1,
+                          max_turn_wait_s=0.5, rearm_wait_s=0.0,
+                          walk_s_per_cycle=0.0, post_turn_wait_s=0.0,
+                          walk_extra_s=0.0)
+    learner.vt_poll_s = 0.0
+    return learner
 
 
 def run_to_state(learner, states, timeout=10.0):
@@ -131,6 +143,16 @@ def test_auto_recenter_verify_pause():
     learner.confirm_recenter()  # human confirms -> pose trust resets
     status = run_to_state(learner, ("done",))
     assert status["trialsDone"] == 3
+
+
+def test_vt_turn_closed_loop_stops_near_target():
+    ctrl = ScriptedController()
+    learner = make_learner(ctrl)
+    actual = learner._vt_turn("L", 90.0)
+    # Spin advances 8 deg/read; stop lead 5 deg -> stops within one step.
+    assert actual == pytest.approx(88, abs=8)
+    assert ctrl.spin == 0.0  # kup was sent — never left spinning
+    assert "kvtL" in ctrl.commands and "kup" in ctrl.commands
 
 
 def test_yaw_wrap_normalization():

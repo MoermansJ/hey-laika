@@ -96,6 +96,10 @@ class GaitLearner:
         self.walk_s_per_cycle = walk_s_per_cycle
         self.post_turn_wait_s = post_turn_wait_s
         self.walk_extra_s = walk_extra_s
+        # Host-closed-loop turn-in-place: poll fast (each gp ~0.2-0.4s) and
+        # stop slightly early to absorb momentum + stop latency (~9.4°/s spin).
+        self.vt_poll_s = 0.1
+        self.vt_stop_lead_deg = 5.0
 
         self._lock = threading.Lock()
         self._continue = threading.Event()
@@ -218,30 +222,55 @@ class GaitLearner:
         self._advance_pose_walk(distance, drift)
         return drift if before is not None and after is not None else None
 
+    def _vt_turn(self, direction: str, target_deg: float) -> float | None:
+        """Host-closed-loop turn-in-place: start the continuous kvt gait,
+        integrate yaw while it spins (~9.4°/s live), stop with kup when the
+        target is crossed. Validated live 2026-08-31: kvt takes NO angle
+        argument on B10_251121 — it spins until interrupted. The stop is in
+        a finally block: no code path may leave the robot spinning."""
+        self._rearm()
+        last = self._read_yaw()
+        if last is None:
+            return None
+        if not self.controller.send_command(f"kvt{direction}"):
+            return None
+        total = 0.0
+        deadline = time.time() + min(45.0, abs(target_deg) / 6.0 + 12.0)
+        try:
+            while time.time() < deadline:
+                yaw = self._read_yaw(tries=1)
+                if yaw is not None:
+                    total += _norm(yaw - last)
+                    last = yaw
+                    if abs(total) >= abs(target_deg) - self.vt_stop_lead_deg:
+                        break
+                time.sleep(self.vt_poll_s)
+        finally:
+            self.controller.send_command("kup")
+        time.sleep(self.rearm_wait_s)
+        final = self._read_yaw()
+        if final is not None:
+            total += _norm(final - last)
+        self._advance_pose_arc(total, _turn_radius_m(target_deg, "vt"))
+        return total
+
     def _turn_by(self, target_delta_deg: float, gait: str = "vt") -> None:
-        """Feedback-corrected turn: command, measure, correct — the mapping
-        primitive. Recentering uses the vt turn-in-place gait so the
-        correction itself barely displaces the robot. Gains for the vt gait
-        are learned on the fly from its own measurements."""
+        """Feedback-corrected turn to a relative heading — the mapping
+        primitive. Recentering uses host-closed-loop turn-in-place so the
+        correction itself barely displaces the robot."""
         remaining = _norm(target_delta_deg)
         for _ in range(TURN_MAX_STEPS):
             if abs(remaining) <= TURN_TOLERANCE_DEG:
                 return
             direction = "L" if remaining > 0 else "R"
-            gain_key = f"{gait}_gain_{'left' if direction == 'L' else 'right'}"
-            with self._lock:
-                gain = self.model.get(gain_key)
-            gain = gain if gain and gain > 0.3 else 1.0
-            command = int(min(TURN_CMD_MAX,
-                              max(TURN_CMD_MIN, abs(remaining) / gain)))
-            actual = self._measured_turn(direction, command, gait=gait)
+            if gait == "vt":
+                actual = self._vt_turn(direction, remaining)
+            else:
+                command = int(min(TURN_CMD_MAX,
+                                  max(TURN_CMD_MIN, abs(remaining))))
+                actual = self._measured_turn(direction, command, gait=gait)
             if actual is None:
                 return
-            signed_expected = command if direction == "L" else -command
-            with self._lock:
-                self.model[gain_key] = round(
-                    self._ema(self.model.get(gain_key),
-                              actual / signed_expected), 4)
             remaining = _norm(remaining - actual)
 
     def _auto_recenter(self) -> None:
