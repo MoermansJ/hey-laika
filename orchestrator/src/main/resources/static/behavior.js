@@ -426,6 +426,49 @@ function lifecycleLabel(command) {
   return CMD_LABELS[command] || command;
 }
 
+const lifecycleState = { greeting: null, idleBindings: [] };
+
+function renderGreetSteps() {
+  const container = document.getElementById("greet-steps");
+  container.innerHTML = (lifecycleState.greeting?.steps ?? [])
+      .map((s, i) => `<div class="step-row" data-idx="${i}">
+        <span class="idx">${i + 1}</span>
+        <input type="text" class="st-cmd" value="${s.command.replace(/"/g, "&quot;")}"
+               title="${lifecycleLabel(s.command)}">
+        <input type="number" class="st-settle" value="${s.settleS}" min="0" step="0.5">
+        <span class="unit">s</span>
+        <button class="rm" title="Remove step">×</button>
+      </div>`).join("");
+  container.querySelectorAll(".rm").forEach((btn) =>
+      btn.addEventListener("click", (e) => {
+        const idx = Number(e.target.closest(".step-row").dataset.idx);
+        lifecycleState.greeting.steps.splice(idx, 1);
+        renderGreetSteps();
+      }));
+}
+
+function collectGreetSteps() {
+  return [...document.querySelectorAll("#greet-steps .step-row")].map((row) => ({
+    command: row.querySelector(".st-cmd").value.trim(),
+    settleS: Number(row.querySelector(".st-settle").value) || 0,
+  })).filter((s) => s.command);
+}
+
+async function loadLifecycleEditors() {
+  try {
+    lifecycleState.greeting = await (await fetch(
+        `/api/robots/${state.robotId}/behaviors/startup_greeting`)).json();
+    renderGreetSteps();
+    const all = (await (await fetch(
+        `/api/robots/${state.robotId}/bindings`)).json()).bindings ?? [];
+    lifecycleState.idleBindings = all.filter((b) => b.event === "idle.timeout");
+    const seconds = lifecycleState.idleBindings
+        .map((b) => Number(b.filter?.seconds || 0)).sort((a, b) => a - b);
+    document.getElementById("idle-sit-s").value = seconds[0] ?? 60;
+    document.getElementById("idle-rest-s").value = seconds[seconds.length - 1] ?? 120;
+  } catch { /* adapter offline */ }
+}
+
 async function refreshLifecycle() {
   try {
     const g = await (await fetch(`/api/robots/${state.robotId}/greeting`)).json();
@@ -434,10 +477,6 @@ async function refreshLifecycle() {
     chip.className = "chip " + (g.enabled ? "on" : "warn");
     document.getElementById("greet-trigger").textContent =
         `Trigger: ${g.trigger ?? "robot comes online"}`;
-    document.getElementById("greet-seq").innerHTML = (g.sequence ?? [])
-        .map((s) => `<li>${lifecycleLabel(s.command)}` +
-                    `<code>${s.command}</code>` +
-                    `<span class="dur">${s.settleS}s</span></li>`).join("");
     document.getElementById("greet-runs").textContent =
         g.runs ? `ran ${g.runs}× (${g.lastResult})` : "not run yet";
     document.getElementById("greet-toggle").textContent =
@@ -449,10 +488,6 @@ async function refreshLifecycle() {
     const ichip = document.getElementById("idle-chip");
     ichip.textContent = idle.enabled ? "enabled" : "disabled";
     ichip.className = "chip " + (idle.enabled ? "on" : "warn");
-    document.getElementById("idle-seq").innerHTML =
-        `<li>After ${idle.sitAfterS}s stationary → Sit down<code>ksit</code></li>` +
-        `<li>After ${idle.restAfterS}s stationary → Lie down<code>krest</code></li>` +
-        `<li>Any command → back to active</li>`;
     document.getElementById("idle-now").textContent = `state: ${idle.state}`;
     document.getElementById("idle-toggle").textContent =
         idle.enabled ? "Disable" : "Enable";
@@ -462,6 +497,49 @@ async function refreshLifecycle() {
 }
 
 (function initLifecycle() {
+  document.getElementById("greet-add").addEventListener("click", () => {
+    if (!lifecycleState.greeting) return;
+    lifecycleState.greeting.steps = collectGreetSteps();
+    lifecycleState.greeting.steps.push({ command: "kup", settleS: 1.0 });
+    renderGreetSteps();
+  });
+  document.getElementById("greet-save").addEventListener("click", async () => {
+    const g = lifecycleState.greeting;
+    if (!g) return;
+    const steps = collectGreetSteps();
+    await fetch(`/api/robots/${state.robotId}/behaviors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: g.name, description: g.description,
+                             steps, interruptible: g.interruptible,
+                             cooldownS: g.cooldownS }),
+    });
+    document.getElementById("greet-saved").textContent = "saved ✓";
+    setTimeout(() => document.getElementById("greet-saved").textContent = "", 3000);
+    await loadLifecycleEditors();
+  });
+  document.getElementById("idle-save").addEventListener("click", async () => {
+    const sit = Number(document.getElementById("idle-sit-s").value) || 60;
+    const rest = Number(document.getElementById("idle-rest-s").value) || 120;
+    const bindings = lifecycleState.idleBindings;
+    if (!bindings.length) return;
+    const sorted = [...bindings].sort((a, b) =>
+        Number(a.filter?.seconds || 0) - Number(b.filter?.seconds || 0));
+    const updates = [
+      { ...sorted[0], filter: { seconds: sit } },
+      { ...sorted[sorted.length - 1], filter: { seconds: rest } },
+    ];
+    for (const binding of updates) {
+      await fetch(`/api/robots/${state.robotId}/bindings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(binding),
+      });
+    }
+    document.getElementById("idle-saved").textContent = "saved ✓";
+    setTimeout(() => document.getElementById("idle-saved").textContent = "", 3000);
+    await loadLifecycleEditors();
+  });
   document.getElementById("greet-run").addEventListener("click", async () => {
     await fetch(`/api/robots/${state.robotId}/greeting/run`, { method: "POST" });
     setTimeout(refreshLifecycle, 1500);
@@ -479,6 +557,7 @@ async function refreshLifecycle() {
   const tryStart = () => {
     if (state.robotId) {
       refreshLifecycle();
+      loadLifecycleEditors();
       setInterval(refreshLifecycle, 15000);
     } else {
       setTimeout(tryStart, 500);

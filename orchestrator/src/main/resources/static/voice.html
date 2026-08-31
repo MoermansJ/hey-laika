@@ -81,7 +81,20 @@
     <div id="voice-log" class="voice-log"></div>
     <div class="hint">Simulates the wake-word → record → respond chain: the dog beeps at
       each stage and the reply comes from the local LLM. Microphone and speaker are
-      stubbed until the INMP441/MAX98357A hardware arrives.</div>
+      stubbed until the INMP441/MAX98357A hardware arrives — until then, bark
+      sounds play through THIS device's speakers as Laika's voice.</div>
+  </section>
+
+  <section class="card" style="margin-top:0.9rem">
+    <h2>Sounds <span class="chip">host speakers (robot has buzzer only)</span></h2>
+    <div class="voice-row" style="margin-bottom:0">
+      <button data-sound="positive_bark">🐶 Positive bark</button>
+      <button data-sound="positive_bark2">🐶 Positive bark 2</button>
+      <button data-sound="negative_bark">🙀 Negative bark</button>
+      <label class="hint" style="margin:auto 0 auto auto">
+        <input type="checkbox" id="bark-on-reply" checked> bark on replies
+      </label>
+    </div>
   </section>
 
   <script>
@@ -97,6 +110,12 @@
       }
       return body;
     }
+
+    function playSound(name) {
+      new Audio(`audio/${name}.mp3`).play().catch(() => {});
+    }
+    document.querySelectorAll("[data-sound]").forEach((btn) =>
+        btn.addEventListener("click", () => playSound(btn.dataset.sound)));
 
     function voiceLogAppend(kind, text, latencySec) {
       const log = $("#voice-log");
@@ -148,8 +167,11 @@
           body: JSON.stringify({ input: text }),
         });
         voiceLogAppend("laika", result.response, result.latencySec?.ollama);
+        if ($("#bark-on-reply").checked)
+          playSound(Math.random() < 0.5 ? "positive_bark" : "positive_bark2");
       } catch (err) {
         voiceLogAppend("error", err.message);
+        if ($("#bark-on-reply").checked) playSound("negative_bark");
       } finally {
         button.disabled = false;
         button.textContent = "🎤 Send";

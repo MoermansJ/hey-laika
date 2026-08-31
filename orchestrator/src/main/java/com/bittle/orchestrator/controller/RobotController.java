@@ -189,6 +189,12 @@ public class RobotController {
         return fleetManager.get(robotId).lifecyclePostBody("/behaviors", body);
     }
 
+    @GetMapping("/behaviors/{name}")
+    public Map<String, Object> behavior(@PathVariable String robotId,
+                                        @PathVariable String name) {
+        return fleetManager.get(robotId).lifecycleGet("/behaviors/" + name);
+    }
+
     @GetMapping("/bindings")
     public Map<String, Object> bindings(@PathVariable String robotId) {
         return fleetManager.get(robotId).lifecycleGet("/bindings");

@@ -129,10 +129,23 @@
     .lc-note { font-weight: 400; font-size: 0.72rem; color: var(--muted); }
     .lifecycle { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
     .lc-block h3 { margin: 0.2rem 0 0.3rem; font-size: 0.92rem; }
-    .lc-seq { margin: 0.5rem 0; padding-left: 1.4rem; }
-    .lc-seq li { margin: 0.28rem 0; font-size: 0.84rem; }
-    .lc-seq code { font-size: 0.74rem; opacity: 0.75; margin-left: 0.35rem; }
-    .lc-seq .dur { font-size: 0.72rem; color: var(--muted); margin-left: 0.35rem; }
+    .step-rows { margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.3rem; }
+    .step-row { display: flex; gap: 0.4rem; align-items: center; }
+    .step-row .idx { font-size: 0.72rem; color: var(--muted); width: 1.2em; }
+    .step-row input[type="text"] { flex: 1; font: inherit; font-size: 0.8rem;
+      color: var(--ink); background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 6px; padding: 0.3rem 0.5rem; font-family: ui-monospace, monospace; }
+    .step-row input[type="number"] { width: 4.2em; font: inherit; font-size: 0.8rem;
+      color: var(--ink); background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 6px; padding: 0.3rem 0.35rem; }
+    .step-row .unit { font-size: 0.72rem; color: var(--muted); }
+    .step-row .rm { border-color: var(--critical); color: var(--critical);
+      padding: 0.2rem 0.5rem; }
+    .idle-edit { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0.5rem 0; }
+    .idle-edit label { font-size: 0.82rem; display: flex; gap: 0.35rem; align-items: center; }
+    .idle-edit input { width: 4.5em; font: inherit; font-size: 0.82rem;
+      color: var(--ink); background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 6px; padding: 0.3rem 0.35rem; }
   </style>
   <script src="nav.js" defer></script>
 </head>
@@ -181,20 +194,33 @@
       <div class="lc-block">
         <h3>🌅 Startup greeting <span id="greet-chip" class="chip">…</span></h3>
         <div class="hint" id="greet-trigger">—</div>
-        <ol class="lc-seq" id="greet-seq"></ol>
+        <div id="greet-steps" class="step-rows"></div>
+        <div class="controls">
+          <button id="greet-add">+ Add step</button>
+          <button id="greet-save" class="primary">💾 Save</button>
+          <span class="hint" id="greet-saved"></span>
+        </div>
         <div class="controls">
           <button id="greet-run">▶ Run now</button>
           <button id="greet-toggle">…</button>
           <span class="hint" id="greet-runs"></span>
         </div>
+        <div class="hint">Buzzer steps: <code>b note dur note dur…</code>
+          (note index, duration = 1000/dur ms) — edit the numbers to retune
+          the jingle.</div>
       </div>
       <div class="lc-block">
         <h3>😴 Idle ladder <span id="idle-chip" class="chip">…</span></h3>
         <div class="hint">When no motion commands arrive, the dog settles by itself.</div>
-        <ol class="lc-seq" id="idle-seq"></ol>
+        <div class="idle-edit">
+          <label>Sit after <input type="number" id="idle-sit-s" min="10" step="5"> s</label>
+          <label>Lie down after <input type="number" id="idle-rest-s" min="20" step="5"> s</label>
+        </div>
         <div class="controls">
+          <button id="idle-save" class="primary">💾 Save</button>
           <button id="idle-toggle">…</button>
           <span class="hint" id="idle-now"></span>
+          <span class="hint" id="idle-saved"></span>
         </div>
       </div>
     </div>
