@@ -19,9 +19,9 @@ class ScriptedController:
     def send_command(self, command):
         self.commands.append(command)
         parts = command.split()
-        if parts[0] == "kwkL":
+        if parts[0] in ("kwkL", "kvtL"):
             self.yaw += int(parts[1]) * self.turn_gain
-        elif parts[0] == "kwkR":
+        elif parts[0] in ("kwkR", "kvtR"):
             self.yaw -= int(parts[1]) * self.turn_gain
         elif parts[0] == "kwkF":
             self.yaw += int(parts[1]) * self.drift_per_cycle
@@ -38,7 +38,8 @@ class ScriptedController:
 def make_learner(ctrl):
     return GaitLearner(ctrl, settle_poll_s=0.01, settle_reads=1,
                        max_turn_wait_s=0.5, rearm_wait_s=0.0,
-                       walk_s_per_cycle=0.0)
+                       walk_s_per_cycle=0.0, post_turn_wait_s=0.0,
+                       walk_extra_s=0.0)
 
 
 def run_to_state(learner, states, timeout=10.0):
@@ -99,6 +100,37 @@ def test_low_battery_pauses_session():
     assert learner.start(sequence=["kwkL 45"], batch_size=1)
     status = run_to_state(learner, ("paused_low_battery",))
     assert status["trialsDone"] == 0  # no motion attempted on a sagging pack
+
+
+def test_auto_recenter_returns_home_and_restores_heading():
+    ctrl = ScriptedController(turn_gain=1.0)
+    learner = make_learner(ctrl)
+    assert learner.start(sequence=["kwkL 90"], batch_size=1,
+                         recenter="auto", verify_every=99)
+    status = run_to_state(learner, ("done",))
+    pose = status["poseEstimate"]
+    # The trial arc displaced it ~0.47m; recentering must have walked it back
+    # and restored heading within the feedback-turn tolerance.
+    assert any(c.startswith("kwkF") for c in ctrl.commands)
+    assert abs(pose["headingDeg"]) <= 15
+    assert (pose["x"] ** 2 + pose["y"] ** 2) ** 0.5 < 0.35
+    # No human pause was needed (verify_every high, single trial).
+    assert status["state"] == "done"
+
+
+def test_auto_recenter_verify_pause():
+    ctrl = ScriptedController(turn_gain=1.0)
+    learner = make_learner(ctrl)
+    assert learner.start(sequence=["kwkL 45", "kwkR 45", "kwkL 90"],
+                         batch_size=1, recenter="auto", verify_every=2)
+    deadline = time.time() + 10
+    while learner.get_status()["state"] != "awaiting_recenter":
+        assert time.time() < deadline
+        time.sleep(0.02)
+    assert learner.get_status()["trialsDone"] == 2
+    learner.confirm_recenter()  # human confirms -> pose trust resets
+    status = run_to_state(learner, ("done",))
+    assert status["trialsDone"] == 3
 
 
 def test_yaw_wrap_normalization():
