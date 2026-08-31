@@ -250,6 +250,18 @@ function renderMeta() {
       ? "Adapter is in mock mode — no hardware will move" : "";
 }
 
+async function refreshBattery() {
+  const chip = $("#battery-chip");
+  try {
+    const status = await api("/status");
+    if (status.battery == null) { chip.style.display = "none"; return; }
+    chip.style.display = "";
+    chip.textContent = `🔋 ${Math.round(status.battery)}%`;
+    chip.className = "chip " + (status.battery < 20 ? "warn" : "on");
+    chip.title = "Battery estimate from pack voltage";
+  } catch { chip.style.display = "none"; }
+}
+
 // ---------- voice ("Hey Laika", simulated input) ----------
 
 function voiceLogAppend(kind, text, latencySec) {
@@ -357,9 +369,13 @@ async function boot() {
   });
   await loadRobot();
   await refreshVoiceHealth();
+  await refreshBattery();
   setInterval(pollReadback, READBACK_INTERVAL_MS);
   setInterval(refreshAutonomy, 5000);
   setInterval(refreshVoiceHealth, 15000);
+  // Matches the adapter's telemetry cache TTL — polling faster returns
+  // the same cached reading anyway.
+  setInterval(refreshBattery, 20000);
 }
 
 boot();
