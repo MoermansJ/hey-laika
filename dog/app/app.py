@@ -23,6 +23,7 @@ from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
 from app.gait_learner import GaitLearner
 from app.greeting import BootGreeter
+from app.idle_keeper import IdleKeeper
 from app.voice import (BEEP_PATTERNS, TtsNotConfiguredError, ollama_health,
                        play_beep, query_ollama, save_tts_audio,
                        synthesize_speech)
@@ -48,6 +49,12 @@ bittle.connect()
 choreography = ChoreographyLibrary()
 personality = PersonalityEngine()
 gait_learner = GaitLearner(bittle)
+idle_keeper = IdleKeeper(
+    bittle, enabled=Config.IDLE_ENABLED,
+    sit_after_s=Config.IDLE_SIT_S, rest_after_s=Config.IDLE_REST_S,
+    suppressed=lambda: autonomous.running
+    or gait_learner.get_status()["state"] in ("running", "awaiting_recenter"))
+idle_keeper.start()
 
 # In-memory state surfaced to the orchestrator UI
 _started_at = time.time()
@@ -494,6 +501,26 @@ def greeting_enable(robot_id: str):
 def greeting_disable(robot_id: str):
     greeter.enabled = False
     return jsonify({"robotId": robot_id, **greeter.status()})
+
+
+@app.get("/api/robots/<robot_id>/idle")
+@robot_scoped
+def idle_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **idle_keeper.status()})
+
+
+@app.post("/api/robots/<robot_id>/idle/enable")
+@robot_scoped
+def idle_enable(robot_id: str):
+    idle_keeper.enabled = True
+    return jsonify({"robotId": robot_id, **idle_keeper.status()})
+
+
+@app.post("/api/robots/<robot_id>/idle/disable")
+@robot_scoped
+def idle_disable(robot_id: str):
+    idle_keeper.enabled = False
+    return jsonify({"robotId": robot_id, **idle_keeper.status()})
 
 
 # ---------- Voice ("Hey Laika") — MVP with stubbed audio I/O ----------

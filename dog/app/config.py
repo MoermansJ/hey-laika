@@ -63,6 +63,11 @@ class Config:
     # robot comes online. Firmware is silent; personality lives here.
     GREETING_ENABLED = _bool("GREETING_ENABLED", True)
 
+    # Idle ladder: stationary > sit threshold -> sit; > rest threshold -> lie.
+    IDLE_ENABLED = _bool("IDLE_ENABLED", True)
+    IDLE_SIT_S = float(os.getenv("IDLE_SIT_S", "60"))
+    IDLE_REST_S = float(os.getenv("IDLE_REST_S", "120"))
+
     @classmethod
     def sqlalchemy_url(cls) -> str:
         if cls.DATABASE_TYPE == "postgres" and cls.DATABASE_URL:

@@ -75,6 +75,9 @@ def _echo_token(command: str) -> str:
 
 class BaseBittleController(ABC):
     mode = "base"
+    # Wall-clock of the last motion/skill command; the host-side idle keeper
+    # reads this to settle the robot when nothing has moved it for a while.
+    last_motion_at: float | None = None
 
     @abstractmethod
     def connect(self) -> bool: ...
@@ -143,6 +146,7 @@ class MockBittleController(BaseBittleController):
         if not self.connected:
             self.connect()
         self.last_command = command
+        self.last_motion_at = time.time()
         self.command_log.append({"command": command, "at": time.time()})
         # Keep the in-memory log bounded.
         self.command_log = self.command_log[-200:]
@@ -275,6 +279,7 @@ class SerialBittleController(BaseBittleController):
             logger.error("Serial command failed: %s", exc)
             return False
         self.last_command = command
+        self.last_motion_at = time.time()
         self.commands_sent += 1
         return found
 
@@ -508,23 +513,54 @@ class WiFiBittleController(BaseBittleController):
                            timeout)
             return None
 
+    def _heartbeat_ok(self) -> bool:
+        """Probe the socket: True if the firmware echoes a heartbeat frame."""
+        import json
+
+        try:
+            self._ws.send(json.dumps({"type": "heartbeat"}))
+            deadline = time.time() + min(2.5, _TIMEOUT_DEFAULT)
+            self._ws.settimeout(1.0)
+            while time.time() < deadline:
+                try:
+                    frame = json.loads(self._ws.recv())
+                except Exception:
+                    continue
+                if frame.get("type") == "heartbeat":
+                    return True
+        except Exception:
+            pass
+        return False
+
     def _send(self, command: str, timeout: float) -> list[str] | None:
-        """_transact with one reconnect-and-retry (firmware drops idle clients)."""
+        """_transact with one reconnect-and-retry (firmware drops idle clients).
+
+        Retries happen only when the socket is provably dead (send raised, or
+        a completion timeout AND a failed heartbeat probe) — if the firmware
+        answers the probe, the command reached it and must NOT be re-sent,
+        or motion could execute twice.
+        """
         with self._lock:
             if self._ws is None and not self.connect():
                 return None
             try:
-                return self._transact(command, timeout)
+                result = self._transact(command, timeout)
+                if result is not None:
+                    return result
+                if self._heartbeat_ok():
+                    return None  # firmware alive; command lost/slow — no retry
+                logger.warning("WiFi socket stale after timeout; reconnecting "
+                               "and retrying %r", command)
             except Exception as exc:
                 logger.warning("WiFi send failed (%s); reconnecting", exc)
-                if not self.connect():
-                    return None
-                try:
-                    return self._transact(command, timeout)
-                except Exception as exc2:
-                    logger.error("WiFi command failed after retry: %s", exc2)
-                    self.disconnect()
-                    return None
+            if not self.connect():
+                return None
+            try:
+                return self._transact(command, timeout)
+            except Exception as exc2:
+                logger.error("WiFi command failed after retry: %s", exc2)
+                self.disconnect()
+                return None
 
     # ---- public API -------------------------------------------------------
 
@@ -535,6 +571,7 @@ class WiFiBittleController(BaseBittleController):
         if result is None:
             return False
         self.last_command = command
+        self.last_motion_at = time.time()
         self.commands_sent += 1
         return True
 
