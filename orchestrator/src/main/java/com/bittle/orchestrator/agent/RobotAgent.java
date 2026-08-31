@@ -141,4 +141,9 @@ public class RobotAgent {
     public Map<String, Object> lifecyclePost(String path) {
         return client.lifecyclePost(definition.serviceUrl(), definition.id(), path);
     }
+
+    public Map<String, Object> lifecyclePostBody(String path, Map<String, Object> body) {
+        return client.lifecyclePostBody(definition.serviceUrl(), definition.id(),
+                path, body);
+    }
 }

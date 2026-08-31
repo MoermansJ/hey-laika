@@ -176,6 +176,46 @@ public class RobotController {
                 fleetManager.get(robotId).lifecyclePost("/idle/" + action));
     }
 
+    // ---- Behavior framework passthrough (arbiter, behaviors, bindings) ----
+
+    @GetMapping("/behaviors")
+    public Map<String, Object> behaviors(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/behaviors");
+    }
+
+    @PostMapping("/behaviors")
+    public Map<String, Object> upsertBehavior(@PathVariable String robotId,
+                                              @RequestBody Map<String, Object> body) {
+        return fleetManager.get(robotId).lifecyclePostBody("/behaviors", body);
+    }
+
+    @GetMapping("/bindings")
+    public Map<String, Object> bindings(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/bindings");
+    }
+
+    @PostMapping("/bindings")
+    public Map<String, Object> upsertBinding(@PathVariable String robotId,
+                                             @RequestBody Map<String, Object> body) {
+        return fleetManager.get(robotId).lifecyclePostBody("/bindings", body);
+    }
+
+    @GetMapping("/arbiter/status")
+    public Map<String, Object> arbiterStatus(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/arbiter/status");
+    }
+
+    @PostMapping("/arbiter/invoke")
+    public Map<String, Object> arbiterInvoke(@PathVariable String robotId,
+                                             @RequestBody Map<String, Object> body) {
+        return fleetManager.get(robotId).lifecyclePostBody("/arbiter/invoke", body);
+    }
+
+    @PostMapping("/arbiter/stop")
+    public Map<String, Object> arbiterStop(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecyclePost("/arbiter/stop");
+    }
+
     /**
      * Direct movement execution for the choreography builder. Refused while
      * the behavior loop drives the robot — the two would race on the servos.

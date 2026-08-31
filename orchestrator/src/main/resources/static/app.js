@@ -264,6 +264,7 @@ function showRobotPage(robotId) {
 
   renderRobotHeader(robotId);
   renderActivity(robotId);
+  renderArbiter(robotId);
   refreshRobotDetail(robotId);
   renderSidebarRobots();
 }
@@ -437,6 +438,42 @@ $("#fleet-auto-stop").onclick = (event) =>
       .then(() => toast("Autonomous stopped fleet-wide")));
 
 $("#sidebar-open").onclick = () => $("#sidebar").classList.toggle("open");
+
+// ---------- behavior arbiter status (robot page) ----------
+
+async function renderArbiter(robotId) {
+  try {
+    const status = await api(`/api/robots/${robotId}/arbiter/status`);
+    const current = status.current;
+    $("#arbiter-current").innerHTML = current
+        ? `<strong>${escapeHtml(current.behavior)}</strong>` +
+          ` · step ${current.step}/${current.stepTotal}` +
+          ` · <span class="muted">${escapeHtml(current.source)}</span>` +
+          ` · P${current.priority}` +
+          (status.queued.length ? ` · ${status.queued.length} queued` : "")
+        : `idle${status.queued.length ? ` · ${status.queued.length} queued` : ""}`;
+    const rows = (status.recentRuns || []).slice(0, 6).map((run) => {
+      const at = run.startedAt
+          ? new Date(run.startedAt).toLocaleTimeString() : "";
+      return `<tr><td>${escapeHtml(run.behavior)}</td>` +
+          `<td>${escapeHtml(run.status)}</td>` +
+          `<td class="muted">${escapeHtml(run.source)}</td>` +
+          `<td class="muted">${at}</td></tr>`;
+    }).join("");
+    $("#arbiter-log").innerHTML = rows
+        ? "<tr><th>Behavior</th><th>Status</th><th>Source</th><th>Started</th></tr>" + rows
+        : "";
+  } catch { /* adapter offline */ }
+}
+
+$("#arbiter-stop").onclick = () =>
+    api(`/api/robots/${state.selected}/arbiter/stop`, { method: "POST" })
+      .then(() => renderArbiter(state.selected))
+      .catch((e) => toast(e.message, true));
+
+setInterval(() => {
+  if (state.page === "robot" && state.selected) renderArbiter(state.selected);
+}, 5000);
 
 // Robot page tabs: Activity | Control (Control Panel embedded, lazy-loaded).
 document.querySelectorAll(".tab-bar .tab").forEach((tab) => {

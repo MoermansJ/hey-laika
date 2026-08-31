@@ -165,6 +165,14 @@ public class PythonServiceClient {
                 .retrieve().body(Map.class));
     }
 
+    public Map<String, Object> lifecyclePostBody(String serviceUrl, String robotId,
+                                                 String path,
+                                                 Map<String, Object> body) {
+        return exchange(() -> http.post().uri(robotUri(serviceUrl, robotId, path))
+                .body(body)
+                .retrieve().body(Map.class));
+    }
+
     private static String robotUri(String serviceUrl, String robotId, String path) {
         return serviceUrl + "/api/robots/" + robotId + path;
     }

@@ -408,6 +408,10 @@ class WiFiBittleController(BaseBittleController):
         # that boot/greeting behavior hangs off now that firmware is silent.
         self.on_online = None
         self._was_connected = False
+        # Called (in a worker thread) for interesting unsolicited firmware
+        # output that rides along in task results (e.g. EXCEPTION_REPORT
+        # lines from the reflex-free custom firmware).
+        self.on_output_line = None
 
     def connect(self) -> bool:
         import websocket  # lazy import so mock mode needs no hardware deps
@@ -459,6 +463,17 @@ class WiFiBittleController(BaseBittleController):
         self._task_seq += 1
         return f"{int(time.time() * 1000)}-{self._task_seq}"
 
+    def _surface_output(self, lines: list[str]) -> None:
+        """Dispatch interesting unsolicited lines to the host, off-thread
+        (we hold the controller lock here; listeners may need other locks)."""
+        if self.on_output_line is None:
+            return
+        for raw in "\n".join(lines).splitlines():
+            line = raw.strip()
+            if line.startswith("EXCEPTION_REPORT"):
+                threading.Thread(target=self.on_output_line, args=(line,),
+                                 daemon=True).start()
+
     def _transact(self, command: str, timeout: float) -> list[str] | None:
         """Send one command frame and wait for its completed/error reply.
 
@@ -501,10 +516,13 @@ class WiFiBittleController(BaseBittleController):
                 if status == "completed":
                     results = frame.get("results")
                     if isinstance(results, list):
-                        return [str(r) for r in results]
-                    if isinstance(results, str):
-                        return [results]
-                    return []
+                        lines = [str(r) for r in results]
+                    elif isinstance(results, str):
+                        lines = [results]
+                    else:
+                        lines = []
+                    self._surface_output(lines)
+                    return lines
                 if status == "error":
                     logger.warning("WiFi command errored: %r -> %r",
                                    command, frame.get("error"))

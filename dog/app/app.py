@@ -21,9 +21,11 @@ from pathlib import Path
 from app.action_executor import execute_action
 from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
+from app.arbiter import Arbiter
+from app.behavior_store import (PRIORITY_AGENT, PRIORITY_MANUAL,
+                                BehaviorStore)
+from app.event_binder import EventBinder
 from app.gait_learner import GaitLearner
-from app.greeting import BootGreeter
-from app.idle_keeper import IdleKeeper
 from app.voice import (BEEP_PATTERNS, TtsNotConfiguredError, ollama_health,
                        play_beep, query_ollama, save_tts_audio,
                        synthesize_speech)
@@ -41,20 +43,25 @@ CORS(app)
 
 init_db()
 bittle = create_bittle_controller()
-# Attach the lifecycle greeter BEFORE the first connect so "came online at
-# adapter startup" also greets.
-greeter = BootGreeter(bittle, enabled=Config.GREETING_ENABLED)
-bittle.on_online = greeter.on_online
+# Behavior framework: single arbiter owns all motion; lifecycle events
+# (online/idle/battery/exception) flow through stored bindings. Wired
+# BEFORE the first connect so startup counts as a came-online event.
+behavior_store = BehaviorStore()
+behavior_store.init()
+arbiter = Arbiter(bittle, behavior_store)
+event_binder = EventBinder(arbiter, behavior_store, bittle)
+bittle.on_online = event_binder.on_online
+bittle.on_output_line = event_binder.handle_output_line
+if not Config.GREETING_ENABLED:
+    behavior_store.set_binding_enabled("robot.online", "startup_greeting", False)
+if not Config.IDLE_ENABLED:
+    behavior_store.set_binding_enabled("idle.timeout", "idle_sit", False)
+    behavior_store.set_binding_enabled("idle.timeout", "idle_rest", False)
+event_binder.start()
 bittle.connect()
 choreography = ChoreographyLibrary()
 personality = PersonalityEngine()
 gait_learner = GaitLearner(bittle)
-idle_keeper = IdleKeeper(
-    bittle, enabled=Config.IDLE_ENABLED,
-    sit_after_s=Config.IDLE_SIT_S, rest_after_s=Config.IDLE_REST_S,
-    suppressed=lambda: autonomous.running
-    or gait_learner.get_status()["state"] in ("running", "awaiting_recenter"))
-idle_keeper.start()
 
 # In-memory state surfaced to the orchestrator UI
 _started_at = time.time()
@@ -472,55 +479,161 @@ def gait_model(robot_id: str):
     return jsonify({"robotId": robot_id, **gait_learner.get_model()})
 
 
-# ---------- Lifecycle behavior (host-managed, firmware is silent) ----------
+# ---------- Behavior framework (single arbiter owns all motion) ----------
+
+@app.get("/api/robots/<robot_id>/behaviors")
+@robot_scoped
+def behaviors_list(robot_id: str):
+    return jsonify({"robotId": robot_id,
+                    "behaviors": behavior_store.behaviors()})
+
+
+@app.post("/api/robots/<robot_id>/behaviors")
+@robot_scoped
+def behaviors_upsert(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    if not data.get("name") or not isinstance(data.get("steps"), list):
+        return jsonify({"error": "bad_request",
+                        "message": "'name' and 'steps' list required"}), 400
+    return jsonify(behavior_store.upsert_behavior(data))
+
+
+@app.get("/api/robots/<robot_id>/behaviors/<name>")
+@robot_scoped
+def behaviors_get(robot_id: str, name: str):
+    behavior = behavior_store.behavior(name)
+    if behavior is None:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(behavior)
+
+
+@app.get("/api/robots/<robot_id>/bindings")
+@robot_scoped
+def bindings_list(robot_id: str):
+    return jsonify({"robotId": robot_id,
+                    "bindings": behavior_store.bindings()})
+
+
+@app.post("/api/robots/<robot_id>/bindings")
+@robot_scoped
+def bindings_upsert(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    if not data.get("event") or not data.get("behavior"):
+        return jsonify({"error": "bad_request",
+                        "message": "'event' and 'behavior' required"}), 400
+    return jsonify(behavior_store.upsert_binding(data))
+
+
+@app.get("/api/robots/<robot_id>/arbiter/status")
+@robot_scoped
+def arbiter_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **arbiter.status()})
+
+
+@app.post("/api/robots/<robot_id>/arbiter/invoke")
+@robot_scoped
+def arbiter_invoke(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    name = data.get("behavior")
+    if not name:
+        return jsonify({"error": "bad_request",
+                        "message": "'behavior' required"}), 400
+    source = data.get("source", "manual")
+    priority = int(data.get("priority")
+                   or (PRIORITY_AGENT if source == "agent" else PRIORITY_MANUAL))
+    event_binder.reset_idle()
+    result = arbiter.submit(name, source=source, priority=priority)
+    log_activity("behavior", f"invoke {name} ({source}): {result['status']}")
+    return jsonify({"robotId": robot_id, "behavior": name, **result})
+
+
+@app.post("/api/robots/<robot_id>/arbiter/stop")
+@robot_scoped
+def arbiter_stop(robot_id: str):
+    return jsonify({"robotId": robot_id, **arbiter.stop_current()})
+
+
+# ---- Back-compat shims: the /greeting and /idle endpoints the GUI already
+# uses, reimplemented on the framework (greeting.py/idle_keeper.py retired).
+
+def _greeting_shim() -> dict:
+    behavior = behavior_store.behavior("startup_greeting") or {"steps": []}
+    bindings = behavior_store.bindings(event="robot.online")
+    enabled = any(b["enabled"] and b["behavior"] == "startup_greeting"
+                  for b in bindings)
+    runs = [r for r in behavior_store.recent_runs(50)
+            if r["behavior"] == "startup_greeting" and r["status"] != "running"]
+    return {"enabled": enabled, "runs": len(runs),
+            "lastResult": ("ok" if runs and runs[0]["status"] == "complete"
+                           else (runs[0]["status"] if runs else None)),
+            "trigger": "robot comes online (binding: robot.online)",
+            "sequence": behavior["steps"]}
+
+
+def _idle_shim() -> dict:
+    bindings = [b for b in behavior_store.bindings(event="idle.timeout")]
+    thresholds = sorted(float((b.get("filter") or {}).get("seconds", 0))
+                        for b in bindings) or [0, 0]
+    idle_runs = [r for r in behavior_store.recent_runs(20)
+                 if r["behavior"].startswith("idle_")]
+    state = "active"
+    if idle_runs and idle_runs[0]["status"] == "complete":
+        state = "lying" if idle_runs[0]["behavior"] == "idle_rest" else "sitting"
+    return {"enabled": any(b["enabled"] for b in bindings), "state": state,
+            "sitAfterS": thresholds[0], "restAfterS": thresholds[-1],
+            "transitions": len(idle_runs)}
+
 
 @app.get("/api/robots/<robot_id>/greeting")
 @robot_scoped
 def greeting_status(robot_id: str):
-    return jsonify({"robotId": robot_id, **greeter.status()})
+    return jsonify({"robotId": robot_id, **_greeting_shim()})
 
 
 @app.post("/api/robots/<robot_id>/greeting/run")
 @robot_scoped
 def greeting_run(robot_id: str):
-    """Manually trigger the go-mode greeting (also used for testing)."""
-    threading.Thread(target=greeter.run, daemon=True).start()
-    log_activity("greeting", "Go-mode greeting triggered")
-    return jsonify({"robotId": robot_id, "started": True})
+    result = arbiter.submit("startup_greeting", source="manual",
+                            priority=PRIORITY_MANUAL)
+    log_activity("greeting", f"Go-mode greeting: {result['status']}")
+    return jsonify({"robotId": robot_id,
+                    "started": result["status"] != "rejected", **result})
 
 
 @app.post("/api/robots/<robot_id>/greeting/enable")
 @robot_scoped
 def greeting_enable(robot_id: str):
-    greeter.enabled = True
-    return jsonify({"robotId": robot_id, **greeter.status()})
+    behavior_store.set_binding_enabled("robot.online", "startup_greeting", True)
+    return jsonify({"robotId": robot_id, **_greeting_shim()})
 
 
 @app.post("/api/robots/<robot_id>/greeting/disable")
 @robot_scoped
 def greeting_disable(robot_id: str):
-    greeter.enabled = False
-    return jsonify({"robotId": robot_id, **greeter.status()})
+    behavior_store.set_binding_enabled("robot.online", "startup_greeting", False)
+    return jsonify({"robotId": robot_id, **_greeting_shim()})
 
 
 @app.get("/api/robots/<robot_id>/idle")
 @robot_scoped
 def idle_status(robot_id: str):
-    return jsonify({"robotId": robot_id, **idle_keeper.status()})
+    return jsonify({"robotId": robot_id, **_idle_shim()})
 
 
 @app.post("/api/robots/<robot_id>/idle/enable")
 @robot_scoped
 def idle_enable(robot_id: str):
-    idle_keeper.enabled = True
-    return jsonify({"robotId": robot_id, **idle_keeper.status()})
+    behavior_store.set_binding_enabled("idle.timeout", "idle_sit", True)
+    behavior_store.set_binding_enabled("idle.timeout", "idle_rest", True)
+    return jsonify({"robotId": robot_id, **_idle_shim()})
 
 
 @app.post("/api/robots/<robot_id>/idle/disable")
 @robot_scoped
 def idle_disable(robot_id: str):
-    idle_keeper.enabled = False
-    return jsonify({"robotId": robot_id, **idle_keeper.status()})
+    behavior_store.set_binding_enabled("idle.timeout", "idle_sit", False)
+    behavior_store.set_binding_enabled("idle.timeout", "idle_rest", False)
+    return jsonify({"robotId": robot_id, **_idle_shim()})
 
 
 # ---------- Voice ("Hey Laika") — MVP with stubbed audio I/O ----------
