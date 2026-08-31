@@ -1,0 +1,10 @@
+# Third-party reference clones (not ours to version)
+petoi/
+opencat-esp32/
+
+# Local scratch / non-code assets
+noncodefiles/
+
+# OS junk
+Thumbs.db
+.DS_Store
