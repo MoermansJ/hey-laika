@@ -21,6 +21,7 @@ from pathlib import Path
 from app.action_executor import execute_action
 from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
+from app.gait_learner import GaitLearner
 from app.voice import (BEEP_PATTERNS, TtsNotConfiguredError, ollama_health,
                        play_beep, query_ollama, save_tts_audio,
                        synthesize_speech)
@@ -41,6 +42,7 @@ bittle = create_bittle_controller()
 bittle.connect()
 choreography = ChoreographyLibrary()
 personality = PersonalityEngine()
+gait_learner = GaitLearner(bittle)
 
 # In-memory state surfaced to the orchestrator UI
 _started_at = time.time()
@@ -397,6 +399,62 @@ def robot_execute_action(robot_id: str):
         "actualDurationMs": actual_ms,
         "message": message,
     })
+
+
+# ---------- Gait learning (autonomous IMU-based calibration) ----------
+
+@app.post("/api/robots/<robot_id>/gait/start")
+@robot_scoped
+def gait_start(robot_id: str):
+    """Start a learning session (moves the robot in supervised batches)."""
+    if autonomous.running:
+        return jsonify({"error": "autonomy_running",
+                        "message": "Stop the autonomous loop first."}), 409
+    data = request.get_json(silent=True) or {}
+    sequence = data.get("sequence")
+    if sequence is not None and (not isinstance(sequence, list) or
+                                 not all(isinstance(c, str) for c in sequence)):
+        return jsonify({"error": "bad_request",
+                        "message": "'sequence' must be a list of command "
+                                   "strings"}), 400
+    started = gait_learner.start(
+        sequence=sequence,
+        iterations=int(data.get("iterations") or 1),
+        batch_size=int(data.get("batchSize") or 2))
+    if not started:
+        return jsonify({"error": "busy",
+                        "message": "A learning session is already running"}), 409
+    log_activity("gait", "Gait learning session started")
+    return jsonify({"robotId": robot_id, "started": True,
+                    "status": gait_learner.get_status()})
+
+
+@app.get("/api/robots/<robot_id>/gait/status")
+@robot_scoped
+def gait_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **gait_learner.get_status()})
+
+
+@app.post("/api/robots/<robot_id>/gait/continue")
+@robot_scoped
+def gait_continue(robot_id: str):
+    """Operator confirms the robot is re-centered; next batch proceeds."""
+    gait_learner.confirm_recenter()
+    return jsonify({"robotId": robot_id, "status": gait_learner.get_status()})
+
+
+@app.post("/api/robots/<robot_id>/gait/stop")
+@robot_scoped
+def gait_stop(robot_id: str):
+    gait_learner.stop()
+    log_activity("gait", "Gait learning session stopped")
+    return jsonify({"robotId": robot_id, "status": gait_learner.get_status()})
+
+
+@app.get("/api/robots/<robot_id>/gait/model")
+@robot_scoped
+def gait_model(robot_id: str):
+    return jsonify({"robotId": robot_id, **gait_learner.get_model()})
 
 
 # ---------- Voice ("Hey Laika") — MVP with stubbed audio I/O ----------

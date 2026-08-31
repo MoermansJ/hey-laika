@@ -92,6 +92,15 @@ class BaseBittleController(ABC):
         """Battery/signal readout; None where the transport can't measure it."""
         return {"battery": None, "signal": None}
 
+    def query(self, command: str) -> list[str] | None:
+        """Send a command and return the firmware's output lines.
+
+        Unlike send_command (success bool only), this surfaces the payload —
+        needed for sensor reads like 'gp' (IMU) or 'P' (voltage). None means
+        the exchange failed or the transport can't capture output.
+        """
+        return None
+
     def get_info(self) -> dict:
         """Model/firmware identity where the transport can query it."""
         return {"model": None, "firmwareVersion": None}
@@ -321,6 +330,19 @@ class SerialBittleController(BaseBittleController):
                        JOINT_COUNT, payload)
         return None
 
+    def query(self, command: str) -> list[str] | None:
+        if self._serial is None and not self.connect():
+            return None
+        timeout = _TIMEOUT_SKILL if command.startswith(("k", "K", "X")) \
+            else _TIMEOUT_DEFAULT
+        try:
+            found, payload = self._transact((command + "\n").encode("ascii"),
+                                            _echo_token(command), timeout)
+        except Exception as exc:
+            logger.error("Serial query failed: %s", exc)
+            return None
+        return payload if found else None
+
     def get_telemetry(self) -> dict:
         if time.time() - self._telemetry_at < _TELEMETRY_TTL_S:
             return dict(self._telemetry)
@@ -539,6 +561,11 @@ class WiFiBittleController(BaseBittleController):
         logger.warning("j readback had no %d-value angle line: %r",
                        JOINT_COUNT, results)
         return None
+
+    def query(self, command: str) -> list[str] | None:
+        timeout = _TIMEOUT_SKILL_WS if command.startswith(("k", "K", "X")) \
+            else _TIMEOUT_DEFAULT
+        return self._send(command, timeout)
 
     def get_telemetry(self) -> dict:
         if time.time() - self._telemetry_at < _TELEMETRY_TTL_S:
