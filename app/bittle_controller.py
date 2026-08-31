@@ -3,8 +3,8 @@
 Three implementations behind one interface:
 - MockBittleController   — no hardware, logs commands and tracks virtual joints
 - SerialBittleController — USB serial (validated against firmware B10_251121)
-- WiFiBittleController   — ESP8266 WiFi module (wrong protocol for Bittle X;
-                           real firmware speaks WebSocket on :81 — needs rewrite)
+- WiFiBittleController   — WebSocket client for the stock BiBoard firmware
+                           (ws://<host>:81, JSON task frames, b64: binary)
 
 Serial protocol facts validated live 2026-08-30 (docs/VALIDATION_RESULTS.md in
 the orchestrator repo):
@@ -40,6 +40,9 @@ _WRITE_GAP_S = 0.001
 # with distance (~4 ms/deg), so 3s covers any single move with margin.
 _TIMEOUT_SKILL = 8.0
 _TIMEOUT_DEFAULT = 3.0
+# The WS task queue adds latency and the firmware's own task timeout is 45s;
+# observed: first skill after boot can exceed 8s before 'completed' arrives.
+_TIMEOUT_SKILL_WS = 20.0
 
 
 def _echo_token(command: str) -> str:
@@ -310,38 +313,204 @@ class SerialBittleController(BaseBittleController):
 
 
 class WiFiBittleController(BaseBittleController):
+    """WebSocket client for the stock BiBoard firmware (ws://<host>:81).
+
+    Protocol per opencat-esp32 webServer.h and the official app
+    (petoi/pyUI/SkillComposer.py): send {"type":"command","taskId":…,
+    "commands":[…]}; replies carry the same taskId with status
+    running/completed/error and a results list. Binary commands go as
+    "b64:" + base64(token byte + int8 args) — the firmware re-appends the
+    '~' terminator itself. The firmware caps connections at 2 clients and
+    drops any client idle >40s, so we hold ONE connection and reconnect on
+    demand; any frame refreshes the idle timer. 'completed' arrives when
+    the motion finishes, matching the serial controller's echo semantics.
+    """
     mode = "wifi"
 
-    def __init__(self, host: str):
+    def __init__(self, host: str, port: int = 81):
         self.host = host
-        self.reachable = False
+        self.port = port
+        self._ws = None
+        self._lock = threading.RLock()
+        self._task_seq = 0
+        self.last_command: str | None = None
+        self.commands_sent = 0
+        self._info: dict = {"model": None, "firmwareVersion": None}
 
     def connect(self) -> bool:
-        import requests
+        import websocket  # lazy import so mock mode needs no hardware deps
 
-        try:
-            requests.get(f"http://{self.host}/", timeout=3)
-            self.reachable = True
-        except requests.RequestException as exc:
-            logger.error("WiFi module unreachable at %s: %s", self.host, exc)
-            self.reachable = False
-        return self.reachable
+        with self._lock:
+            self.disconnect()
+            try:
+                self._ws = websocket.create_connection(
+                    f"ws://{self.host}:{self.port}", timeout=3)
+            except Exception as exc:
+                logger.error("WiFi WS connect failed to %s:%s: %s",
+                             self.host, self.port, exc)
+                self._ws = None
+                return False
+            # '?' returns the boot banner; the model name and version are
+            # the first two non-empty lines, same as over serial.
+            lines = self._transact("?", timeout=18.0)
+            if lines:
+                text = [l.strip() for l in "\n".join(lines).splitlines()
+                        if l.strip()]
+                # Stale frames from a dropped task can pollute the banner;
+                # only trust it when the first line looks like a model name.
+                if len(text) >= 2 and len(text[0]) > 2:
+                    self._info = {"model": text[0],
+                                  "firmwareVersion": text[1].split()[-1]}
+            logger.info("WiFi WS connected to %s:%s: %s",
+                        self.host, self.port, self._info)
+            return True
 
     def disconnect(self) -> None:
-        self.reachable = False
+        with self._lock:
+            if self._ws is not None:
+                try:
+                    self._ws.close()
+                except Exception:
+                    pass
+                self._ws = None
+
+    # ---- transaction core -------------------------------------------------
+
+    def _next_task_id(self) -> str:
+        self._task_seq += 1
+        return f"{int(time.time() * 1000)}-{self._task_seq}"
+
+    def _transact(self, command: str, timeout: float) -> list[str] | None:
+        """Send one command frame and wait for its completed/error reply.
+
+        Holds the lock for the whole exchange (single connection, and the
+        firmware runs one web task at a time). Returns the results lines on
+        completion, [] on completion without payload, None on error/timeout.
+        """
+        import json
+
+        with self._lock:
+            if self._ws is None:
+                raise RuntimeError("websocket not connected")
+            task_id = self._next_task_id()
+            self._ws.send(json.dumps({
+                "type": "command",
+                "taskId": task_id,
+                "commands": [command],
+                "timestamp": int(time.time() * 1000),
+            }))
+            deadline = time.time() + timeout
+            self._ws.settimeout(min(timeout, 5.0))
+            while time.time() < deadline:
+                try:
+                    raw = self._ws.recv()
+                except Exception:
+                    continue  # recv timeout tick; keep waiting until deadline
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8", errors="replace")
+                try:
+                    frame = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if frame.get("type") in ("connected", "heartbeat"):
+                    continue
+                if str(frame.get("taskId")) != task_id:
+                    continue
+                status = (frame.get("status") or "").lower()
+                if status == "running":
+                    continue
+                if status == "completed":
+                    results = frame.get("results")
+                    if isinstance(results, list):
+                        return [str(r) for r in results]
+                    if isinstance(results, str):
+                        return [results]
+                    return []
+                if status == "error":
+                    logger.warning("WiFi command errored: %r -> %r",
+                                   command, frame.get("error"))
+                    return None
+            logger.warning("No completion for %r within %.1fs", command,
+                           timeout)
+            return None
+
+    def _send(self, command: str, timeout: float) -> list[str] | None:
+        """_transact with one reconnect-and-retry (firmware drops idle clients)."""
+        with self._lock:
+            if self._ws is None and not self.connect():
+                return None
+            try:
+                return self._transact(command, timeout)
+            except Exception as exc:
+                logger.warning("WiFi send failed (%s); reconnecting", exc)
+                if not self.connect():
+                    return None
+                try:
+                    return self._transact(command, timeout)
+                except Exception as exc2:
+                    logger.error("WiFi command failed after retry: %s", exc2)
+                    self.disconnect()
+                    return None
+
+    # ---- public API -------------------------------------------------------
 
     def send_command(self, command: str) -> bool:
-        import requests
-
-        try:
-            resp = requests.get(f"http://{self.host}/cmd", params={"c": command}, timeout=3)
-            return resp.ok
-        except requests.RequestException as exc:
-            logger.error("WiFi command failed: %s", exc)
+        timeout = _TIMEOUT_SKILL_WS if command.startswith(("k", "K", "X")) \
+            else _TIMEOUT_DEFAULT
+        result = self._send(command, timeout)
+        if result is None:
             return False
+        self.last_command = command
+        self.commands_sent += 1
+        return True
+
+    def move_joints(self, moves: list[tuple[int, int]]) -> bool:
+        import base64
+
+        if not moves:
+            return True
+        for index, angle in moves:
+            if index not in PHYSICAL_JOINTS:
+                raise ValueError(f"invalid joint index {index}")
+            if not INT8_MIN <= angle <= INT8_MAX:
+                raise ValueError(f"angle {angle} outside {INT8_MIN}..{INT8_MAX}")
+        payload = b"I" + b"".join(struct.pack("bb", i, a) for i, a in moves)
+        command = "b64:" + base64.b64encode(payload).decode("ascii")
+        if self._send(command, _TIMEOUT_DEFAULT) is None:
+            return False
+        self.last_command = "I " + " ".join(f"{i}:{a}" for i, a in moves)
+        self.commands_sent += 1
+        return True
+
+    def read_joint_angles(self) -> list[int] | None:
+        results = self._send("j", _TIMEOUT_DEFAULT)
+        if results is None:
+            return None
+        for line in "\n".join(results).splitlines():
+            if "," not in line:
+                continue
+            try:
+                values = [int(tok.strip().rstrip(","))
+                          for tok in line.split() if tok.strip().rstrip(",")]
+            except ValueError:
+                continue
+            if len(values) == JOINT_COUNT:
+                return values
+        logger.warning("j readback had no %d-value angle line: %r",
+                       JOINT_COUNT, results)
+        return None
+
+    def get_info(self) -> dict:
+        return dict(self._info)
 
     def get_status(self) -> dict:
-        return {"connected": self.reachable, "mode": self.mode, "host": self.host}
+        return {
+            "connected": self._ws is not None,
+            "mode": self.mode,
+            "host": self.host,
+            "last_command": self.last_command,
+            "commands_sent": self.commands_sent,
+        }
 
 
 def create_bittle_controller(config: type[Config] = Config) -> BaseBittleController:
