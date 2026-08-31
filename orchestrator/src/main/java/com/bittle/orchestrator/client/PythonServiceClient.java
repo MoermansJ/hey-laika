@@ -152,6 +152,19 @@ public class PythonServiceClient {
                 .retrieve().body(Map.class));
     }
 
+    /** Untyped passthrough for host-side lifecycle behaviors (greeting/idle). */
+    public Map<String, Object> lifecycleGet(String serviceUrl, String robotId,
+                                            String path) {
+        return exchange(() -> http.get().uri(robotUri(serviceUrl, robotId, path))
+                .retrieve().body(Map.class));
+    }
+
+    public Map<String, Object> lifecyclePost(String serviceUrl, String robotId,
+                                             String path) {
+        return exchange(() -> http.post().uri(robotUri(serviceUrl, robotId, path))
+                .retrieve().body(Map.class));
+    }
+
     private static String robotUri(String serviceUrl, String robotId, String path) {
         return serviceUrl + "/api/robots/" + robotId + path;
     }

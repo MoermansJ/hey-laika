@@ -1,0 +1,66 @@
+/**
+ * Shared collapsible sidebar for the sub-pages (Behavior Lab, Control
+ * Panel, Sequence Builder). Injects its own markup and styles so each
+ * page only needs <script src="nav.js" defer></script>. The console
+ * (index.html) keeps its richer sidebar and shares the collapse state
+ * via the same localStorage key.
+ */
+(function () {
+  const PAGES = [
+    { href: "index.html", icon: "🏠", label: "Fleet Console" },
+    { href: "behavior.html", icon: "🧠", label: "Behavior Lab" },
+    { href: "control.html", icon: "🎛️", label: "Control Panel" },
+    { href: "builder.html", icon: "🎬", label: "Sequence Builder" },
+  ];
+  const KEY = "heyLaikaNavCollapsed";
+  const current = (location.pathname.split("/").pop() || "index.html");
+  if (current === "index.html" || current === "") return;
+
+  const css = `
+    :root { --hlnav-w: 188px; --hlnav-w-collapsed: 52px; }
+    body { padding-left: var(--hlnav-w); transition: padding-left 0.18s ease; }
+    body.hl-nav-collapsed { padding-left: var(--hlnav-w-collapsed); }
+    .hl-nav { position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+      width: var(--hlnav-w); box-sizing: border-box; overflow: hidden;
+      display: flex; flex-direction: column; gap: 0.15rem; padding: 0.6rem 0.5rem;
+      background: rgba(16, 18, 24, 0.97); border-right: 1px solid rgba(127,127,127,0.25);
+      transition: width 0.18s ease; }
+    body.hl-nav-collapsed .hl-nav { width: var(--hlnav-w-collapsed); }
+    .hl-nav a, .hl-nav button { display: flex; align-items: center; gap: 0.55rem;
+      padding: 0.45rem 0.55rem; border-radius: 8px; border: none; width: 100%;
+      background: none; color: #cfd5e1; text-decoration: none; font: inherit;
+      font-size: 0.85rem; cursor: pointer; white-space: nowrap; text-align: left; }
+    .hl-nav a:hover, .hl-nav button:hover { background: rgba(127,127,127,0.15); }
+    .hl-nav a.current { background: rgba(127,127,127,0.22); color: #fff; }
+    .hl-nav .hl-icon { font-size: 1.05rem; line-height: 1; flex: 0 0 auto; }
+    .hl-nav .hl-label { overflow: hidden; text-overflow: ellipsis;
+      opacity: 1; transition: opacity 0.12s ease; }
+    body.hl-nav-collapsed .hl-nav .hl-label { opacity: 0; }
+    .hl-nav .hl-toggle { margin-bottom: 0.4rem; color: #8b93a5; }
+  `;
+  const style = document.createElement("style");
+  style.textContent = css;
+  document.head.appendChild(style);
+
+  const nav = document.createElement("nav");
+  nav.className = "hl-nav";
+  nav.innerHTML =
+    `<button class="hl-toggle" title="Collapse navigation">` +
+    `<span class="hl-icon">☰</span><span class="hl-label">Collapse</span></button>` +
+    PAGES.map((p) =>
+      `<a href="${p.href}" title="${p.label}"` +
+      `${p.href === current ? ' class="current"' : ""}>` +
+      `<span class="hl-icon">${p.icon}</span>` +
+      `<span class="hl-label">${p.label}</span></a>`).join("");
+  document.body.prepend(nav);
+
+  function apply(collapsed) {
+    document.body.classList.toggle("hl-nav-collapsed", collapsed);
+  }
+  apply(localStorage.getItem(KEY) === "1");
+  nav.querySelector(".hl-toggle").addEventListener("click", () => {
+    const collapsed = !document.body.classList.contains("hl-nav-collapsed");
+    localStorage.setItem(KEY, collapsed ? "1" : "0");
+    apply(collapsed);
+  });
+})();

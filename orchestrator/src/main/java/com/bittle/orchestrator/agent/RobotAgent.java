@@ -133,4 +133,12 @@ public class RobotAgent {
     public Map<String, Object> sound(Map<String, Object> body) {
         return client.sound(definition.serviceUrl(), definition.id(), body);
     }
+
+    public Map<String, Object> lifecycleGet(String path) {
+        return client.lifecycleGet(definition.serviceUrl(), definition.id(), path);
+    }
+
+    public Map<String, Object> lifecyclePost(String path) {
+        return client.lifecyclePost(definition.serviceUrl(), definition.id(), path);
+    }
 }

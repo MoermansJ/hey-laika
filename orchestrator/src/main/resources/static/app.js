@@ -576,3 +576,16 @@ async function boot() {
 }
 
 boot();
+
+// Collapsible sidebar — state shared with the sub-pages' nav.js.
+(function () {
+  const KEY = "heyLaikaNavCollapsed";
+  const apply = (c) => document.body.classList.toggle("nav-collapsed", c);
+  apply(localStorage.getItem(KEY) === "1");
+  const btn = document.getElementById("sidebar-collapse");
+  if (btn) btn.addEventListener("click", () => {
+    const collapsed = !document.body.classList.contains("nav-collapsed");
+    localStorage.setItem(KEY, collapsed ? "1" : "0");
+    apply(collapsed);
+  });
+})();

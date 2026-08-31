@@ -141,11 +141,18 @@
     td .fail { color: var(--critical); font-weight: 600; }
     .table-scroll { max-height: 300px; overflow-y: auto; }
     .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
+    .lc-note { font-weight: 400; font-size: 0.72rem; color: var(--muted); }
+    .lifecycle { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .lc-block h3 { margin: 0.2rem 0 0.3rem; font-size: 0.92rem; }
+    .lc-seq { margin: 0.5rem 0; padding-left: 1.4rem; }
+    .lc-seq li { margin: 0.28rem 0; font-size: 0.84rem; }
+    .lc-seq code { font-size: 0.74rem; opacity: 0.75; margin-left: 0.35rem; }
+    .lc-seq .dur { font-size: 0.72rem; color: var(--muted); margin-left: 0.35rem; }
   </style>
+  <script src="nav.js" defer></script>
 </head>
 <body>
   <div class="topbar">
-    <a href="index.html" title="Back to console">←</a>
     <h1>🧠 Behavior Lab</h1>
     <select id="robot-select" title="Robot"></select>
     <span id="loop-chip" class="chip">…</span>
@@ -182,6 +189,31 @@
       <div id="freq"></div>
     </section>
   </div>
+
+  <section class="card" style="margin-top:0.9rem">
+    <h2>Lifecycle behaviors <span class="lc-note">host-managed — the firmware stays silent</span></h2>
+    <div class="lifecycle">
+      <div class="lc-block">
+        <h3>🌅 Startup greeting <span id="greet-chip" class="chip">…</span></h3>
+        <div class="hint" id="greet-trigger">—</div>
+        <ol class="lc-seq" id="greet-seq"></ol>
+        <div class="controls">
+          <button id="greet-run">▶ Run now</button>
+          <button id="greet-toggle">…</button>
+          <span class="hint" id="greet-runs"></span>
+        </div>
+      </div>
+      <div class="lc-block">
+        <h3>😴 Idle ladder <span id="idle-chip" class="chip">…</span></h3>
+        <div class="hint">When no motion commands arrive, the dog settles by itself.</div>
+        <ol class="lc-seq" id="idle-seq"></ol>
+        <div class="controls">
+          <button id="idle-toggle">…</button>
+          <span class="hint" id="idle-now"></span>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <section class="card" style="margin-top:0.9rem">
     <h2>Recent decisions</h2>

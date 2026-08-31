@@ -67,4 +67,7 @@ class BootGreeter:
     def status(self) -> dict:
         with self._lock:
             return {"enabled": self.enabled, "runs": self.runs,
-                    "lastResult": self.last_result}
+                    "lastResult": self.last_result,
+                    "trigger": "robot comes online (debounced 60s)",
+                    "sequence": [{"command": c, "settleS": s}
+                                 for c, s in SEQUENCE]}

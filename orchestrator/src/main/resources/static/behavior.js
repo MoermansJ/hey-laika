@@ -413,3 +413,76 @@ async function boot() {
 }
 
 boot();
+
+// ---------- Lifecycle behaviors (host-managed greeting + idle ladder) ----------
+
+const CMD_LABELS = {
+  kup: "Stand up", kstr: "Stretch", kbalance: "Balance",
+  ksit: "Sit down", krest: "Lie down",
+};
+
+function lifecycleLabel(command) {
+  if (command.startsWith("b ")) return "Ready jingle 🎵";
+  return CMD_LABELS[command] || command;
+}
+
+async function refreshLifecycle() {
+  try {
+    const g = await (await fetch(`/api/robots/${state.robotId}/greeting`)).json();
+    const chip = document.getElementById("greet-chip");
+    chip.textContent = g.enabled ? "enabled" : "disabled";
+    chip.className = "chip " + (g.enabled ? "on" : "warn");
+    document.getElementById("greet-trigger").textContent =
+        `Trigger: ${g.trigger ?? "robot comes online"}`;
+    document.getElementById("greet-seq").innerHTML = (g.sequence ?? [])
+        .map((s) => `<li>${lifecycleLabel(s.command)}` +
+                    `<code>${s.command}</code>` +
+                    `<span class="dur">${s.settleS}s</span></li>`).join("");
+    document.getElementById("greet-runs").textContent =
+        g.runs ? `ran ${g.runs}× (${g.lastResult})` : "not run yet";
+    document.getElementById("greet-toggle").textContent =
+        g.enabled ? "Disable" : "Enable";
+    document.getElementById("greet-toggle").dataset.next =
+        g.enabled ? "disable" : "enable";
+
+    const idle = await (await fetch(`/api/robots/${state.robotId}/idle`)).json();
+    const ichip = document.getElementById("idle-chip");
+    ichip.textContent = idle.enabled ? "enabled" : "disabled";
+    ichip.className = "chip " + (idle.enabled ? "on" : "warn");
+    document.getElementById("idle-seq").innerHTML =
+        `<li>After ${idle.sitAfterS}s stationary → Sit down<code>ksit</code></li>` +
+        `<li>After ${idle.restAfterS}s stationary → Lie down<code>krest</code></li>` +
+        `<li>Any command → back to active</li>`;
+    document.getElementById("idle-now").textContent = `state: ${idle.state}`;
+    document.getElementById("idle-toggle").textContent =
+        idle.enabled ? "Disable" : "Enable";
+    document.getElementById("idle-toggle").dataset.next =
+        idle.enabled ? "disable" : "enable";
+  } catch { /* adapter offline; chips keep last state */ }
+}
+
+(function initLifecycle() {
+  document.getElementById("greet-run").addEventListener("click", async () => {
+    await fetch(`/api/robots/${state.robotId}/greeting/run`, { method: "POST" });
+    setTimeout(refreshLifecycle, 1500);
+  });
+  document.getElementById("greet-toggle").addEventListener("click", async (e) => {
+    await fetch(`/api/robots/${state.robotId}/greeting/${e.target.dataset.next}`,
+                { method: "POST" });
+    refreshLifecycle();
+  });
+  document.getElementById("idle-toggle").addEventListener("click", async (e) => {
+    await fetch(`/api/robots/${state.robotId}/idle/${e.target.dataset.next}`,
+                { method: "POST" });
+    refreshLifecycle();
+  });
+  const tryStart = () => {
+    if (state.robotId) {
+      refreshLifecycle();
+      setInterval(refreshLifecycle, 15000);
+    } else {
+      setTimeout(tryStart, 500);
+    }
+  };
+  tryStart();
+})();

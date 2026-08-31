@@ -136,6 +136,46 @@ public class RobotController {
         return fleetManager.get(robotId).sound(body);
     }
 
+    // ---- Host-side lifecycle behaviors (greeting / idle) — whitelisted
+    // passthrough to the adapter; the GUI reads and toggles them here. ----
+
+    private static final java.util.Set<String> GREETING_ACTIONS =
+            java.util.Set.of("run", "enable", "disable");
+    private static final java.util.Set<String> IDLE_ACTIONS =
+            java.util.Set.of("enable", "disable");
+
+    @GetMapping("/greeting")
+    public Map<String, Object> greeting(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/greeting");
+    }
+
+    @PostMapping("/greeting/{action}")
+    public ResponseEntity<?> greetingAction(@PathVariable String robotId,
+                                            @PathVariable String action) {
+        if (!GREETING_ACTIONS.contains(action)) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "unknown_action", "action", action));
+        }
+        return ResponseEntity.ok(
+                fleetManager.get(robotId).lifecyclePost("/greeting/" + action));
+    }
+
+    @GetMapping("/idle")
+    public Map<String, Object> idle(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/idle");
+    }
+
+    @PostMapping("/idle/{action}")
+    public ResponseEntity<?> idleAction(@PathVariable String robotId,
+                                        @PathVariable String action) {
+        if (!IDLE_ACTIONS.contains(action)) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "unknown_action", "action", action));
+        }
+        return ResponseEntity.ok(
+                fleetManager.get(robotId).lifecyclePost("/idle/" + action));
+    }
+
     /**
      * Direct movement execution for the choreography builder. Refused while
      * the behavior loop drives the robot — the two would race on the servos.
