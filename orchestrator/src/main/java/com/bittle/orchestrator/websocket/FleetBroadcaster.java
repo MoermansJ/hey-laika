@@ -46,8 +46,10 @@ public class FleetBroadcaster {
         return clients.get();
     }
 
-    /** One adapter sweep feeds fleet status, per-robot status, and stats. */
-    @Scheduled(fixedRate = 2000)
+    /** One adapter sweep feeds fleet status, per-robot status, and stats.
+     *  4s (was 2s): halved per owner request — with the adapter's 40s
+     *  telemetry TTL this keeps dog-facing traffic minimal. */
+    @Scheduled(fixedRate = 4000)
     public void broadcastStatus() {
         if (clients.get() == 0 || fleetManager.all().isEmpty()) {
             return;

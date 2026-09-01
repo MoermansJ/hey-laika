@@ -52,7 +52,7 @@ _TIMEOUT_SKILL_WS = 20.0
 _VOLTAGE_RE = re.compile(r"Voltage:\s*([0-9]+(?:\.[0-9]+)?)")
 _BATT_FULL_V = 8.35
 _BATT_EMPTY_V = 6.8
-_TELEMETRY_TTL_S = 20.0
+_TELEMETRY_TTL_S = 40.0  # halved dog-facing 'P' polls (owner request)
 
 
 def _voltage_to_percent(voltage: float) -> float:

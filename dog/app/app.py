@@ -222,7 +222,15 @@ def _metrics_end(response):
 
 @app.get("/metrics")
 def metrics_snapshot():
-    return jsonify({"robotId": Config.ROBOT_ID, **metrics.snapshot()})
+    # Battery rides along as a gauge: served from the controller's 40s
+    # telemetry cache (no extra robot traffic), persisted forever by the
+    # orchestrator's hourly rollups -> long-term discharge history.
+    try:
+        battery = bittle.get_telemetry().get("battery")
+    except Exception:
+        battery = None
+    return jsonify({"robotId": Config.ROBOT_ID, "battery": battery,
+                    **metrics.snapshot()})
 
 
 @app.get("/api/health")

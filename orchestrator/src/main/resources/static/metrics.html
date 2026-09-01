@@ -151,6 +151,9 @@
       if (ws.avgMs != null) {
         (wsSeries[id] = wsSeries[id] || []).push({ t: Date.now() / 1000, avgMs: ws.avgMs });
       }
+      if (snap.battery != null) {
+        (wsSeries[id + ":batt"] = wsSeries[id + ":batt"] || []).push({ t: Date.now() / 1000, avgMs: snap.battery });
+      }
       const ai = (snap.window1h || {})["ai.ollama"] || {};
       const aiSub = [];
       if (c["ai.ollama.count"]) aiSub.push(`ollama ×${fmt(c["ai.ollama.count"])}${ai.avgMs ? ` (${fmt(ai.avgMs)} ms avg)` : ""}`);
@@ -159,6 +162,10 @@
       const httpTotal = Object.keys(c).filter((k) => k.startsWith("http.") && k.endsWith(".count"))
         .reduce((sum, k) => sum + c[k], 0);
       const tiles =
+        tile("Battery", snap.battery != null ? `${fmt(snap.battery)}%` : "—",
+             (snap.battery != null ? "hourly history in rollups" : "no telemetry yet")
+             + sparkline(wsSeries[id + ":batt"]),
+             snap.battery != null && snap.battery < 20) +
         tile("WS commands (total)", fmt(c["ws.command.count"] || 0),
              `${fmt(c["ws.command.errors"] || 0)} errors · ${fmt(c["ws.reconnects"] || 0)} reconnects`,
              (c["ws.command.errors"] || 0) > 0) +

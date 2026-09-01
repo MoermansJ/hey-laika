@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class EventBinder:
     def __init__(self, arbiter, store, controller,
-                 tick_s: float = 5.0, battery_poll_s: float = 20.0):
+                 tick_s: float = 5.0, battery_poll_s: float = 40.0):
         self.arbiter = arbiter
         self.store = store
         self.controller = controller
