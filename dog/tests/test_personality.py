@@ -44,3 +44,49 @@ def test_claude_engine_without_key_raises(monkeypatch):
     import pytest
     with pytest.raises(MissingCredentialsError):
         PersonalityEngine().get_next_behavior(["sit"])
+
+
+def test_ollama_engine_uses_local_decision(monkeypatch):
+    import app.voice
+    from app.config import Config
+
+    monkeypatch.setattr(Config, "DECISION_ENGINE", "ollama")
+    calls = {}
+
+    def fake_query(prompt, model=None, temperature=0.7, max_tokens=120,
+                   system=None, format_json=False):
+        calls["system"] = system
+        calls["format_json"] = format_json
+        return '{"behavior": "sit", "reason": "resting my paws"}', None
+
+    monkeypatch.setattr(app.voice, "query_ollama", fake_query)
+    decision = PersonalityEngine().get_next_behavior(["sit", "stretch"])
+    assert decision["behavior"] == "sit"
+    assert decision["source"] == "ollama"
+    assert calls["format_json"] is True
+    assert "mind of Bittle" in calls["system"]  # decision prompt, not the voice persona
+
+
+def test_ollama_engine_falls_back_to_mock_on_failure(monkeypatch):
+    import app.voice
+    from app.config import Config
+
+    monkeypatch.setattr(Config, "DECISION_ENGINE", "ollama")
+    monkeypatch.setattr(app.voice, "query_ollama",
+                        lambda *a, **k: (None, "Ollama unreachable"))
+    available = ChoreographyLibrary().names()
+    decision = PersonalityEngine().get_next_behavior(available)
+    assert decision["behavior"] in available
+    assert decision["source"] == "ollama_fallback"
+
+
+def test_ollama_engine_rejects_unlisted_behavior(monkeypatch):
+    import app.voice
+    from app.config import Config
+
+    monkeypatch.setattr(Config, "DECISION_ENGINE", "ollama")
+    monkeypatch.setattr(app.voice, "query_ollama",
+                        lambda *a, **k: ('{"behavior": "backflip"}', None))
+    decision = PersonalityEngine().get_next_behavior(["sit"])
+    assert decision["behavior"] == "sit"  # fell back to mock over ["sit"]
+    assert decision["source"] == "ollama_fallback"

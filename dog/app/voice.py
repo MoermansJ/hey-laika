@@ -43,20 +43,29 @@ def play_beep(bittle, pattern: str) -> bool:
 
 def query_ollama(prompt: str, model: str | None = None,
                  temperature: float = 0.7,
-                 max_tokens: int = 120) -> tuple[str | None, str | None]:
-    """Ask the local Ollama model; returns (response, error) — exactly one set."""
+                 max_tokens: int = 120,
+                 system: str | None = None,
+                 format_json: bool = False) -> tuple[str | None, str | None]:
+    """Ask the local Ollama model; returns (response, error) — exactly one set.
+
+    `system` overrides the Laika voice persona (e.g. the decision engine's
+    prompt); `format_json` makes Ollama constrain the output to valid JSON.
+    """
+    payload = {
+        "model": model or Config.OLLAMA_MODEL,
+        "prompt": prompt,
+        "system": system or LAIKA_SYSTEM_PROMPT,
+        "stream": False,
+        # Ollama reads sampling knobs from `options`, not top-level.
+        "options": {"temperature": temperature,
+                    "num_predict": max_tokens},
+    }
+    if format_json:
+        payload["format"] = "json"
     try:
         response = requests.post(
             f"{Config.OLLAMA_URL}/api/generate",
-            json={
-                "model": model or Config.OLLAMA_MODEL,
-                "prompt": prompt,
-                "system": LAIKA_SYSTEM_PROMPT,
-                "stream": False,
-                # Ollama reads sampling knobs from `options`, not top-level.
-                "options": {"temperature": temperature,
-                            "num_predict": max_tokens},
-            },
+            json=payload,
             timeout=Config.OLLAMA_TIMEOUT,
         )
         response.raise_for_status()

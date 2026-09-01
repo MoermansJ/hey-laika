@@ -24,13 +24,17 @@ class FakeStore:
                and (not enabled_only or b["enabled"])]
         return sorted(out, key=lambda b: b["priority"])
 
-    def log_start(self, name, source, priority):
-        self.runs.append({"behavior": name, "source": source,
-                          "priority": priority, "status": "running"})
-        return str(len(self.runs) - 1)
+    def log_start(self, name, source, priority, cause=None, run_id=None):
+        run_id = run_id or str(len(self.runs))
+        self.runs.append({"id": run_id, "behavior": name, "source": source,
+                          "priority": priority, "cause": cause,
+                          "status": "running"})
+        return run_id
 
-    def log_end(self, run_id, status, detail=""):
-        self.runs[int(run_id)].update({"status": status, "detail": detail})
+    def log_end(self, run_id, status, detail="", preempted_by=None):
+        run = next(r for r in self.runs if r["id"] == run_id)
+        run.update({"status": status, "detail": detail,
+                    "preemptedBy": preempted_by})
 
     def recent_runs(self, limit=10):
         return list(reversed(self.runs))[:limit]
@@ -148,8 +152,8 @@ def test_binder_trigger_respects_filters():
     submits = []
 
     class CapturingArbiter:
-        def submit(self, name, source, priority):
-            submits.append((name, source, priority))
+        def submit(self, name, source, priority, cause=None):
+            submits.append((name, source, priority, cause))
             return {"status": "executing"}
 
         def status(self):
@@ -157,7 +161,15 @@ def test_binder_trigger_respects_filters():
 
     binder = EventBinder(CapturingArbiter(), store, FakeController())
     binder.trigger("idle.timeout", {"seconds": 60})
-    assert submits == [("sit", "event.idle.timeout", PRIORITY_IDLE)]
+    assert len(submits) == 1
+    name, source, priority, cause = submits[0]
+    assert (name, source, priority) == ("sit", "event.idle.timeout",
+                                        PRIORITY_IDLE)
+    # Provenance carries the raw trigger AND the binding that processed it.
+    assert cause["type"] == "event"
+    assert cause["event"] == "idle.timeout"
+    assert cause["payload"] == {"seconds": 60}
+    assert cause["filter"] == {"seconds": 60}
 
 
 def test_binder_idle_tick_fires_ladder_once():
@@ -172,7 +184,7 @@ def test_binder_idle_tick_fires_ladder_once():
     submits = []
 
     class CapturingArbiter:
-        def submit(self, name, source, priority):
+        def submit(self, name, source, priority, cause=None):
             submits.append(name)
             return {"status": "executing"}
 
@@ -196,7 +208,7 @@ def test_binder_exception_report_parsing():
     submits = []
 
     class CapturingArbiter:
-        def submit(self, name, source, priority):
+        def submit(self, name, source, priority, cause=None):
             submits.append((name, source))
             return {"status": "executing"}
 
@@ -213,3 +225,82 @@ def test_binder_exception_report_parsing():
     assert submits == [("ack", "event.exception.report")]
     binder.handle_output_line("EXCEPTION_REPORT -4 yaw 0 pitch 0 roll 0")
     assert len(submits) == 1  # no binding for -4
+
+
+# ---- provenance ------------------------------------------------------------
+
+def test_cause_recorded_in_run_log_and_defaulted():
+    store = FakeStore({"wave": behavior("wave")})
+    arb = make_arbiter(store, FakeController())
+    arb.submit("wave", source="manual", priority=PRIORITY_MANUAL,
+               cause={"type": "manual", "via": "test"})
+    assert wait_for(lambda: store.runs
+                    and store.runs[-1]["status"] == "complete")
+    assert store.runs[-1]["cause"] == {"type": "manual", "via": "test"}
+    # No explicit cause → defaults to the source.
+    time.sleep(0.05)
+    arb.submit("wave", source="agent", priority=PRIORITY_MANUAL)
+    assert wait_for(lambda: len(store.runs) == 2
+                    and store.runs[-1]["status"] == "complete")
+    assert store.runs[-1]["cause"] == {"type": "agent"}
+    arb.shutdown()
+
+
+def test_preempted_run_links_to_preemptor_run_id():
+    store = FakeStore({
+        "slow": behavior("slow", n_steps=100, settle=0.05),
+        "urgent": behavior("urgent", n_steps=1),
+    })
+    ctrl = FakeController()
+    arb = make_arbiter(store, ctrl)
+    arb.submit("slow", source="event.idle", priority=PRIORITY_IDLE)
+    assert wait_for(lambda: ctrl.commands)
+    arb.submit("urgent", source="manual", priority=PRIORITY_MANUAL)
+    assert wait_for(lambda: store.runs
+                    and store.runs[0]["status"] == "interrupted")
+    assert wait_for(lambda: any(r["behavior"] == "urgent"
+                                and r["status"] == "complete"
+                                for r in store.runs))
+    urgent_run = next(r for r in store.runs if r["behavior"] == "urgent")
+    assert store.runs[0]["preemptedBy"] == urgent_run["id"]
+    arb.shutdown()
+
+
+def test_stop_current_marks_manual_stop():
+    store = FakeStore({"slow": behavior("slow", n_steps=100, settle=0.05)})
+    ctrl = FakeController()
+    arb = make_arbiter(store, ctrl)
+    arb.submit("slow", priority=PRIORITY_MANUAL)
+    assert wait_for(lambda: ctrl.commands)
+    assert arb.stop_current()["stopped"]
+    assert wait_for(lambda: store.runs[0]["status"] == "interrupted")
+    assert store.runs[0]["preemptedBy"] == "manual_stop"
+    arb.shutdown()
+
+
+def test_status_exposes_cause_and_run_id():
+    store = FakeStore({"slow": behavior("slow", n_steps=100, settle=0.05)})
+    ctrl = FakeController()
+    arb = make_arbiter(store, ctrl)
+    arb.submit("slow", priority=PRIORITY_MANUAL,
+               cause={"type": "manual", "via": "test"})
+    assert wait_for(lambda: arb.status()["current"] is not None)
+    current = arb.status()["current"]
+    assert current["cause"] == {"type": "manual", "via": "test"}
+    assert current["runId"]
+    arb.shutdown()
+
+
+def test_real_store_roundtrips_cause_and_preempted_by():
+    from app.behavior_store import BehaviorStore
+    store = BehaviorStore()
+    store.init()  # also exercises the column migration path
+    cause = {"type": "event", "event": "battery.low",
+             "payload": {"battery": 4}, "bindingId": "b-1",
+             "filter": {"pct": 5}}
+    run_id = store.log_start("rest_now", "event.battery.low", 1, cause=cause)
+    store.log_end(run_id, "interrupted", "preempted/stopped",
+                  preempted_by="manual_stop")
+    run = next(r for r in store.recent_runs(20) if r["id"] == run_id)
+    assert run["cause"] == cause
+    assert run["preemptedBy"] == "manual_stop"

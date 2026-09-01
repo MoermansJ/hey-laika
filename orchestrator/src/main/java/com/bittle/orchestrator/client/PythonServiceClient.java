@@ -44,6 +44,12 @@ public class PythonServiceClient {
                 .retrieve().body(Map.class));
     }
 
+    /** The adapter's service-level metrics snapshot (untyped passthrough). */
+    public Map<String, Object> metrics(String serviceUrl) {
+        return exchange(() -> http.get().uri(serviceUrl + "/metrics")
+                .retrieve().body(Map.class));
+    }
+
     public RobotStatus status(String serviceUrl, String robotId) {
         return exchange(() -> http.get().uri(robotUri(serviceUrl, robotId, "/status"))
                 .retrieve().body(RobotStatus.class));

@@ -1,10 +1,13 @@
-"""Personality engine — Claude-driven autonomous behavior decisions.
+"""Personality engine — LLM-driven autonomous behavior decisions.
 
-With DECISION_ENGINE=claude (the default), decisions come from Claude via the
-Anthropic SDK, with multi-turn history persisted to the database; a missing or
-rejected ANTHROPIC_API_KEY raises MissingCredentialsError rather than being
-silently papered over. DECISION_ENGINE=mock is an explicit offline opt-in that
-uses a weighted simulated decision engine instead.
+DECISION_ENGINE selects the brain:
+- "ollama" (the default): the local model already running for the voice
+  feature — zero cost, offline-capable, single-shot decisions (no
+  conversation history). Transient failures fall back to one mock decision.
+- "claude": the Anthropic SDK with multi-turn history persisted to the
+  database; a missing or rejected ANTHROPIC_API_KEY raises
+  MissingCredentialsError rather than being silently papered over.
+- "mock": explicit offline opt-in — a weighted simulated decision engine.
 """
 import json
 import logging
@@ -143,6 +146,15 @@ class PersonalityEngine:
         """
         state = self.get_state()
 
+        if Config.DECISION_ENGINE == "ollama":
+            decision = self._ask_ollama(state, available_behaviors)
+            if decision is None:
+                decision = self._mock_decision(state, available_behaviors)
+                self._log_decision(decision, source="ollama_fallback")
+            else:
+                self._log_decision(decision, source="ollama")
+            return decision
+
         if not Config.claude_engine():
             decision = self._mock_decision(state, available_behaviors)
             self._log_decision(decision, source="mock")
@@ -183,6 +195,36 @@ class PersonalityEngine:
                 source=source,
             ))
             session.commit()
+
+    # ---------- Ollama ----------
+
+    def _ask_ollama(self, state: dict, available: list[str]) -> dict | None:
+        """Single-shot decision from the local model; None on any failure
+        (the caller falls back to one mock decision, loudly)."""
+        import time as _time
+
+        from app.metrics import metrics
+        from app.voice import query_ollama
+
+        user_message = json.dumps({
+            "personality_state": state,
+            "available_behaviors": available,
+            "recent_interactions": self._recent_interactions(),
+        })
+        started = _time.time()
+        text, error = query_ollama(
+            user_message, temperature=0.3, max_tokens=200,
+            system=SYSTEM_PROMPT, format_json=True)
+        metrics.observe("ai.ollama", (_time.time() - started) * 1000.0,
+                        ok=error is None, note=error)
+        if error:
+            logger.warning("Ollama decision failed (%s); one-off mock fallback",
+                           error)
+            return None
+        decision = self._parse_decision(text, available)
+        if decision is None:
+            logger.warning("Ollama returned an unusable decision: %.200s", text)
+        return decision
 
     # ---------- Claude ----------
 
@@ -229,6 +271,18 @@ class PersonalityEngine:
             raise MissingCredentialsError(
                 f"Anthropic rejected the configured API key: {exc}"
             ) from exc
+
+        # Usage accounting: exact token counts only exist here, in the SDK
+        # response — the orchestrator aggregates and prices them (metrics
+        # brief §D.2). Counters persist via the metrics SQLite flush.
+        from app.metrics import metrics
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            metrics.inc("ai.claude.calls")
+            metrics.inc("ai.claude.tokensIn",
+                        float(getattr(usage, "input_tokens", 0) or 0))
+            metrics.inc("ai.claude.tokensOut",
+                        float(getattr(usage, "output_tokens", 0) or 0))
 
         if response.stop_reason == "refusal":
             logger.warning("Claude declined the request (refusal); using mock decision")

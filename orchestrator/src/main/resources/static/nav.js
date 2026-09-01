@@ -16,6 +16,9 @@
     { robots: true },
     { sep: "System" },
     { href: "behavior.html", icon: "🧠", label: "Behavior Lab" },
+    { href: "mind.html", icon: "💭", label: "Mind" },
+    { href: "leash.html", icon: "🦮", label: "Leash" },
+    { href: "metrics.html", icon: "📈", label: "Metrics" },
     { href: "index.html#settings", icon: "⚙️", label: "Settings" },
     { href: "index.html#debug", icon: "🐛", label: "Debug" },
   ];

@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from functools import wraps
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 
 from pathlib import Path
@@ -26,6 +26,8 @@ from app.behavior_store import (PRIORITY_AGENT, PRIORITY_MANUAL,
                                 BehaviorStore)
 from app.event_binder import EventBinder
 from app.gait_learner import GaitLearner
+from app.leash import LeashService
+from app.metrics import instrument_controller, metrics
 from app.voice import (BEEP_PATTERNS, TtsNotConfiguredError, ollama_health,
                        play_beep, query_ollama, save_tts_audio,
                        synthesize_speech)
@@ -33,6 +35,7 @@ from app.config import Config
 from app.models import init_db
 from app.personality_engine import MissingCredentialsError, PersonalityEngine
 from app.robot_schema import SERVO_LIMITS, build_schema
+from app.senses import SensesService
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -43,6 +46,8 @@ CORS(app)
 
 init_db()
 bittle = create_bittle_controller()
+metrics.init()
+instrument_controller(bittle)
 # Behavior framework: single arbiter owns all motion; lifecycle events
 # (online/idle/battery/exception) flow through stored bindings. Wired
 # BEFORE the first connect so startup counts as a came-online event.
@@ -52,6 +57,27 @@ arbiter = Arbiter(bittle, behavior_store)
 event_binder = EventBinder(arbiter, behavior_store, bittle)
 bittle.on_online = event_binder.on_online
 bittle.on_output_line = event_binder.handle_output_line
+# Proximity leash: consumes the firmware's event_rssi push; zone changes
+# become leash.* events through the ordinary bindings.
+leash = LeashService(bittle, event_binder)
+# Senses layer: always-on odometry shadow + opportunistic WiFi sniffer.
+# Away mode (leash enabled) suppresses sniffing — hotspot scans don't belong
+# in the home map.
+senses = SensesService(bittle, is_away=lambda: leash.enabled)
+senses.instrument(bittle)
+senses.init()
+
+
+def _fan_out_event_frame(frame: dict) -> None:
+    """Single dispatch point for unsolicited firmware event frames
+    (event_rssi, event_us, ...). Future consumers (senses layer) hook here."""
+    leash.handle_event_frame(frame)
+    if frame.get("type") == "event_rssi":
+        metrics.inc("ws.event_rssi")
+
+
+if hasattr(bittle, "on_event_frame"):
+    bittle.on_event_frame = _fan_out_event_frame
 if not Config.GREETING_ENABLED:
     behavior_store.set_binding_enabled("robot.online", "startup_greeting", False)
 if not Config.IDLE_ENABLED:
@@ -173,6 +199,32 @@ def handle_missing_credentials(exc):
 
 # ---------- Health (unscoped — used by Docker/orchestrator probes) ----------
 
+# ---------- Metrics ----------
+
+@app.before_request
+def _metrics_start():
+    g.metrics_t0 = time.time()
+
+
+@app.after_request
+def _metrics_end(response):
+    start = getattr(g, "metrics_t0", None)
+    # The rule is the route TEMPLATE (/api/robots/<robot_id>/...), so
+    # cardinality stays bounded. /metrics itself is excluded — the
+    # orchestrator polls it and would inflate its own numbers.
+    if start is not None and request.url_rule and \
+            request.url_rule.rule != "/metrics":
+        key = f"http.{request.method} {request.url_rule.rule}"
+        metrics.observe(key, (time.time() - start) * 1000.0,
+                        ok=response.status_code < 500)
+    return response
+
+
+@app.get("/metrics")
+def metrics_snapshot():
+    return jsonify({"robotId": Config.ROBOT_ID, **metrics.snapshot()})
+
+
 @app.get("/api/health")
 def health():
     return jsonify({
@@ -183,7 +235,7 @@ def health():
         "mockMode": Config.MOCK_MODE,
         "decisionEngine": Config.DECISION_ENGINE,
         "apiKeyConfigured": bool(Config.ANTHROPIC_API_KEY),
-        "model": Config.CLAUDE_MODEL if Config.claude_engine() else None,
+        "model": Config.decision_model(),
         "autonomous": autonomous.running,
     })
 
@@ -524,6 +576,61 @@ def bindings_upsert(robot_id: str):
     return jsonify(behavior_store.upsert_binding(data))
 
 
+# ---- Senses layer ----
+
+@app.get("/api/robots/<robot_id>/senses")
+@robot_scoped
+def senses_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **senses.status()})
+
+
+@app.get("/api/robots/<robot_id>/senses/samples")
+@robot_scoped
+def senses_samples(robot_id: str):
+    limit = min(int(request.args.get("limit", 100)), 1000)
+    return jsonify({"robotId": robot_id, "samples": senses.samples(limit)})
+
+
+@app.post("/api/robots/<robot_id>/senses/sniff")
+@robot_scoped
+def senses_sniff(robot_id: str):
+    """Manual sniff (ignores the politeness clock; still one blocking scan)."""
+    sample = senses.sniff()
+    if sample is None:
+        return jsonify({"error": "scan_failed",
+                        "message": "no scan data (transport can't capture "
+                                   "output, or no APs visible)"}), 502
+    return jsonify({"robotId": robot_id, "sample": sample})
+
+
+# ---- Proximity leash ----
+
+@app.get("/api/robots/<robot_id>/leash")
+@robot_scoped
+def leash_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **leash.status()})
+
+
+@app.post("/api/robots/<robot_id>/leash/config")
+@robot_scoped
+def leash_config(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    if "enabled" in data:
+        leash.set_enabled(bool(data["enabled"]))
+    leash.configure(data)
+    log_activity("leash", f"leash config: enabled={leash.enabled}")
+    return jsonify({"robotId": robot_id, **leash.status()})
+
+
+@app.post("/api/robots/<robot_id>/leash/mark")
+@robot_scoped
+def leash_mark(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    label = str(data.get("label") or "mark")
+    entry = leash.mark(label)
+    return jsonify({"robotId": robot_id, "mark": entry, **leash.status()})
+
+
 @app.get("/api/robots/<robot_id>/arbiter/status")
 @robot_scoped
 def arbiter_status(robot_id: str):
@@ -541,8 +648,12 @@ def arbiter_invoke(robot_id: str):
     source = data.get("source", "manual")
     priority = int(data.get("priority")
                    or (PRIORITY_AGENT if source == "agent" else PRIORITY_MANUAL))
+    if source == "agent":
+        cause = {"type": "agent", "decisionId": data.get("decisionId")}
+    else:
+        cause = {"type": "manual", "via": data.get("via", "api")}
     event_binder.reset_idle()
-    result = arbiter.submit(name, source=source, priority=priority)
+    result = arbiter.submit(name, source=source, priority=priority, cause=cause)
     log_activity("behavior", f"invoke {name} ({source}): {result['status']}")
     return jsonify({"robotId": robot_id, "behavior": name, **result})
 
@@ -594,7 +705,8 @@ def greeting_status(robot_id: str):
 @robot_scoped
 def greeting_run(robot_id: str):
     result = arbiter.submit("startup_greeting", source="manual",
-                            priority=PRIORITY_MANUAL)
+                            priority=PRIORITY_MANUAL,
+                            cause={"type": "manual", "via": "greeting"})
     log_activity("greeting", f"Go-mode greeting: {result['status']}")
     return jsonify({"robotId": robot_id,
                     "started": result["status"] != "rejected", **result})

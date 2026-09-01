@@ -176,6 +176,42 @@ public class RobotController {
                 fleetManager.get(robotId).lifecyclePost("/idle/" + action));
     }
 
+    // ---- Senses layer passthrough ----
+
+    @GetMapping("/senses")
+    public Map<String, Object> senses(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/senses");
+    }
+
+    @GetMapping("/senses/samples")
+    public Map<String, Object> sensesSamples(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/senses/samples");
+    }
+
+    @PostMapping("/senses/sniff")
+    public Map<String, Object> sensesSniff(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecyclePost("/senses/sniff");
+    }
+
+    // ---- Proximity leash passthrough ----
+
+    @GetMapping("/leash")
+    public Map<String, Object> leash(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/leash");
+    }
+
+    @PostMapping("/leash/config")
+    public Map<String, Object> leashConfig(@PathVariable String robotId,
+                                           @RequestBody Map<String, Object> body) {
+        return fleetManager.get(robotId).lifecyclePostBody("/leash/config", body);
+    }
+
+    @PostMapping("/leash/mark")
+    public Map<String, Object> leashMark(@PathVariable String robotId,
+                                         @RequestBody Map<String, Object> body) {
+        return fleetManager.get(robotId).lifecyclePostBody("/leash/mark", body);
+    }
+
     // ---- Behavior framework passthrough (arbiter, behaviors, bindings) ----
 
     @GetMapping("/behaviors")

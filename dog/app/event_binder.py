@@ -58,7 +58,8 @@ class EventBinder:
                 continue
             result = self.arbiter.submit(
                 binding["behavior"], source=f"event.{event}",
-                priority=binding["priority"])
+                priority=binding["priority"],
+                cause=self._cause(event, data, binding))
             results.append({"behavior": binding["behavior"], **result})
         return results
 
@@ -68,6 +69,13 @@ class EventBinder:
             return True
         data = data or {}
         return all(str(data.get(k)) == str(v) for k, v in filter_spec.items())
+
+    @staticmethod
+    def _cause(event: str, payload: dict | None, binding: dict) -> dict:
+        """Provenance: the raw trigger AND the binding that processed it."""
+        return {"type": "event", "event": event, "payload": payload,
+                "bindingId": binding.get("id"),
+                "filter": binding.get("filter")}
 
     # ---- idle ladder -------------------------------------------------------
 
@@ -95,9 +103,12 @@ class EventBinder:
             if threshold and idle_s >= threshold and \
                     threshold not in self._fired_idle:
                 self._fired_idle.add(threshold)
-                self.arbiter.submit(binding["behavior"],
-                                    source="event.idle.timeout",
-                                    priority=binding["priority"])
+                self.arbiter.submit(
+                    binding["behavior"], source="event.idle.timeout",
+                    priority=binding["priority"],
+                    cause=self._cause("idle.timeout",
+                                      {"seconds": threshold,
+                                       "idleS": round(idle_s, 1)}, binding))
 
     def reset_idle(self) -> None:
         """External signal that activity happened (e.g. manual invoke)."""
@@ -120,9 +131,12 @@ class EventBinder:
                         continue
                     if battery <= pct and pct not in self._fired_battery:
                         self._fired_battery.add(pct)
-                        self.arbiter.submit(binding["behavior"],
-                                            source="event.battery.low",
-                                            priority=binding["priority"])
+                        self.arbiter.submit(
+                            binding["behavior"], source="event.battery.low",
+                            priority=binding["priority"],
+                            cause=self._cause("battery.low",
+                                              {"battery": battery, "pct": pct},
+                                              binding))
                     elif battery > pct + 5:
                         self._fired_battery.discard(pct)  # re-arm on recharge
             except Exception:

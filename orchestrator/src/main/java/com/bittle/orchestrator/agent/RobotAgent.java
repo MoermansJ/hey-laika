@@ -52,6 +52,10 @@ public class RobotAgent {
         return client.status(definition.serviceUrl(), definition.id());
     }
 
+    public Map<String, Object> metricsSnapshot() {
+        return client.metrics(definition.serviceUrl());
+    }
+
     /** Status that never throws — used for fleet-wide overviews. */
     public RobotStatus statusOrUnreachable() {
         try {

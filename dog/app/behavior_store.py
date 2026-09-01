@@ -12,7 +12,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text
+from sqlalchemy import String, Text, inspect, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models import Base, SessionLocal, engine, utcnow
@@ -75,6 +75,12 @@ class BehaviorRun(Base):
     priority: Mapped[int] = mapped_column(default=PRIORITY_MANUAL)
     status: Mapped[str] = mapped_column(String(16))  # running|complete|interrupted|failed
     detail: Mapped[str] = mapped_column(Text, default="")
+    # Provenance: what caused this run — {"type": "event", "event": ...,
+    # "payload": ..., "bindingId": ...} | {"type": "manual"|"agent", ...}
+    cause_json: Mapped[str] = mapped_column(Text, default="null")
+    # Run id of the higher-priority run that interrupted this one, or the
+    # literal "manual_stop" for an explicit arbiter stop.
+    preempted_by: Mapped[str] = mapped_column(String(36), nullable=True)
     started_at: Mapped[datetime] = mapped_column(default=utcnow)
     ended_at: Mapped[datetime] = mapped_column(nullable=True)
 
@@ -82,6 +88,8 @@ class BehaviorRun(Base):
         return {
             "id": self.id, "behavior": self.behavior_name, "source": self.source,
             "priority": self.priority, "status": self.status, "detail": self.detail,
+            "cause": json.loads(self.cause_json or "null"),
+            "preemptedBy": self.preempted_by,
             "startedAt": self.started_at.isoformat() if self.started_at else None,
             "endedAt": self.ended_at.isoformat() if self.ended_at else None,
         }
@@ -128,6 +136,19 @@ SEED_BEHAVIORS = [
                   {"command": "kup", "settleS": 1.5}],
         "interruptible": True, "cooldownS": 5,
     },
+    {
+        "name": "leash_warn",
+        "description": "Leash stretching: stop, sit, chirp for the owner",
+        "steps": [{"command": "ksit", "settleS": 2.0},
+                  {"command": "b 21 8 18 8", "settleS": 0.5}],
+        "interruptible": True, "cooldownS": 10,
+    },
+    {
+        "name": "leash_far",
+        "description": "Leash at its end: insistent double chirp, stay put",
+        "steps": [{"command": "b 26 8 26 8 21 4", "settleS": 0.5}],
+        "interruptible": True, "cooldownS": 8,
+    },
 ]
 
 SEED_BINDINGS = [
@@ -142,6 +163,14 @@ SEED_BINDINGS = [
     # Host-decided fall recovery: ships disabled until tuned live.
     {"event": "exception.report", "filter": {"code": "flipped"},
      "behavior": "acknowledgment", "priority": PRIORITY_SAFETY, "enabled": False},
+    # Proximity leash (LeashService emits these only while the leash is
+    # enabled). leash.lost reuses the safety rest behavior.
+    {"event": "leash.warn", "filter": None,
+     "behavior": "leash_warn", "priority": PRIORITY_LIFECYCLE, "enabled": True},
+    {"event": "leash.far", "filter": None,
+     "behavior": "leash_far", "priority": PRIORITY_LIFECYCLE, "enabled": True},
+    {"event": "leash.lost", "filter": None,
+     "behavior": "rest_now", "priority": PRIORITY_SAFETY, "enabled": True},
 ]
 
 
@@ -150,6 +179,7 @@ class BehaviorStore:
 
     def init(self) -> None:
         Base.metadata.create_all(engine)
+        self._ensure_run_columns()
         with SessionLocal() as session:
             for seed in SEED_BEHAVIORS:
                 if session.query(StoredBehavior).filter_by(
@@ -160,14 +190,37 @@ class BehaviorStore:
                         steps_json=json.dumps(seed["steps"]),
                         interruptible=seed["interruptible"],
                         cooldown_s=seed["cooldownS"], is_builtin=True))
-            if session.query(Binding).first() is None:
-                for seed in SEED_BINDINGS:
-                    session.add(Binding(
-                        id=str(uuid.uuid4()), event=seed["event"],
-                        filter_json=json.dumps(seed["filter"]),
-                        behavior_name=seed["behavior"],
-                        priority=seed["priority"], enabled=seed["enabled"]))
+            fresh_db = session.query(Binding).first() is None
+            for seed in SEED_BINDINGS:
+                # Original seeds only populate an empty table (users may have
+                # deliberately deleted them); NEW event families (leash.*)
+                # are added whenever their event has no binding at all.
+                if not fresh_db:
+                    is_new_family = seed["event"].startswith("leash.")
+                    exists = session.query(Binding).filter_by(
+                        event=seed["event"]).first() is not None
+                    if not is_new_family or exists:
+                        continue
+                session.add(Binding(
+                    id=str(uuid.uuid4()), event=seed["event"],
+                    filter_json=json.dumps(seed["filter"]),
+                    behavior_name=seed["behavior"],
+                    priority=seed["priority"], enabled=seed["enabled"]))
             session.commit()
+
+    @staticmethod
+    def _ensure_run_columns() -> None:
+        # create_all never alters existing tables; run logs created before
+        # the provenance columns existed need them added in place.
+        existing = {c["name"] for c in
+                    inspect(engine).get_columns("framework_behavior_runs")}
+        with engine.begin() as conn:
+            if "cause_json" not in existing:
+                conn.execute(text("ALTER TABLE framework_behavior_runs "
+                                  "ADD COLUMN cause_json TEXT DEFAULT 'null'"))
+            if "preempted_by" not in existing:
+                conn.execute(text("ALTER TABLE framework_behavior_runs "
+                                  "ADD COLUMN preempted_by VARCHAR(36)"))
 
     # -- behaviors --
     def behaviors(self) -> list[dict]:
@@ -232,21 +285,26 @@ class BehaviorStore:
             return len(rows)
 
     # -- run log --
-    def log_start(self, behavior_name: str, source: str, priority: int) -> str:
-        run_id = str(uuid.uuid4())
+    def log_start(self, behavior_name: str, source: str, priority: int,
+                  cause: dict | None = None, run_id: str | None = None) -> str:
+        run_id = run_id or str(uuid.uuid4())
         with SessionLocal() as session:
             session.add(BehaviorRun(id=run_id, behavior_name=behavior_name,
                                     source=source, priority=priority,
+                                    cause_json=json.dumps(cause),
                                     status="running"))
             session.commit()
         return run_id
 
-    def log_end(self, run_id: str, status: str, detail: str = "") -> None:
+    def log_end(self, run_id: str, status: str, detail: str = "",
+                preempted_by: str | None = None) -> None:
         with SessionLocal() as session:
             row = session.query(BehaviorRun).filter_by(id=run_id).first()
             if row:
                 row.status = status
                 row.detail = detail
+                if preempted_by:
+                    row.preempted_by = preempted_by
                 row.ended_at = datetime.now(timezone.utc)
                 session.commit()
 

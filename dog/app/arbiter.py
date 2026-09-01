@@ -14,10 +14,14 @@ Semantics:
 - Per-behavior cooldowns reject rapid re-triggers.
 - Every run and transition lands in the store's run log and is pushed to
   listeners (activity log / STOMP via the app layer).
+- Provenance: every submission carries a `cause` dict (raw event + matched
+  binding, or manual/agent origin) that lands in the run log; interrupted
+  runs record `preempted_by` — the preemptor's run id, or "manual_stop".
 """
 import logging
 import threading
 import time
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,7 @@ class Arbiter:
         self._queue: list[dict] = []      # sorted: (priority, seq)
         self._current: dict | None = None
         self._interrupt = False
+        self._interrupted_by: str | None = None  # preemptor run id | "manual_stop"
         self._seq = 0
         self._last_start: dict[str, float] = {}
         self._stop_thread = False
@@ -46,26 +51,37 @@ class Arbiter:
     # ---- public API --------------------------------------------------------
 
     def submit(self, behavior_name: str, source: str = "manual",
-               priority: int = 2) -> dict:
+               priority: int = 2, cause: dict | None = None) -> dict:
+        from app.metrics import metrics
+
         behavior = self.store.behavior(behavior_name)
         if behavior is None:
+            metrics.inc("behavior.rejected")
             return {"status": "rejected", "reason": "behavior not found"}
         with self._lock:
             cooldown = behavior.get("cooldownS") or 0
             last = self._last_start.get(behavior_name, 0)
             if cooldown and time.time() - last < cooldown:
+                metrics.inc("behavior.rejected")
                 return {"status": "rejected", "reason": "cooldown"}
             # Duplicate suppression: same behavior already running or queued.
             if self._current and self._current["behavior"] == behavior_name:
+                metrics.inc("behavior.rejected")
                 return {"status": "rejected", "reason": "already running"}
             if any(s["behavior"] == behavior_name for s in self._queue):
+                metrics.inc("behavior.rejected")
                 return {"status": "rejected", "reason": "already queued"}
             if len(self._queue) >= QUEUE_MAX:
+                metrics.inc("behavior.rejected")
                 return {"status": "rejected", "reason": "queue full"}
+            metrics.inc("behavior.submitted")
+            metrics.inc(f"behavior.priority.{priority}")
 
             self._seq += 1
             submission = {"behavior": behavior_name, "source": source,
-                          "priority": priority, "seq": self._seq}
+                          "priority": priority, "seq": self._seq,
+                          "cause": cause or {"type": source},
+                          "run_id": str(uuid.uuid4())}
             self._queue.append(submission)
             self._queue.sort(key=lambda s: (s["priority"], s["seq"]))
 
@@ -74,6 +90,8 @@ class Arbiter:
                           and self._current.get("interruptible", True))
             if preempting:
                 self._interrupt = True
+                self._interrupted_by = submission["run_id"]
+                metrics.inc("behavior.preemptions")
             self._work.notify_all()
             position = self._queue.index(submission)
             return {"status": "preempting" if preempting else
@@ -86,6 +104,7 @@ class Arbiter:
             if self._current is None:
                 return {"stopped": False, "reason": "nothing running"}
             self._interrupt = True
+            self._interrupted_by = "manual_stop"
             self._work.notify_all()
             return {"stopped": True, "behavior": self._current["behavior"]}
 
@@ -97,7 +116,10 @@ class Arbiter:
                            ("behavior", "source", "priority")}
                 current["step"] = self._current.get("step", 0)
                 current["stepTotal"] = self._current.get("stepTotal", 0)
-            queued = [{k: s[k] for k in ("behavior", "source", "priority")}
+                current["cause"] = self._current.get("cause")
+                current["runId"] = self._current.get("run_id")
+            queued = [{**{k: s[k] for k in ("behavior", "source", "priority")},
+                       "cause": s.get("cause"), "runId": s.get("run_id")}
                       for s in self._queue]
         return {"current": current, "queued": queued,
                 "recentRuns": self.store.recent_runs(10)}
@@ -126,12 +148,15 @@ class Arbiter:
                 submission["step"] = 0
                 self._current = submission
                 self._interrupt = False
+                self._interrupted_by = None
                 self._last_start[behavior["name"]] = time.time()
             self._execute(submission, behavior)
 
     def _execute(self, submission: dict, behavior: dict) -> None:
         run_id = self.store.log_start(behavior["name"], submission["source"],
-                                      submission["priority"])
+                                      submission["priority"],
+                                      cause=submission["cause"],
+                                      run_id=submission["run_id"])
         self._notify()
         status, detail = "complete", ""
         try:
@@ -153,9 +178,13 @@ class Arbiter:
             status, detail = "failed", str(exc)
         finally:
             with self._lock:
+                preempted_by = (self._interrupted_by
+                                if status == "interrupted" else None)
                 self._current = None
                 self._interrupt = False
-            self.store.log_end(run_id, status, detail)
+                self._interrupted_by = None
+            self.store.log_end(run_id, status, detail,
+                               preempted_by=preempted_by)
             self._notify()
 
     def _notify(self) -> None:

@@ -38,6 +38,12 @@ behavior:
   auto-start: false
   simulate-actions: false
 
+# AI cost valuation (metrics brief D.2): adapters measure exact token
+# counts; the orchestrator alone knows prices. USD per million tokens.
+metrics:
+  claude-input-usd-per-mtok: 15.0
+  claude-output-usd-per-mtok: 75.0
+
 # Robot instances managed by this platform. Each entry points at the Python
 # adapter service that implements the robot's hardware/AI logic. Override in
 # Docker via e.g. BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000

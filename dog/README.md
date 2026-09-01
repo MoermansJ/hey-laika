@@ -29,7 +29,7 @@ Copy `.env.example` to `.env` and edit. Key settings:
 | Variable | Meaning |
 |---|---|
 | `ROBOT_ID` | Identity of the robot this service adapts (default `bittle-1`); requests for other ids get 404 |
-| `DECISION_ENGINE` | `claude` (default — requires `ANTHROPIC_API_KEY`, raises a missing-credentials error without it) or `mock` (explicit offline simulation) |
+| `DECISION_ENGINE` | `ollama` (default — local model, zero cost, falls back to one mock decision on transient failure), `claude` (requires `ANTHROPIC_API_KEY`, raises a missing-credentials error without it) or `mock` (explicit offline simulation) |
 | `ANTHROPIC_API_KEY` | Required when `DECISION_ENGINE=claude` |
 | `CLAUDE_MODEL` | Model for decisions (default `claude-opus-5`) |
 | `MOCK_MODE` | `True` = no hardware needed |

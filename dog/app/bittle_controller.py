@@ -412,6 +412,17 @@ class WiFiBittleController(BaseBittleController):
         # output that rides along in task results (e.g. EXCEPTION_REPORT
         # lines from the reflex-free custom firmware).
         self.on_output_line = None
+        # Called (in a worker thread) with every unsolicited event frame the
+        # firmware pushes (event_rssi, event_us, ...). Fed both by the idle
+        # pump below and by frames interleaved into command exchanges.
+        self.on_event_frame = None
+        # Idle pump: between transactions nobody would read the socket, so
+        # pushed event frames would pile up and the firmware's 40s
+        # client-silence timeout would drop us. The pump drains frames and
+        # heartbeats the link whenever the transaction lock is free.
+        self._pump_stop = threading.Event()
+        self._last_keepalive = 0.0
+        threading.Thread(target=self._pump_loop, daemon=True).start()
 
     def connect(self) -> bool:
         import websocket  # lazy import so mock mode needs no hardware deps
@@ -474,6 +485,49 @@ class WiFiBittleController(BaseBittleController):
                 threading.Thread(target=self.on_output_line, args=(line,),
                                  daemon=True).start()
 
+    def _dispatch_event(self, frame: dict) -> None:
+        if self.on_event_frame is None:
+            return
+        threading.Thread(target=self.on_event_frame, args=(frame,),
+                         daemon=True).start()
+
+    def _pump_loop(self) -> None:
+        import json
+
+        while not self._pump_stop.wait(0.5):
+            if not self._lock.acquire(blocking=False):
+                continue  # a transaction is running; it dispatches events
+            try:
+                if self._ws is None:
+                    continue
+                now = time.time()
+                if now - self._last_keepalive > 20.0:
+                    # Refresh the firmware's client-silence timer so the
+                    # connection (and its 1 Hz event_rssi stream) stays up.
+                    try:
+                        self._ws.send(json.dumps({"type": "heartbeat"}))
+                        self._last_keepalive = now
+                    except Exception:
+                        pass
+                self._ws.settimeout(0.05)
+                while True:
+                    try:
+                        raw = self._ws.recv()
+                    except Exception:
+                        break
+                    if isinstance(raw, bytes):
+                        raw = raw.decode("utf-8", errors="replace")
+                    try:
+                        frame = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    if str(frame.get("type", "")).startswith("event_"):
+                        self._dispatch_event(frame)
+            except Exception:
+                logger.exception("WiFi event pump tick failed")
+            finally:
+                self._lock.release()
+
     def _transact(self, command: str, timeout: float) -> list[str] | None:
         """Send one command frame and wait for its completed/error reply.
 
@@ -507,6 +561,9 @@ class WiFiBittleController(BaseBittleController):
                 except (json.JSONDecodeError, TypeError):
                     continue
                 if frame.get("type") in ("connected", "heartbeat"):
+                    continue
+                if str(frame.get("type", "")).startswith("event_"):
+                    self._dispatch_event(frame)  # don't lose pushes mid-command
                     continue
                 if str(frame.get("taskId")) != task_id:
                     continue
@@ -571,6 +628,8 @@ class WiFiBittleController(BaseBittleController):
                                "and retrying %r", command)
             except Exception as exc:
                 logger.warning("WiFi send failed (%s); reconnecting", exc)
+            from app.metrics import metrics
+            metrics.inc("ws.reconnects")
             if not self.connect():
                 return None
             try:

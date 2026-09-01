@@ -24,7 +24,8 @@ Browser -- http://localhost:8080  (static UI + REST API)
 ## Run the full stack
 
 ```bash
-cp .env.example .env       # add ANTHROPIC_API_KEY (or set DECISION_ENGINE=mock)
+cp .env.example .env       # defaults to the local Ollama decision engine;
+                           # set DECISION_ENGINE=claude + ANTHROPIC_API_KEY to opt in to Claude
 docker compose up --build
 # open http://localhost:8080
 ```

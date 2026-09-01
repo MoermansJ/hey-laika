@@ -30,10 +30,11 @@ class Config:
     BITTLE_WIFI_HOST = os.getenv("BITTLE_WIFI_HOST", "192.168.0.246")
     BITTLE_WIFI_PORT = int(os.getenv("BITTLE_WIFI_PORT", "81"))
 
-    # Claude
-    # DECISION_ENGINE: "claude" requires ANTHROPIC_API_KEY and raises
+    # AI decision engine
+    # DECISION_ENGINE: "ollama" (default) decides via the local model — zero
+    # cost, offline-capable; "claude" requires ANTHROPIC_API_KEY and raises
     # MissingCredentialsError without it; "mock" is an explicit offline opt-in.
-    DECISION_ENGINE = os.getenv("DECISION_ENGINE", "claude").strip().lower()
+    DECISION_ENGINE = os.getenv("DECISION_ENGINE", "ollama").strip().lower()
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
     CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
 
@@ -79,4 +80,9 @@ class Config:
 
     @classmethod
     def claude_engine(cls) -> bool:
-        return cls.DECISION_ENGINE != "mock"
+        return cls.DECISION_ENGINE == "claude"
+
+    @classmethod
+    def decision_model(cls) -> str | None:
+        return {"claude": cls.CLAUDE_MODEL,
+                "ollama": cls.OLLAMA_MODEL}.get(cls.DECISION_ENGINE)

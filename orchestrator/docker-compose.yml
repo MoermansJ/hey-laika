@@ -47,7 +47,7 @@ services:
     environment:
       - ROBOT_ID=bittle-1
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - DECISION_ENGINE=${DECISION_ENGINE:-claude}
+      - DECISION_ENGINE=${DECISION_ENGINE:-ollama}
       # Defaults drive the real robot over WiFi; set MOCK_MODE=True in .env
       # to run without hardware. The BiBoard IP is DHCP-assigned — keep a
       # router reservation for it or override BITTLE_WIFI_HOST in .env.

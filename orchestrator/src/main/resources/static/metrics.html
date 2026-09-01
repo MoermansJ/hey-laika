@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Metrics</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+  <style>
+    /* Console design system — fixed light, matching the fleet console. */
+    :root {
+      color-scheme: light;
+      --page:     #ecf0f1;
+      --surface:  #ffffff;
+      --ink:      #2c3e50;
+      --ink-2:    #46627f;
+      --muted:    #7f8c8d;
+      --ring:     #d5dbdb;
+      --good:     #27ae60;
+      --critical: #e74c3c;
+      --warn:     #f39c12;
+      --seq:      #3498db;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page); color: var(--ink);
+      padding: 1rem 1.25rem 2rem;
+    }
+    h1 { font-size: 1.15rem; margin: 0; }
+    h2 { font-size: 0.95rem; margin: 1.2rem 0 0.5rem; color: var(--ink-2); }
+    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .topbar .spacer { flex: 1; }
+    .chip {
+      font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
+      border: 1px solid var(--ring); color: var(--ink-2);
+    }
+    .chip.err { color: var(--critical); border-color: var(--critical); }
+    .tiles {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.6rem;
+    }
+    .tile {
+      background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 10px; padding: 0.6rem 0.75rem;
+    }
+    .tile .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .tile .value { font-size: 1.35rem; font-weight: 650; margin-top: 0.15rem; }
+    .tile .sub { font-size: 0.75rem; color: var(--ink-2); margin-top: 0.1rem; }
+    .tile.bad .value { color: var(--critical); }
+    table {
+      width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--ring); border-radius: 10px; overflow: hidden;
+      font-size: 0.82rem;
+    }
+    th, td { text-align: left; padding: 0.4rem 0.65rem; border-bottom: 1px solid var(--ring); }
+    th { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:last-child td { border-bottom: none; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.err { color: var(--critical); font-weight: 600; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; }
+    .empty { color: var(--muted); padding: 0.8rem; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>📈 Metrics</h1>
+    <span class="chip" id="updated">loading…</span>
+    <div class="spacer"></div>
+    <span class="chip" title="Live merge of orchestrator + adapter snapshots; hourly rollups land in Postgres">auto-refresh 5s</span>
+  </div>
+
+  <h2>Orchestrator</h2>
+  <div class="tiles" id="orchTiles"></div>
+
+  <div id="robots"></div>
+
+  <script src="nav.js" defer></script>
+  <script>
+    const fmt = (n) => (n === null || n === undefined) ? "—"
+      : (typeof n === "number" && !Number.isInteger(n)) ? n.toFixed(1)
+      : String(n);
+    const fmtUptime = (s) => {
+      if (s == null) return "—";
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+      return h > 0 ? `${h}h ${m}m` : `${m}m ${Math.floor(s % 60)}s`;
+    };
+
+    function tile(label, value, sub, bad) {
+      return `<div class="tile${bad ? " bad" : ""}"><div class="label">${label}</div>` +
+             `<div class="value">${value}</div>` +
+             (sub ? `<div class="sub">${sub}</div>` : "") + `</div>`;
+    }
+
+    function renderOrchestrator(o) {
+      document.getElementById("orchTiles").innerHTML =
+        tile("Uptime", fmtUptime(o.uptimeS)) +
+        tile("HTTP requests", fmt(o.httpRequests), `avg ${fmt(o.httpAvgMs)} ms · max ${fmt(o.httpMaxMs)} ms`) +
+        tile("Adapter 502s", fmt(o.adapterUnavailable), "adapter_unavailable responses", o.adapterUnavailable > 0);
+    }
+
+    function windowTable(window1h) {
+      const keys = Object.keys(window1h || {}).sort();
+      if (!keys.length) return `<div class="empty">No activity in the last hour.</div>`;
+      const rows = keys.map((k) => {
+        const w = window1h[k];
+        return `<tr><td class="mono">${k}</td>` +
+          `<td class="num">${w.count}</td>` +
+          `<td class="num${w.errors ? " err" : ""}">${w.errors}</td>` +
+          `<td class="num">${fmt(w.avgMs)}</td>` +
+          `<td class="num">${fmt(w.p95Ms)}</td>` +
+          `<td class="num">${fmt(w.maxMs)}</td></tr>`;
+      }).join("");
+      return `<table><thead><tr><th>Key</th><th class="num">Count</th>` +
+        `<th class="num">Errors</th><th class="num">Avg ms</th>` +
+        `<th class="num">P95 ms</th><th class="num">Max ms</th></tr></thead>` +
+        `<tbody>${rows}</tbody></table>`;
+    }
+
+    const wsSeries = {};  // robotId -> [{t, avgMs}] client-side sparkline data
+
+    function sparkline(series) {
+      if (!series || series.length < 2) return "";
+      const now = Date.now() / 1000;
+      while (series.length && now - series[0].t > 600) series.shift();
+      const values = series.map((s) => s.avgMs);
+      const max = Math.max(...values, 1);
+      const pts = series.map((s) =>
+        `${(120 * (1 - (now - s.t) / 600)).toFixed(1)},${(28 - 26 * s.avgMs / max).toFixed(1)}`).join(" ");
+      return `<svg viewBox="0 0 120 30" style="width:120px;height:30px;display:block;margin-top:0.2rem">` +
+        `<polyline points="${pts}" fill="none" stroke="#3498db" stroke-width="1.5"/></svg>`;
+    }
+
+    function errorFeed(snap) {
+      const errors = (snap.recentErrors || []).slice().reverse().slice(0, 8);
+      if (!errors.length) return "";
+      const rows = errors.map((e) =>
+        `<tr><td>${new Date(e.at * 1000).toLocaleTimeString()}</td>` +
+        `<td class="mono">${e.key}</td><td>${e.note || ""}</td></tr>`).join("");
+      return `<h2>Recent errors</h2><table><thead><tr><th>When</th><th>Key</th>` +
+        `<th>Note</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderRobot(id, snap) {
+      if (snap.error) {
+        return `<h2>🤖 ${id}</h2><div class="tiles">` +
+          tile("Adapter", "unreachable", snap.message || "", true) + `</div>`;
+      }
+      const c = snap.counters || {};
+      const ws = (snap.window1h || {})["ws.command"] || {};
+      if (ws.avgMs != null) {
+        (wsSeries[id] = wsSeries[id] || []).push({ t: Date.now() / 1000, avgMs: ws.avgMs });
+      }
+      const ai = (snap.window1h || {})["ai.ollama"] || {};
+      const aiSub = [];
+      if (c["ai.ollama.count"]) aiSub.push(`ollama ×${fmt(c["ai.ollama.count"])}${ai.avgMs ? ` (${fmt(ai.avgMs)} ms avg)` : ""}`);
+      if (c["ai.claude.calls"]) aiSub.push(`claude ×${fmt(c["ai.claude.calls"])} · ${fmt((c["ai.claude.tokensIn"] || 0) + (c["ai.claude.tokensOut"] || 0))} tokens`);
+      if (snap.estCostUsd != null) aiSub.push(`≈ $${snap.estCostUsd}`);
+      const httpTotal = Object.keys(c).filter((k) => k.startsWith("http.") && k.endsWith(".count"))
+        .reduce((sum, k) => sum + c[k], 0);
+      const tiles =
+        tile("WS commands (total)", fmt(c["ws.command.count"] || 0),
+             `${fmt(c["ws.command.errors"] || 0)} errors · ${fmt(c["ws.reconnects"] || 0)} reconnects`,
+             (c["ws.command.errors"] || 0) > 0) +
+        tile("WS latency (1h)", (ws.avgMs != null ? `${fmt(ws.avgMs)} ms` : "—"),
+             (ws.count ? `p95 ${fmt(ws.p95Ms)} ms over ${ws.count} cmds` : "no commands this hour")
+             + sparkline(wsSeries[id])) +
+        tile("AI decisions", fmt((c["ai.ollama.count"] || 0) + (c["ai.claude.calls"] || 0)),
+             aiSub.join(" · ") || "none yet (local Ollama is the default engine)") +
+        tile("Behaviors", fmt(c["behavior.submitted"] || 0),
+             `${fmt(c["behavior.preemptions"] || 0)} preemptions · ${fmt(c["behavior.rejected"] || 0)} rejected`) +
+        tile("HTTP requests (total)", fmt(httpTotal), "served by the adapter");
+      return `<h2>🤖 ${id}</h2><div class="tiles">${tiles}</div>` +
+        errorFeed(snap) +
+        `<h2>Last hour by key — ${id}</h2>` + windowTable(snap.window1h);
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch("/api/metrics");
+        const data = await res.json();
+        renderOrchestrator(data.orchestrator || {});
+        document.getElementById("robots").innerHTML =
+          Object.entries(data.robots || {}).map(([id, snap]) => renderRobot(id, snap)).join("");
+        const el = document.getElementById("updated");
+        el.textContent = "updated " + new Date().toLocaleTimeString();
+        el.classList.remove("err");
+      } catch (e) {
+        const el = document.getElementById("updated");
+        el.textContent = "orchestrator unreachable";
+        el.classList.add("err");
+      }
+    }
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
