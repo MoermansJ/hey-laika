@@ -112,26 +112,32 @@ behind one.
   near-threshold), or UWB (§6 of the leash brief) ⇒ distance + bearing, true
   beelining. Ship search-based first.
 
-### Vision satellite (decided 2026-09-01, hardware ordered)
+### Vision satellite (final 2026-09-01: XIAO Sense alone, hardware ordered)
 
 Camera vision comes from a **self-contained satellite**, NOT the BiBoard:
-Grove Vision AI V2 (Himax WiseEye2 NPU, on-module YOLO) stacked on a XIAO
-ESP32S3 Sense (plug-together, pre-soldered), powered by its own 1S LiPo
-(XIAO has charge management), streaming detections to the adapter over its
-OWN WiFi. Rationale: the firmware's camera path on the Grove I2C socket
-**disables the IMU** (recorded at CAMERA-disable time in the .ino), and the
-IMU carries closed-loop turns + odometry — never trade it. The satellite
-adds zero firmware risk and zero load on the robot's WS.
+a XIAO ESP32S3 Sense (pre-soldered) with its included OV2640, streaming
+JPEG frames over its OWN WiFi to the adapter; **YOLO runs host-side on the
+PC** (nano model, 5–15 FPS — ample for follow-me at walking pace).
+Rationale: the firmware's camera path on the Grove I2C socket **disables
+the IMU** (recorded at CAMERA-disable time in the .ino), and the IMU
+carries closed-loop turns + odometry — never trade it. Host-side inference
+matches the project's host-centric design; the earlier Grove Vision AI V2
+plan (on-module NPU) was dropped as unnecessary while a PC is always on
+the network — it remains the upgrade path only if high-FPS vision is ever
+needed with no host reachable.
 
+- **Power: shared with the dog** — two jumper wires from a spare Grove
+  socket's VCC/GND to the XIAO's pre-soldered 5V/GND pins. Arrival-day
+  protocol: multimeter the socket voltage first, then stream for minutes
+  while confirming the dog's WS stays stable (WiFi bursts ~340 mA peak);
+  LiPo on the battery pads is the fallback if the rail sags.
 - Person bounding-box x-offset ⇒ follow-me steering through the arbiter
   (the missing directional signal §4 lacked).
-- XIAO's own OV2640 ⇒ occasional full-res stills for room recognition;
-  its PDM mic is a backup audio-capture channel for the voice relay.
-- ⚠ The bare V2 module ships WITHOUT a camera — the OV5647 sensor is a
-  separate line item (or buy Seeed's V2+camera+XIAO kit).
-- Integration work when it arrives: XIAO sketch (detections → HTTP/WS to
-  adapter), adapter listener ⇒ `vision.person` events into bindings,
-  follow-me generator behavior. ~2–3 sessions.
+- The satellite's PDM mic is the voice relay's capture channel (see
+  VOICE_RELAY_BRIEF) — ears and eyes on one board, dog firmware untouched.
+- Integration work when it arrives: XIAO camera+mic streaming sketch
+  (stock sample code), adapter frame consumer running YOLO ⇒
+  `vision.person` events into bindings, follow-me generator. ~2–3 sessions.
 
 ---
 

@@ -5,14 +5,26 @@
 transcribed host-side, and handed to the decision layer as a prompt — the dog
 becomes an LLM prompting relay.
 
-## Hardware (decided, 2026-09-01)
+## Hardware (final, 2026-09-01 — supersedes the MAX9814 plan)
 
-- **Adafruit MAX9814 electret mic amplifier (ADA-1713, €9.06)** — AGC solves
-  the fixed-gain problem that disqualified the Grove Analog Microphone
-  (Seeed's own page: detection only, "not a recording device"). Output
-  2 Vpp on 1.25 V bias → fits the ESP32 ADC (0–3.3 V) with headroom. Supply
-  2.7–5.5 V → safe on either Grove rail voltage. Owner solders VDD/GND/OUT
-  pins; Gain floats (60 dB max, AGC-ridden).
+- **Capture: the XIAO ESP32S3 Sense satellite's built-in PDM digital MEMS
+  microphone.** Digital samples, no ADC noise floor — better than the
+  MAX9814-into-ADC path, already on the vision satellite, zero soldering.
+  **MAX9814 dropped from the order.** Consequences:
+  - The entire BiBoard audio firmware work (I2S-ADC task, ring buffer,
+    event_audio WS frames) is DELETED from the plan — the XIAO streams
+    16 kHz audio to the adapter over its OWN WiFi; the dog's firmware and
+    WS are untouched.
+  - Wake word v1 moves host-side: openWakeWord on the continuous stream
+    (LAN-only, processed locally). The Petoi module is no longer in the
+    trigger path (its presets failed the owner's voice anyway); it remains
+    the dog's canned-phrase speaker. Later refinement if wanted: on-XIAO
+    micro wake-word restores "nothing leaves the dog until wake".
+  - Privacy framing updated honestly: audio continuously reaches the PC,
+    local-only processing.
+- *(superseded)* MAX9814 rationale kept for the record: AGC solved the
+  fixed-gain problem that disqualified the Grove Analog Microphone
+  ("not a recording device" per Seeed).
 - **Grove-to-female-jumper conversion cable** → any analog socket
   (ANALOG1..4 = GPIO 34/35 or 32/36/39). Three wires: VDD→VCC, GND→GND,
   OUT→signal.
