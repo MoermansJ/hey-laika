@@ -112,6 +112,27 @@ behind one.
   near-threshold), or UWB (§6 of the leash brief) ⇒ distance + bearing, true
   beelining. Ship search-based first.
 
+### Vision satellite (decided 2026-09-01, hardware ordered)
+
+Camera vision comes from a **self-contained satellite**, NOT the BiBoard:
+Grove Vision AI V2 (Himax WiseEye2 NPU, on-module YOLO) stacked on a XIAO
+ESP32S3 Sense (plug-together, pre-soldered), powered by its own 1S LiPo
+(XIAO has charge management), streaming detections to the adapter over its
+OWN WiFi. Rationale: the firmware's camera path on the Grove I2C socket
+**disables the IMU** (recorded at CAMERA-disable time in the .ino), and the
+IMU carries closed-loop turns + odometry — never trade it. The satellite
+adds zero firmware risk and zero load on the robot's WS.
+
+- Person bounding-box x-offset ⇒ follow-me steering through the arbiter
+  (the missing directional signal §4 lacked).
+- XIAO's own OV2640 ⇒ occasional full-res stills for room recognition;
+  its PDM mic is a backup audio-capture channel for the voice relay.
+- ⚠ The bare V2 module ships WITHOUT a camera — the OV5647 sensor is a
+  separate line item (or buy Seeed's V2+camera+XIAO kit).
+- Integration work when it arrives: XIAO sketch (detections → HTTP/WS to
+  adapter), adapter listener ⇒ `vision.person` events into bindings,
+  follow-me generator behavior. ~2–3 sessions.
+
 ---
 
 ## 5. Behavior framework integration (the load-bearing section)
