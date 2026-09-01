@@ -138,14 +138,19 @@ needed with no host reachable.
 - Integration work when it arrives: XIAO camera+mic streaming sketch
   (stock sample code), adapter frame consumer running YOLO ⇒
   `vision.person` events into bindings, follow-me generator. ~2–3 sessions.
-- **Satellite accessories (2026-09-01):** the XIAO seats in a mini
-  breadboard (chassis + pin fan-out; 3 modules share the 5V row). OLED
-  0.66 on D4/D5 (I2C, 3V3) renders the adapter's existing `/display` API
-  content polled over WiFi; Chainable RGB LED on D2/D3 (5V) shows mood /
-  leash zone. Both driven by the satellite sketch — zero BiBoard firmware,
-  zero flash cost. Wiring: male-jumper conversion cables from each module's
-  Grove socket into the breadboard rows (colors: yellow/white/red/black =
-  SIG1/SIG2/VCC/GND).
+- **Satellite accessories (2026-09-01, rev: OLED moved per owner):** the
+  XIAO seats in a mini breadboard (chassis + pin fan-out; the LED and the
+  dog-power feed share the 5V row). Chainable RGB LED on D2/D3 (5V) shows
+  mood / leash zone, driven by the satellite sketch. Wiring: male-jumper
+  conversion cables from the module's Grove socket into the breadboard rows
+  (colors: yellow/white/red/black = SIG1/SIG2/VCC/GND).
+- **OLED 0.66 goes DIRECTLY on the BiBoard's I2C Grove socket** (owner
+  preference: its included Grove cable, plug and done — simplest wiring in
+  the build). Cost moves to firmware: vendor a minimal SSD1306 driver + a
+  "show this text" token; the adapter pushes `/display` content over the
+  WS on change. ~1 session, bundle with the next reflash. ⚠ Flash budget:
+  fork is at 88% of the min_spiffs app partition — compile-check the driver
+  fits before flashing; fallback is the satellite placement (D4/D5 I2C).
 
 ---
 
