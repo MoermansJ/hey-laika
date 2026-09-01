@@ -133,6 +133,40 @@ class MockBittleController(BaseBittleController):
         self.command_log: list[dict] = []
         self._battery_since = time.time()
         self._joint_angles = [0] * JOINT_COUNT
+        # MOCK_RICH: synthesize the firmware's push/scan surfaces so the GUI
+        # has live-looking data (leash RSSI walk, WiFi fingerprints).
+        self.on_event_frame = None
+        if Config.MOCK_RICH:
+            threading.Thread(target=self._rich_loop, daemon=True).start()
+
+    def _rich_loop(self) -> None:
+        import random
+
+        rssi = -55.0
+        while True:
+            time.sleep(1.0)
+            rssi = max(-92.0, min(-42.0, rssi + random.uniform(-2.5, 2.5)))
+            if self.on_event_frame is not None:
+                frame = {"type": "event_rssi", "rssi": round(rssi),
+                         "ssid": "MockSpot",
+                         "timestamp": int(time.time() * 1000)}
+                threading.Thread(target=self.on_event_frame, args=(frame,),
+                                 daemon=True).start()
+
+    def query(self, command: str) -> list[str] | None:
+        if Config.MOCK_RICH and command.startswith("XWs"):
+            import random
+
+            aps = [("MockSpot", "AA:00:00:00:00:01", -50, 1),
+                   ("neighbor-upstairs", "BB:00:00:00:00:02", -72, 6),
+                   ("neighbor-left", "CC:00:00:00:00:03", -83, 11),
+                   ("cafe-below", "DD:00:00:00:00:04", -90, 1)]
+            lines = ["="] + [
+                ('{"ssid":"%s","bssid":"%s","rssi":%d,"channel":%d}'
+                 % (s, b, r + random.randint(-4, 4), ch))
+                for s, b, r, ch in aps] + ["X"]
+            return ["\r\n".join(lines)]
+        return None
 
     def connect(self) -> bool:
         self.connected = True

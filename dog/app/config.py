@@ -24,6 +24,10 @@ class Config:
 
     # Hardware
     MOCK_MODE = _bool("MOCK_MODE", True)
+    # MOCK_RICH: the mock controller also synthesizes the firmware's push
+    # surfaces (event_rssi walk, XWs fingerprint scans) and auto-enables the
+    # leash — a GUI-development fixture with live-looking data.
+    MOCK_RICH = _bool("MOCK_RICH", False)
     BITTLE_COMMUNICATION_METHOD = os.getenv("BITTLE_COMMUNICATION_METHOD", "mock")
     BITTLE_SERIAL_PORT = os.getenv("BITTLE_SERIAL_PORT", "COM3")
     BITTLE_SERIAL_BAUD = int(os.getenv("BITTLE_SERIAL_BAUD", "115200"))

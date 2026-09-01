@@ -69,6 +69,26 @@ services:
   # ROBOT_ID, host port, and volume — and add it to the orchestrator's
   # BITTLE_ROBOTS_<n>_* variables below.
 
+  # Rich mock robot — a GUI-development fixture, not a fleet member: the
+  # mock controller synthesizes leash RSSI, WiFi fingerprint scans, and a
+  # draining battery, and the leash comes up enabled.
+  python-bittle-2:
+    build: ../dog
+    container_name: bittle-python-2
+    ports:
+      - "15002:5000"
+    environment:
+      - ROBOT_ID=bittle-2
+      - DECISION_ENGINE=mock
+      - MOCK_MODE=True
+      - MOCK_RICH=True
+      - OLLAMA_URL=http://ollama:11434
+      - ENVIRONMENT=development
+      - SQLITE_DB_PATH=/data/bittle.db
+    volumes:
+      - bittle-2-data:/data
+    restart: unless-stopped
+
   orchestrator:
     build: .
     container_name: bittle-orchestrator
@@ -82,6 +102,10 @@ services:
       - BITTLE_ROBOTS_0_NAME=Laika
       - BITTLE_ROBOTS_0_TYPE=bittle_x_v2
       - BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000
+      - BITTLE_ROBOTS_1_ID=bittle-2
+      - BITTLE_ROBOTS_1_NAME=Mocha (mock)
+      - BITTLE_ROBOTS_1_TYPE=bittle_x_v2
+      - BITTLE_ROBOTS_1_SERVICEURL=http://python-bittle-2:5000
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,4 +116,5 @@ services:
 volumes:
   pg-data:
   bittle-1-data:
+  bittle-2-data:
   ollama-data:

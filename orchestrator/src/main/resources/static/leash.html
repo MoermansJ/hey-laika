@@ -100,7 +100,9 @@
 
   <script src="nav.js" defer></script>
   <script>
-    const BASE = "/api/robots/bittle-1/leash";
+    const ROBOT = new URLSearchParams(location.search).get("robot") || "bittle-1";
+    const BASE = `/api/robots/${ROBOT}/leash`;
+    document.querySelector("h1").textContent = `🦮 Leash — ${ROBOT}`;
     const CFG_KEYS = ["warnDbm", "farDbm", "lostDbm", "hysteresisDb", "dwellS", "deadManS"];
     const samples = [];  // {t, rssi}
     let latest = null;

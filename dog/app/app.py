@@ -63,7 +63,10 @@ leash = LeashService(bittle, event_binder)
 # Senses layer: always-on odometry shadow + opportunistic WiFi sniffer.
 # Away mode (leash enabled) suppresses sniffing — hotspot scans don't belong
 # in the home map.
-senses = SensesService(bittle, is_away=lambda: leash.enabled)
+# Away mode (leash on) suppresses home-map sniffing — except for the rich
+# mock, a GUI fixture that should produce BOTH leash and fingerprint data.
+senses = SensesService(
+    bittle, is_away=lambda: leash.enabled and not Config.MOCK_RICH)
 senses.instrument(bittle)
 senses.init()
 
@@ -78,6 +81,8 @@ def _fan_out_event_frame(frame: dict) -> None:
 
 if hasattr(bittle, "on_event_frame"):
     bittle.on_event_frame = _fan_out_event_frame
+if Config.MOCK_RICH:
+    leash.set_enabled(True)  # GUI fixture: live zone data out of the box
 if not Config.GREETING_ENABLED:
     behavior_store.set_binding_enabled("robot.online", "startup_greeting", False)
 if not Config.IDLE_ENABLED:

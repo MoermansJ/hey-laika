@@ -22,3 +22,16 @@ def test_mock_controller_simulates_telemetry():
     telemetry = c.get_telemetry()
     assert 0 <= telemetry["battery"] <= 100
     assert telemetry["signal"] == "strong"
+
+
+def test_mock_rich_synthesizes_scans(monkeypatch):
+    from app.config import Config
+    from app.bittle_controller import MockBittleController
+
+    monkeypatch.setattr(Config, "MOCK_RICH", True)
+    ctrl = MockBittleController()
+    lines = ctrl.query("XWs")
+    assert lines and "MockSpot" in lines[0] and "bssid" in lines[0]
+    # Plain mock (default) stays inert for tests.
+    monkeypatch.setattr(Config, "MOCK_RICH", False)
+    assert MockBittleController().query("XWs") is None
