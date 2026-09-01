@@ -96,6 +96,21 @@ def test_frame_silence_becomes_lost():
     leash.shutdown()
 
 
+def test_enabling_grants_grace_never_instant_lost():
+    binder = FakeBinder()
+    leash = make_leash(binder, lostAfterS=5.0)
+    # Stale data from long ago must not trigger lost at arm time.
+    feed(leash, -55, n=3)
+    leash._last_frame_at = time.time() - 100
+    leash.set_enabled(True)
+    status = leash.status()
+    assert status["zone"] == "unknown"
+    time.sleep(1.5)  # well under lostAfterS: watchdog must stay quiet
+    assert leash.status()["zone"] == "unknown"
+    assert "leash.lost" not in [e for e, _ in binder.events]
+    leash.shutdown()
+
+
 def test_enable_arms_firmware_dead_man():
     ctrl = FakeController()
     leash = make_leash(ctrl=ctrl)
@@ -113,6 +128,35 @@ def test_marks_capture_current_smoothed_rssi():
     assert entry["label"] == "leash boundary"
     assert -75 < entry["rssi"] < -65
     assert leash.status()["marks"][-1]["label"] == "leash boundary"
+    leash.shutdown()
+
+
+def test_beacon_mode_ignores_ap_frames_and_tracks_beacon():
+    binder = FakeBinder()
+    ctrl = FakeController()
+    ctrl.query = lambda c: [
+        '=\r\n{"ssid":"iPhone","bssid":"AA","rssi":-45,"channel":6}\r\n'
+        '{"ssid":"fedpol-7187781","bssid":"BB","rssi":-60,"channel":1}\r\nX']
+    leash = make_leash(binder, ctrl, mode="beacon", beaconSsid="iPhone",
+                       beaconIntervalS=0.1, lostAfterS=30.0)
+    leash.enabled = True
+    # AP frames (dog<->router) must be ignored in beacon mode.
+    feed(leash, -60, n=10)
+    assert leash.status()["rssi"] is None
+    # The beacon loop should pick up the iPhone at -45 -> near.
+    assert wait_for(lambda: leash.status()["zone"] == "near", timeout=4.0)
+    assert leash.status()["ssid"] == "iPhone"
+    assert -50 < leash.status()["rssi"] < -40
+    leash.shutdown()
+
+
+def test_configure_switches_mode_and_bumps_lost_after():
+    leash = make_leash()
+    status = leash.configure({"mode": "beacon", "beaconSsid": "iPhone",
+                              "beaconIntervalS": 4.0, "lostAfterS": 2.0})
+    assert status["config"]["mode"] == "beacon"
+    assert status["config"]["beaconSsid"] == "iPhone"
+    assert status["config"]["lostAfterS"] >= 12.0  # 3x interval floor
     leash.shutdown()
 
 

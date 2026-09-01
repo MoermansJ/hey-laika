@@ -29,7 +29,16 @@ DEFAULTS = {
     "dwellS": 2.5,        # zone must persist this long before switching
     "lostAfterS": 8.0,    # frame silence -> lost
     "deadManS": 20,       # firmware dead-man timeout armed with the leash
+    "beaconIntervalS": 4.0,  # beacon mode: seconds between XWs scans
 }
+
+# Signal sources:
+# - "ap": the firmware's event_rssi push — RSSI of the CONNECTED AP. Correct
+#   for away mode, where the AP is the phone's hotspot.
+# - "beacon": periodic XWs scans track a named SSID's beacon RSSI while the
+#   dog stays on home WiFi — a phone-anchored leash indoors. Requires the
+#   phone to keep beaconing (hotspot screen open, or any connected client).
+STRING_CONFIG = ("mode", "beaconSsid")
 
 
 class LeashService:
@@ -38,7 +47,8 @@ class LeashService:
     def __init__(self, controller, event_binder, config: dict | None = None):
         self.controller = controller
         self.event_binder = event_binder
-        self.config = {**DEFAULTS, **(config or {})}
+        self.config = {**DEFAULTS, "mode": "ap", "beaconSsid": "",
+                       **(config or {})}
         self.enabled = False
 
         self._lock = threading.Lock()
@@ -55,27 +65,64 @@ class LeashService:
         self._watchdog = threading.Thread(target=self._silence_loop,
                                           daemon=True)
         self._watchdog.start()
+        threading.Thread(target=self._beacon_loop, daemon=True).start()
 
     # ---- input -------------------------------------------------------------
 
     def handle_event_frame(self, frame: dict) -> None:
         if frame.get("type") != "event_rssi":
             return
+        if self.config.get("mode") == "beacon":
+            return  # AP RSSI is dog<->router here — the wrong signal
         rssi = frame.get("rssi")
         if not isinstance(rssi, (int, float)):
             return
+        self._ingest(float(rssi), frame.get("ssid"))
+
+    def _ingest(self, rssi: float, ssid: str | None) -> None:
         now = time.time()
         with self._lock:
             self._last_frame_at = now
-            self._last_raw = float(rssi)
-            self._ssid = frame.get("ssid")
-            self._raw.append(float(rssi))
+            self._last_raw = rssi
+            self._ssid = ssid
+            self._raw.append(rssi)
             if len(self._raw) > 5:
                 self._raw.pop(0)
             median = statistics.median(self._raw)
             self._smoothed = (median if self._smoothed is None
                               else 0.7 * self._smoothed + 0.3 * median)
             self._classify(self._smoothed, now)
+
+    def _beacon_loop(self) -> None:
+        """Beacon mode: track a named SSID's advertisement RSSI via XWs
+        scans. Each scan blocks the firmware ~2 s; missed beacons simply
+        don't update _last_frame_at, so the silence watchdog handles lost."""
+        while not self._stop.wait(max(1.0, float(self.config["beaconIntervalS"]))):
+            if not self.enabled or self.config.get("mode") != "beacon":
+                continue
+            target = self.config.get("beaconSsid") or ""
+            if not target:
+                continue
+            try:
+                lines = self.controller.query("XWs")
+            except Exception:
+                logger.exception("Beacon scan failed")
+                continue
+            if not lines:
+                continue
+            import json as _json
+            for raw in "\n".join(lines).splitlines():
+                raw = raw.strip()
+                if not raw.startswith("{"):
+                    continue
+                try:
+                    ap = _json.loads(raw)
+                except _json.JSONDecodeError:
+                    continue
+                if ap.get("ssid") == target and \
+                        isinstance(ap.get("rssi"), (int, float)):
+                    self._ingest(float(ap["rssi"]), target)
+                    break
 
     # ---- zone machine ------------------------------------------------------
 
@@ -148,16 +195,35 @@ class LeashService:
                 self.controller.send_command("XWd0")
         except Exception:
             logger.warning("Dead-man toggle failed", exc_info=True)
-        if not self.enabled:
-            with self._lock:
-                self._zone = "unknown"
-                self._candidate = None
+        with self._lock:
+            self._zone = "unknown"
+            self._candidate = None
+            if self.enabled:
+                # Arming grace: restart the silence clock and drop stale
+                # samples so enabling never instantly fires "lost" off data
+                # from before the leash was on (observed live 2026-09-01).
+                self._last_frame_at = time.time()
+                self._raw.clear()
+                self._smoothed = None
         return self.status()
 
     def configure(self, updates: dict) -> dict:
         numeric = {k: float(v) for k, v in updates.items()
                    if k in DEFAULTS and isinstance(v, (int, float))}
+        strings = {k: str(v) for k, v in updates.items()
+                   if k in STRING_CONFIG and isinstance(v, str)}
         self.config.update(numeric)
+        self.config.update(strings)
+        if self.config.get("mode") == "beacon":
+            # Beacons arrive per scan interval, not at 1 Hz — the silence
+            # watchdog must tolerate a couple of missed scans.
+            floor = 3.0 * float(self.config["beaconIntervalS"])
+            if self.config["lostAfterS"] < floor:
+                self.config["lostAfterS"] = floor
+        if numeric or strings:
+            with self._lock:
+                self._raw.clear()
+                self._smoothed = None  # re-converge on the new signal source
         return self.status()
 
     def mark(self, label: str) -> dict:

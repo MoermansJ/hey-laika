@@ -67,6 +67,18 @@
   </div>
 
   <div class="card">
+    <h2 style="margin-top:0">Signal source</h2>
+    <div class="row"><label>Mode</label>
+      <select id="mode">
+        <option value="ap">Connected AP (away mode — hotspot IS the phone)</option>
+        <option value="beacon">Beacon scan (home mode — track the phone's hotspot beacon)</option>
+      </select>
+    </div>
+    <div class="row"><label>Beacon SSID</label><input type="text" id="beaconSsid" placeholder="iPhone"></div>
+    <div class="muted">Beacon mode needs the phone to keep beaconing: keep the Personal Hotspot screen open (or have any device connected to it). Updates every ~4 s.</div>
+  </div>
+
+  <div class="card">
     <h2 style="margin-top:0">Thresholds</h2>
     <div class="row"><label>Warn at (dBm)</label><input type="number" id="warnDbm"></div>
     <div class="row"><label>Far at (dBm)</label><input type="number" id="farDbm"></div>
@@ -129,6 +141,9 @@
         s.enabled ? "Disable leash" : "Enable leash";
       if (!editing && s.config) {
         CFG_KEYS.forEach((k) => { document.getElementById(k).value = s.config[k]; });
+        if (s.config.mode) document.getElementById("mode").value = s.config.mode;
+        if (document.activeElement !== document.getElementById("beaconSsid"))
+          document.getElementById("beaconSsid").value = s.config.beaconSsid || "";
       }
       const tbody = document.querySelector("#marks tbody");
       tbody.innerHTML = (s.marks || []).slice().reverse().map((m) =>
@@ -150,7 +165,10 @@
     });
 
     document.getElementById("save").addEventListener("click", async () => {
-      const body = {};
+      const body = {
+        mode: document.getElementById("mode").value,
+        beaconSsid: document.getElementById("beaconSsid").value,
+      };
       CFG_KEYS.forEach((k) => { body[k] = parseFloat(document.getElementById(k).value); });
       render(await (await fetch(BASE + "/config", { method: "POST",
         headers: { "Content-Type": "application/json" },
