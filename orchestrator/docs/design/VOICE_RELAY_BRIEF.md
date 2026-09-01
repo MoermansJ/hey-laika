@@ -17,6 +17,21 @@ becomes an LLM prompting relay.
   (ANALOG1..4 = GPIO 34/35 or 32/36/39). Three wires: VDD→VCC, GND→GND,
   OUT→signal.
 - Mount: stamp-sized board, velcro/tape near the head.
+- **Grove Speaker Plus (the mouth, decided 2026-09-01):** PWM-driven amp +
+  separate 2 W enclosed speaker with volume pot. Speech is possible ONLY via
+  single-pin sigma-delta/PWM synthesis — a proper I2S DAC amp needs 3 output
+  pins and the board has exactly 2 solder-free output pins (GPIO 9/10, UART
+  socket), which structurally rules real I2S audio out. Pipeline mirror of
+  the mic path: host TTS → downsampled WAV streamed down the WS → firmware
+  PWM playback. Expect intelligible walkie-talkie quality.
+- **Socket map:** UART socket's two signal pins are split via jumper cables —
+  ultrasonic ranger on one of GPIO 9/10, Speaker Plus on the other (validate
+  the ultrasonic FIRST on arrival day; its pin determines the speaker's).
+  That socket is then fully spent. Mic on an analog socket.
+- **Rejected: Grove Recorder v3.0 (ISD9160)** — mic+record+playback in one,
+  but audio is sealed in its own flash with a button-style Grove interface:
+  no way to extract audio for transcription, no arbitrary playback for TTS.
+  Replaces nothing in this pipeline.
 
 ## What the audio validation (2026-09-01) established
 
