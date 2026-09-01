@@ -195,7 +195,7 @@ function renderActions() {
       const btn = document.createElement("button");
       btn.dataset.action = action.id;
       btn.innerHTML = `${action.displayName}` +
-          (action.verified ? "" : ` <span class="unverified" title="Not yet verified on this firmware">⚠</span>`) +
+          (action.verified ? "" : ` <span class="unverified" title="Not yet verified on this firmware">*</span>`) +
           `<span class="dur">${(action.durationMs / 1000).toFixed(1)}s</span>`;
       btn.onclick = () => runAction(action);
       container.appendChild(btn);
@@ -256,7 +256,7 @@ async function refreshBattery() {
     const status = await api("/status");
     if (status.battery == null) { chip.style.display = "none"; return; }
     chip.style.display = "";
-    chip.textContent = `🔋 ${Math.round(status.battery)}%`;
+    chip.textContent = `${Math.round(status.battery)}%`;
     chip.className = "chip " + (status.battery < 20 ? "warn" : "on");
     chip.title = "Battery estimate from pack voltage";
   } catch { chip.style.display = "none"; }

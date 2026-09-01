@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Control Panel</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎛️</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
   <style>
     /* Console design system (style.css palette) — fixed light, matching
        the fleet console this page is embedded in. */
@@ -115,14 +115,14 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>🎛️ Control Panel</h1>
+    <h1>Control Panel</h1>
     <select id="robot-select" title="Robot"></select>
     <span id="mode-chip" class="chip">…</span>
     <span id="battery-chip" class="chip" style="display:none"></span>
     <span id="autonomy-chip" class="chip" style="display:none">autonomy on</span>
     <span class="spacer"></span>
-    <button id="btn-balance" class="primary">⚖ Balance</button>
-    <button id="btn-rest" class="danger">🛏 Rest</button>
+    <button id="btn-balance" class="primary">Balance</button>
+    <button id="btn-rest" class="danger">Rest</button>
   </div>
 
   <div class="grid">
@@ -138,7 +138,7 @@
       <section class="card">
         <h2>Actions</h2>
         <div id="actions" class="actions"></div>
-        <div class="hint">⚠ = skill not yet verified against this firmware</div>
+        <div class="hint">* = skill not yet verified against this firmware</div>
       </section>
 
       <section class="card" style="margin-top:0.9rem">

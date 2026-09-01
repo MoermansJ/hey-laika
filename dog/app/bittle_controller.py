@@ -1,4 +1,4 @@
-"""Hardware abstraction layer for the Petoi Bittle.
+﻿"""Hardware abstraction layer for the Petoi Bittle.
 
 Three implementations behind one interface:
 - MockBittleController   — no hardware, logs commands and tracks virtual joints
@@ -78,6 +78,9 @@ class BaseBittleController(ABC):
     # Wall-clock of the last motion/skill command; the host-side idle keeper
     # reads this to settle the robot when nothing has moved it for a while.
     last_motion_at: float | None = None
+    # Telemetry cache TTL; the app may replace this with the adaptive poll
+    # policy's callable (idle postures stretch it).
+    telemetry_ttl = staticmethod(lambda: _TELEMETRY_TTL_S)
 
     @abstractmethod
     def connect(self) -> bool: ...
@@ -383,7 +386,7 @@ class SerialBittleController(BaseBittleController):
         return payload if found else None
 
     def get_telemetry(self) -> dict:
-        if time.time() - self._telemetry_at < _TELEMETRY_TTL_S:
+        if time.time() - self._telemetry_at < self.telemetry_ttl():
             return dict(self._telemetry)
         telemetry = {"battery": None, "signal": None}
         if self._serial is not None or self.connect():
@@ -542,7 +545,11 @@ class WiFiBittleController(BaseBittleController):
                         self._ws.send(json.dumps({"type": "heartbeat"}))
                         self._last_keepalive = now
                     except Exception:
-                        pass
+                        # Socket is dead (robot powered off / WiFi gone):
+                        # clear it so get_status reports connected=False
+                        # honestly — the power tracker keys off this.
+                        self.disconnect()
+                        continue
                 self._ws.settimeout(0.05)
                 while True:
                     try:
@@ -728,7 +735,7 @@ class WiFiBittleController(BaseBittleController):
         return self._send(command, timeout)
 
     def get_telemetry(self) -> dict:
-        if time.time() - self._telemetry_at < _TELEMETRY_TTL_S:
+        if time.time() - self._telemetry_at < self.telemetry_ttl():
             return dict(self._telemetry)
         telemetry = {"battery": None, "signal": None}
         results = self._send("P", _TIMEOUT_DEFAULT)

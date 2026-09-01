@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Metrics</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
   <style>
     /* Console design system — fixed light, matching the fleet console. */
     :root {
@@ -64,7 +64,7 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>📈 Metrics</h1>
+    <h1>Metrics</h1>
     <span class="chip" id="updated">loading…</span>
     <div class="spacer"></div>
     <span class="chip" title="Live merge of orchestrator + adapter snapshots; hourly rollups land in Postgres">auto-refresh 5s</span>
@@ -77,6 +77,14 @@
 
   <script src="nav.js" defer></script>
   <script>
+    // Robot-scoped mode (embedded as a Robot Detail tab): show only that
+    // robot's metrics and hide the orchestrator section.
+    const ROBOT = new URLSearchParams(location.search).get("robot");
+    if (ROBOT) {
+      document.querySelector("h1").textContent = `Metrics — ${ROBOT}`;
+      document.querySelectorAll("h2")[0].style.display = "none";
+      document.getElementById("orchTiles").style.display = "none";
+    }
     const fmt = (n) => (n === null || n === undefined) ? "—"
       : (typeof n === "number" && !Number.isInteger(n)) ? n.toFixed(1)
       : String(n);
@@ -143,7 +151,7 @@
 
     function renderRobot(id, snap) {
       if (snap.error) {
-        return `<h2>🤖 ${id}</h2><div class="tiles">` +
+        return `<h2>${id}</h2><div class="tiles">` +
           tile("Adapter", "unreachable", snap.message || "", true) + `</div>`;
       }
       const c = snap.counters || {};
@@ -177,7 +185,7 @@
         tile("Behaviors", fmt(c["behavior.submitted"] || 0),
              `${fmt(c["behavior.preemptions"] || 0)} preemptions · ${fmt(c["behavior.rejected"] || 0)} rejected`) +
         tile("HTTP requests (total)", fmt(httpTotal), "served by the adapter");
-      return `<h2>🤖 ${id}</h2><div class="tiles">${tiles}</div>` +
+      return `<h2>${id}</h2><div class="tiles">${tiles}</div>` +
         errorFeed(snap) +
         `<h2>Last hour by key — ${id}</h2>` + windowTable(snap.window1h);
     }
@@ -186,9 +194,13 @@
       try {
         const res = await fetch("/api/metrics");
         const data = await res.json();
-        renderOrchestrator(data.orchestrator || {});
+        if (!ROBOT) renderOrchestrator(data.orchestrator || {});
+        const robots = ROBOT
+          ? (data.robots && data.robots[ROBOT] != null
+              ? { [ROBOT]: data.robots[ROBOT] } : {})
+          : (data.robots || {});
         document.getElementById("robots").innerHTML =
-          Object.entries(data.robots || {}).map(([id, snap]) => renderRobot(id, snap)).join("");
+          Object.entries(robots).map(([id, snap]) => renderRobot(id, snap)).join("");
         const el = document.getElementById("updated");
         el.textContent = "updated " + new Date().toLocaleTimeString();
         el.classList.remove("err");

@@ -5,56 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bittle Fleet Console</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐕</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
 </head>
 <body>
-  <button id="sidebar-open" class="sidebar-open" title="Menu">☰</button>
+  <button id="sidebar-open" class="sidebar-open" title="Menu">&#9776;</button>
 
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <span class="logo">🐕</span>
       <div class="title-block">
         <h1>Bittle Fleet</h1>
         <span class="version">management console</span>
       </div>
       <button id="sidebar-collapse" class="sidebar-collapse"
-              title="Collapse sidebar">☰</button>
+              title="Collapse sidebar">&#9776;</button>
     </div>
 
     <div class="nav-menu">
       <a href="#dashboard" class="nav-link" data-page="dashboard">
-        <span class="icon">📊</span><span class="label">Dashboard</span>
-      </a>
-      <a href="#specs" class="nav-link" data-page="specs">
-        <span class="icon">📋</span><span class="label">Model Specs</span>
+        <span class="label">Dashboard</span>
       </a>
 
       <div class="nav-separator">Robots</div>
       <div id="nav-robots"></div>
 
       <div class="nav-separator">System</div>
-      <a href="behavior.html" class="nav-link">
-        <span class="icon">🧠</span><span class="label">Behavior Lab</span>
-      </a>
-      <a href="mind.html" class="nav-link">
-        <span class="icon">💭</span><span class="label">Mind</span>
-      </a>
-      <a href="leash.html" class="nav-link">
-        <span class="icon">🦮</span><span class="label">Leash</span>
-      </a>
-      <a href="metrics.html" class="nav-link">
-        <span class="icon">📈</span><span class="label">Metrics</span>
-      </a>
-      <a href="#settings" class="nav-link" data-page="settings">
-        <span class="icon">⚙️</span><span class="label">Settings</span>
-      </a>
-      <a href="#debug" class="nav-link" data-page="debug">
-        <span class="icon">🐛</span><span class="label">Debug</span>
-      </a>
-    </div>
-
-    <div class="sidebar-footer">
-      <div id="conn-indicator" class="conn-indicator">connecting…</div>
+      <div class="nav-widget">
+        <div class="nav-widget-title">Orchestrator</div>
+        <div id="nav-health" class="nav-widget-body">loading</div>
+      </div>
+      <div class="nav-widget">
+        <div class="nav-widget-title">Transport</div>
+        <div id="nav-transport" class="nav-widget-body">connecting</div>
+      </div>
     </div>
   </nav>
 
@@ -63,17 +45,8 @@
     <section id="page-dashboard" class="page">
       <div class="page-header">
         <h2>Dashboard</h2>
-        <!-- Fleet-wide autonomous buttons removed: the old adapter loop
-             bypasses the behavior arbiter. Its replacement is the Director
-             (agent-priority arbiter submissions), framework Phase 4. -->
       </div>
-      <div id="stat-cards" class="stat-cards"></div>
       <div id="robot-grid" class="robot-grid"></div>
-    </section>
-
-    <section id="page-specs" class="page hidden">
-      <div class="page-header"><h2>Bittle X V2 — Model Specs</h2></div>
-      <div id="specs-content"></div>
     </section>
 
     <section id="page-robot" class="page hidden">
@@ -82,22 +55,39 @@
         <span id="robot-chip-conn" class="chip"></span>
         <span id="robot-chip-mood" class="chip"></span>
         <span id="robot-chip-mode" class="chip"></span>
+        <span id="robot-chip-uptime" class="chip" title="Smooth uptime derived from the adapter's boot epoch"></span>
       </div>
 
       <div class="tab-bar">
-        <button class="tab active" data-tab="activity">📜 Activity</button>
-        <button class="tab" data-tab="control">🎛️ Control</button>
-        <button class="tab" data-tab="voice">🎤 Voice</button>
+        <button class="tab active" data-tab="activity">Activity</button>
+        <button class="tab" data-tab="control">Control</button>
+        <button class="tab" data-tab="voice">Voice</button>
+        <button class="tab" data-tab="specs">Specs</button>
+        <button class="tab" data-tab="mind">Mind</button>
+        <button class="tab" data-tab="leash">Leash</button>
+        <button class="tab" data-tab="metrics">Metrics</button>
       </div>
 
       <div id="robot-tab-activity" class="robot-tab">
         <div class="panel panel-wide">
           <h3>Current behavior
             <button id="arbiter-stop" class="btn-small" style="float:right"
-                    title="Stop the running behavior">🛑 Stop</button>
+                    title="Stop the running behavior">Stop</button>
           </h3>
-          <div id="arbiter-current" class="muted">—</div>
+          <div id="arbiter-current" class="muted">&mdash;</div>
           <table class="data-table" id="arbiter-log"></table>
+        </div>
+        <div class="panel panel-wide">
+          <h3>Polling
+            <span class="muted" style="float:right" id="polling-state"></span>
+          </h3>
+          <div class="polling-row">
+            <label>Telemetry TTL (s) <input type="number" id="poll-ttl" min="5"></label>
+            <label>Battery poll (s) <input type="number" id="poll-batt" min="5"></label>
+            <label>Idle multiplier <input type="number" id="poll-mult" min="1" step="0.5"></label>
+            <label>Idle postures <input type="text" id="poll-postures" placeholder="rest, sit, lnd"></label>
+            <button id="poll-save" class="btn-small">Save</button>
+          </div>
         </div>
         <div class="panel panel-wide">
           <h3>Activity</h3>
@@ -114,31 +104,21 @@
         <iframe id="voice-frame" class="control-frame"
                 title="Voice"></iframe>
       </div>
-    </section>
 
-    <section id="page-settings" class="page hidden">
-      <div class="page-header"><h2>Settings</h2></div>
-      <div class="panel">
-        <h3>Fleet configuration</h3>
-        <p class="muted">Robots are declared in <code>application.yml</code> (or
-          <code>BITTLE_ROBOTS_*</code> environment variables) and registered at startup.</p>
-        <table class="data-table" id="settings-robots"></table>
+      <div id="robot-tab-specs" class="robot-tab hidden">
+        <div id="specs-content"></div>
       </div>
-      <div class="panel">
-        <h3>Orchestrator health</h3>
-        <pre id="settings-health" class="code-block">loading…</pre>
-      </div>
-    </section>
 
-    <section id="page-debug" class="page hidden">
-      <div class="page-header"><h2>Debug</h2></div>
-      <div class="panel">
-        <h3>Transport</h3>
-        <div id="debug-transport" class="muted"></div>
+      <div id="robot-tab-mind" class="robot-tab hidden">
+        <iframe id="mind-frame" class="control-frame" title="Mind"></iframe>
       </div>
-      <div class="panel">
-        <h3>Last payload per topic</h3>
-        <div id="debug-topics"></div>
+
+      <div id="robot-tab-leash" class="robot-tab hidden">
+        <iframe id="leash-frame" class="control-frame" title="Leash"></iframe>
+      </div>
+
+      <div id="robot-tab-metrics" class="robot-tab hidden">
+        <iframe id="metrics-frame" class="control-frame" title="Metrics"></iframe>
       </div>
     </section>
 

@@ -1,107 +1,112 @@
-/* Bittle X V2 model specifications — static reference data for the Specs page. */
+/* Per-robot model specifications — revised 2026-09-01 from the validated
+ * hardware docs (orchestrator/docs/robot/HARDWARE.md) and the ordered
+ * sensor upgrade package. Rendered as a tab on the Robot Detail page. */
 "use strict";
 
-const BITTLE_SPECS = {
+// Shared platform facts (both robots are the same model family).
+const BASE_SPECS = {
   "Model": {
-    "Name": "Petoi Bittle X V2",
-    "Introduced": "2023",
-    "Dimensions": "15cm (L) × 8cm (W) × 10cm (H)",
-    "Weight": "150g",
-    "Materials": "Aluminum frame, polymer body",
-  },
-  "Locomotion": {
-    "Max speed": "0.2 m/s",
-    "Climbing angle": "15°",
-    "Terrain": "Hard, even surfaces",
-    "Servos": "8 × FS90R micro servo + arm servo",
-    "Servo torque": "1.5 kg/cm",
-    "Servo speed": "60°/0.12s",
+    "Name": "Petoi Bittle X V2 (voice edition)",
+    "Controller": "BiBoard V1.0 - ESP32 (WiFi + BLE + classic BT)",
+    "IMU": "ICM42670 (I2C 0x69), drift-compensated yaw",
+    "Weight": "~290 g with battery",
   },
   "Electrical": {
-    "Battery": "7.4V 1000mAh LiPo (JST-XH)",
-    "Voltage range": "5.5–8.4V",
-    "Runtime (mixed)": "45 minutes",
-    "Runtime (idle)": "2+ hours",
-    "Charge time": "2 hours (1A charger)",
-    "Peak current": "5A",
+    "Battery": "2S LiPo 7.4 V nominal, 1000 mAh (JST-XH)",
+    "Full / low / floor": "8.35 V / ~7.0 V warning / 6.8 V cutoff",
+    "Servo power": "Long-press the battery's own button",
+    "USB": "CH343 USB-UART (USB-C), 115200 8N1 - no auto-reset wiring",
   },
-  "Processor": {
-    "Board": "Petoi BiBoard",
-    "MCU": "ATmega328P (Arduino-compatible)",
-    "Flash / RAM": "32KB / 2KB",
-    "Clock": "16MHz",
+  "Servos": {
+    "Physical joints": "9 (head pan +/-90, hips +/-60, knees -90..30)",
+    "Firmware indices": "16 (1-7 are placeholders on Bittle X)",
+    "Feedback": "Commanded angles only (no position readback)",
+    "Interpolation": "~4 ms/degree, completion echo on finish",
   },
-  "Communications": {
-    "Primary": "USB serial (UART) via Micro-USB",
-    "Data rate": "115200 baud",
-    "Expansion": "UEXT connector (I2C)",
+  "Connectivity": {
+    "Command channel": "WebSocket :81 (JSON tasks, 2-client cap)",
+    "Transports": "WiFi (2.4 GHz), BLE UART, classic BT SPP, USB serial",
+    "WiFi slots": "Primary (home) + slot 2 (iPhone hotspot) via XW2",
+    "Push events": "event_rssi (1 Hz), event_us, exception reports",
   },
-  "Software": {
-    "Firmware": "Arduino-compatible C/C++ (OpenCat)",
-    "Control": "Serial command protocol + REST via Python adapter",
-    "Choreography": "Pre-programmed animation library",
+  "Firmware": {
+    "Build": "hey-laika fork (B10, version-pinned 251121)",
+    "Phase A cuts": "No silent drops, reflexes gated, closed-loop turns",
+    "Leash/nav tokens": "XWs scan, XWd dead-man, XW2 creds, XWb BLE power",
+    "Partition": "min_spiffs (1.9 MB app, ~88% used)",
+  },
+  "Sound": {
+    "Buzzer": "GPIO 2, tone/melody via b token (no DAC on this board)",
+    "Voice module": "Mic + fixed/trainable commands on Serial1 (codes only)",
   },
 };
 
-const BITTLE_PARTS = {
-  "Frame": ["Aluminum legs (4)", "Polymer body", "Servo mounts", "Claw assembly"],
-  "Actuators": ["FS90R servos ×8", "Arm servo", "Connectors"],
-  "Electrical": ["7.4V LiPo battery", "BiBoard (Arduino)", "USB-UART module", "Power management"],
-  "Accessories": ["Micro-USB cable", "SD card slot", "I2C expansion"],
+// Sensor upgrade package (ordered 2026-09-01). Values are per-robot below.
+const PACKAGE_SPECS = {
+  "Depth": "Grove Ultrasonic Ranger, 3-350 cm, one-pin mode (UART socket)",
+  "Speech": "Grove Speaker Plus, PWM sigma-delta voice (UART socket)",
+  "Vision satellite": "XIAO ESP32S3 Sense: OV2640 camera + PDM mic, own WiFi, powered from a Grove socket",
+  "Mood light": "Chainable RGB LED on the satellite (D2/D3)",
+  "IR receiver": "None (not present on this board)",
+};
+
+const ROBOT_SPECS = {
+  "bittle-1": {
+    subtitle: "Laika - the physical dog",
+    overrides: {
+      "Identity": {
+        "Robot": "Laika (bittle-1)",
+        "Hardware": "Real Bittle X V2 at 192.168.0.246 (DHCP reservation advised)",
+        "Adapter": "python-bittle-1 (WiFi transport)",
+      },
+      "Sensor package (ordered)": { ...PACKAGE_SPECS },
+    },
+  },
+  "bittle-2": {
+    subtitle: "Mocha - simulated (GUI fixture)",
+    overrides: {
+      "Identity": {
+        "Robot": "Mocha (bittle-2)",
+        "Hardware": "Simulated (MOCK_RICH: synthetic RSSI, scans, battery)",
+        "Adapter": "python-bittle-2 (mock transport)",
+      },
+      "Sensor package (assumed)": {
+        ...PACKAGE_SPECS,
+        "Mood light": "None (package minus the RGB LED)",
+        "IR receiver": "None (package minus the IR sensor)",
+      },
+    },
+  },
 };
 
 const BITTLE_BLUEPRINT_SVG = `
 <svg viewBox="0 0 300 400" class="blueprint" role="img" aria-label="Bittle X V2 top view">
   <rect x="1" y="1" width="298" height="398" class="bp-bg"/>
-  <text x="150" y="30" text-anchor="middle" class="bp-title">Bittle X V2 — Top View</text>
-
+  <text x="150" y="30" text-anchor="middle" class="bp-title">Bittle X V2 - Top View</text>
   <ellipse cx="150" cy="150" rx="80" ry="60" class="bp-body"/>
-
   <circle cx="100" cy="110" r="12" class="bp-servo"/>
   <circle cx="200" cy="110" r="12" class="bp-servo"/>
   <circle cx="100" cy="190" r="12" class="bp-servo"/>
   <circle cx="200" cy="190" r="12" class="bp-servo"/>
-
-  <line x1="150" y1="110" x2="200" y2="80" class="bp-arm"/>
-  <circle cx="200" cy="80" r="8" class="bp-arm-joint"/>
-  <text x="212" y="78" class="bp-label">Arm servo</text>
-
-  <rect x="130" y="140" width="40" height="30" class="bp-board"/>
-  <text x="150" y="159" text-anchor="middle" class="bp-label">BiBoard</text>
-
-  <rect x="140" y="180" width="20" height="50" class="bp-battery"/>
-  <text x="150" y="245" text-anchor="middle" class="bp-label">Battery</text>
-
-  <rect x="145" y="100" width="10" height="15" class="bp-sensor"/>
-  <text x="160" y="100" class="bp-label">Sensor mount</text>
-
-  <line x1="100" y1="94" x2="100" y2="55" class="bp-leader"/>
-  <text x="100" y="48" text-anchor="middle" class="bp-label">Front left servo</text>
-  <line x1="200" y1="124" x2="245" y2="124" class="bp-leader"/>
-  <text x="248" y="127" class="bp-label">Front right servo</text>
-  <line x1="100" y1="206" x2="100" y2="250" class="bp-leader"/>
-  <text x="100" y="262" text-anchor="middle" class="bp-label">Back left servo</text>
-
-  <line x1="20" y1="380" x2="70" y2="380" class="bp-scale"/>
-  <text x="45" y="372" text-anchor="middle" class="bp-label">5cm</text>
+  <line x1="150" y1="90" x2="150" y2="60" class="bp-line"/>
+  <circle cx="150" cy="52" r="10" class="bp-servo"/>
+  <text x="150" y="230" text-anchor="middle" class="bp-label">head pan servo + 8 leg servos</text>
+  <text x="150" y="250" text-anchor="middle" class="bp-label">BiBoard V1 (ESP32) under the shell</text>
 </svg>`;
 
-function renderSpecsPage(container) {
-  const specCards = Object.entries(BITTLE_SPECS).map(([category, rows]) => {
-    const items = Object.entries(rows).map(([key, value]) =>
-      `<div class="spec-row"><span class="spec-key">${key}</span><span class="spec-value">${value}</span></div>`
-    ).join("");
-    return `<div class="panel spec-card"><h3>${category}</h3>${items}</div>`;
-  }).join("");
-
-  const partCols = Object.entries(BITTLE_PARTS).map(([group, parts]) =>
-    `<div class="parts-col"><h4>${group}</h4><ul>${parts.map((p) => `<li>${p}</li>`).join("")}</ul></div>`
-  ).join("");
-
-  container.innerHTML = `
-    <div class="spec-grid">${specCards}</div>
-    <div class="panel-grid">
-      <div class="panel"><h3>Hardware blueprint</h3>${BITTLE_BLUEPRINT_SVG}</div>
-      <div class="panel"><h3>Parts breakdown</h3><div class="parts-grid">${partCols}</div></div>
-    </div>`;
+function renderSpecsPage(container, robotId) {
+  const robot = ROBOT_SPECS[robotId] || { subtitle: robotId, overrides: {} };
+  const sections = { ...robot.overrides, ...BASE_SPECS };
+  // Identity/package first, then base platform sections.
+  const html = Object.entries(sections).map(([section, rows]) => `
+    <div class="panel">
+      <h3>${section}</h3>
+      <table class="data-table">
+        ${Object.entries(rows).map(([k, v]) =>
+          `<tr><td class="muted" style="width:38%">${k}</td><td>${v}</td></tr>`).join("")}
+      </table>
+    </div>`).join("");
+  container.innerHTML =
+    `<p class="muted">${robot.subtitle}</p>` +
+    `<div class="specs-grid">${html}</div>` + BITTLE_BLUEPRINT_SVG;
 }

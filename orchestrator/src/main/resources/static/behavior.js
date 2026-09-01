@@ -17,7 +17,7 @@ const ACTIONS = ["walk_slow", "walk_fast", "stand_up", "sit_down", "lie_down",
   "stretch", "play_bow", "backflip", "spin",
   "idle_calm", "sleep", "wake_up", "seek_attention"];
 
-const POSTURE_ICON = { STANDING: "🐕", SITTING: "🪑", LYING: "🛏", SLEEPING: "💤" };
+const POSTURE_ICON = { STANDING: "standing", SITTING: "sitting", LYING: "lying", SLEEPING: "sleeping" };
 const MAX_POINTS = 600;
 
 const $ = (sel) => document.querySelector(sel);
@@ -347,7 +347,7 @@ function renderFreq() {
 
 function renderDecisions() {
   const rows = [...state.points].reverse().slice(0, 100).map((p) => {
-    const failed = p.success === false ? ` <span class="fail">✗</span>` : "";
+    const failed = p.success === false ? ` <span class="fail">failed</span>` : "";
     return `<tr><td class="time">${new Date(p.t).toLocaleTimeString()}</td>` +
         `<td>${p.action ?? "<span class='hint'>rest</span>"}${failed}</td>` +
         `<td><span class="src">${p.source ?? ""}</span></td>` +
@@ -422,7 +422,7 @@ const CMD_LABELS = {
 };
 
 function lifecycleLabel(command) {
-  if (command.startsWith("b ")) return "Ready jingle 🎵";
+  if (command.startsWith("b ")) return "Ready jingle";
   return CMD_LABELS[command] || command;
 }
 
@@ -514,7 +514,7 @@ async function refreshLifecycle() {
                              steps, interruptible: g.interruptible,
                              cooldownS: g.cooldownS }),
     });
-    document.getElementById("greet-saved").textContent = "saved ✓";
+    document.getElementById("greet-saved").textContent = "saved";
     setTimeout(() => document.getElementById("greet-saved").textContent = "", 3000);
     await loadLifecycleEditors();
   });
@@ -536,7 +536,7 @@ async function refreshLifecycle() {
         body: JSON.stringify(binding),
       });
     }
-    document.getElementById("idle-saved").textContent = "saved ✓";
+    document.getElementById("idle-saved").textContent = "saved";
     setTimeout(() => document.getElementById("idle-saved").textContent = "", 3000);
     await loadLifecycleEditors();
   });

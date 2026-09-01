@@ -468,3 +468,34 @@ input[type="text"] {
 
   .main-content { padding: 3.2rem 1rem 1rem; }
 }
+
+/* ---- 2026-09-01 restructure: navbar widgets, polling panel, specs tab ---- */
+.nav-widget {
+  padding: 0.45rem 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.nav-widget-title {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 0.15rem;
+}
+.nav-widget-body { font-size: 0.78rem; color: #cfd5e1; }
+.nav-widget-body.ok { color: #2ecc71; }
+.nav-widget-body.warn { color: #f39c12; }
+.nav-widget-body.err { color: #e74c3c; }
+
+.polling-row { display: flex; gap: 0.9rem; flex-wrap: wrap; align-items: end; }
+.polling-row label {
+  display: flex; flex-direction: column; gap: 0.2rem;
+  font-size: 0.75rem; color: var(--text-light, #7f8c8d);
+}
+.polling-row input { font: inherit; padding: 0.3rem 0.45rem; width: 9rem; }
+
+.specs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}

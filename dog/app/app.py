@@ -34,6 +34,8 @@ from app.voice import (BEEP_PATTERNS, TtsNotConfiguredError, ollama_health,
 from app.config import Config
 from app.models import init_db
 from app.personality_engine import MissingCredentialsError, PersonalityEngine
+from app.poll_policy import PollPolicy
+from app.power import PowerTracker
 from app.robot_schema import SERVO_LIMITS, build_schema
 from app.senses import SensesService
 
@@ -54,7 +56,11 @@ instrument_controller(bittle)
 behavior_store = BehaviorStore()
 behavior_store.init()
 arbiter = Arbiter(bittle, behavior_store)
-event_binder = EventBinder(arbiter, behavior_store, bittle)
+# Adaptive polling: idle postures (rest/sit/lie) stretch dog-facing pings.
+poll_policy = PollPolicy()
+bittle.telemetry_ttl = poll_policy.telemetry_ttl
+event_binder = EventBinder(arbiter, behavior_store, bittle,
+                           battery_poll_s=poll_policy.battery_interval)
 bittle.on_online = event_binder.on_online
 bittle.on_output_line = event_binder.handle_output_line
 # Proximity leash: consumes the firmware's event_rssi push; zone changes
@@ -69,6 +75,10 @@ senses = SensesService(
     bittle, is_away=lambda: leash.enabled and not Config.MOCK_RICH)
 senses.instrument(bittle)
 senses.init()
+# Power sessions: snapshot stats at power-on/off for battery-health trends
+# and runtime prediction.
+power = PowerTracker(bittle)
+power.init()
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -77,6 +87,18 @@ def _fan_out_event_frame(frame: dict) -> None:
     leash.handle_event_frame(frame)
     if frame.get("type") == "event_rssi":
         metrics.inc("ws.event_rssi")
+
+
+def _observe_for_poll_policy(original_send):
+    def wrapped(command: str) -> bool:
+        ok = original_send(command)
+        if ok:
+            poll_policy.observe_command(command)
+        return ok
+    return wrapped
+
+
+bittle.send_command = _observe_for_poll_policy(bittle.send_command)
 
 
 if hasattr(bittle, "on_event_frame"):
@@ -271,7 +293,32 @@ def robot_status(robot_id: str):
         "battery": telemetry.get("battery"),
         "signal": telemetry.get("signal"),
         "uptimeSeconds": int(time.time() - _started_at),
+        # Epoch of adapter start: the FE derives a smoothly ticking uptime
+        # from this instead of re-rendering the polled integer.
+        "startedAt": _started_at,
     })
+
+
+@app.get("/api/robots/<robot_id>/power")
+@robot_scoped
+def robot_power(robot_id: str):
+    return jsonify({"robotId": robot_id, **power.summary()})
+
+
+@app.get("/api/robots/<robot_id>/polling")
+@robot_scoped
+def polling_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **poll_policy.status()})
+
+
+@app.post("/api/robots/<robot_id>/polling")
+@robot_scoped
+def polling_config(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    result = poll_policy.configure(data)
+    log_activity("polling", f"poll policy updated: "
+                            f"x{result['config']['idleMultiplier']} when idle")
+    return jsonify({"robotId": robot_id, **result})
 
 
 @app.get("/api/robots/<robot_id>/personality")

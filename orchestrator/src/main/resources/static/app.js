@@ -26,7 +26,6 @@ const state = {
   wsConnected: false,
   wsGaveUp: false,
   wsFailures: 0,
-  debug: {},               // topic -> {at, body}
 };
 
 // ---------- helpers ----------
@@ -53,11 +52,6 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text ?? "";
   return div.innerHTML;
-}
-
-function moodEmoji(mood) {
-  return { happy: "😊", excited: "🤩", curious: "🧐", bored: "🥱", tired: "😴",
-           sad: "😢", playful: "😜", content: "😌" }[mood] || "🐕";
 }
 
 function fmtUptime(seconds) {
@@ -94,14 +88,11 @@ async function runAction(button, action) {
 // ---------- incoming data (both transports call this) ----------
 
 function handleMessage(topic, body) {
-  state.debug[topic] = { at: new Date().toLocaleTimeString(), body };
-
   if (topic === "/topic/fleet/status") {
     state.statuses = body;
     onStatusesChanged();
   } else if (topic === "/topic/fleet/stats") {
     state.stats = body;
-    if (state.page === "dashboard") renderStatCards();
   } else {
     const m = topic.match(/^\/topic\/robot\/([^/]+)\/(\w+)$/);
     if (!m) return;
@@ -118,8 +109,6 @@ function handleMessage(topic, body) {
       if (onRobotPage(robotId)) renderActivity(robotId);
     }
   }
-
-  if (state.page === "debug") renderDebug();
 }
 
 function onRobotPage(robotId) {
@@ -129,7 +118,6 @@ function onRobotPage(robotId) {
 function onStatusesChanged() {
   renderSidebarRobots();
   if (state.page === "dashboard") {
-    renderStatCards();
     renderRobotGrid();
   }
   if (state.page === "robot" && state.selected) {
@@ -189,13 +177,33 @@ function subscribeAll() {
 }
 
 function renderConnIndicator() {
-  const el = $("#conn-indicator");
+  // Transport widget in the navbar (replaces the old debug page section
+  // and the footer indicator).
+  const el = $("#nav-transport");
+  if (!el) return;
   if (state.wsConnected) {
-    el.textContent = "🟢 Real-time (WebSocket)";
-    el.className = "conn-indicator ws";
+    el.textContent = "Real-time (WebSocket)";
+    el.className = "nav-widget-body ok";
   } else {
-    el.textContent = "🟡 Polling (HTTP)";
-    el.className = "conn-indicator poll";
+    el.textContent = `Polling (HTTP)` +
+        (state.wsFailures ? ` - ${state.wsFailures} WS failure(s)` : "") +
+        (state.wsGaveUp ? " - gave up on WS" : "");
+    el.className = "nav-widget-body warn";
+  }
+}
+
+async function renderHealthWidget() {
+  // Orchestrator health in the navbar (replaces the old settings section).
+  const el = $("#nav-health");
+  if (!el) return;
+  try {
+    const health = await api("/api/health");
+    el.textContent = `${health.status} - fleet of ${health.fleetSize}`;
+    el.className = "nav-widget-body " +
+        (health.status === "healthy" ? "ok" : "warn");
+  } catch (e) {
+    el.textContent = "unreachable";
+    el.className = "nav-widget-body err";
   }
 }
 
@@ -215,7 +223,11 @@ async function pollTick() {
       await refreshRobotDetail(state.selected);
     }
   } catch (e) {
-    $("#conn-indicator").textContent = `🔴 orchestrator unreachable`;
+    const el = $("#nav-transport");
+    if (el) {
+      el.textContent = "orchestrator unreachable";
+      el.className = "nav-widget-body err";
+    }
   }
 }
 
@@ -235,8 +247,7 @@ function route() {
   if (robotMatch) {
     showRobotPage(decodeURIComponent(robotMatch[1]));
   } else {
-    const page = hash.slice(1);
-    showPage(["dashboard", "specs", "settings", "debug"].includes(page) ? page : "dashboard");
+    showPage("dashboard");
   }
   $("#sidebar").classList.remove("open");
 }
@@ -248,13 +259,12 @@ function showPage(page) {
   document.querySelectorAll(".nav-link").forEach((link) =>
       link.classList.toggle("active", link.dataset.page === page));
 
-  if (page === "dashboard") { renderStatCards(); renderRobotGrid(); }
-  if (page === "settings") renderSettings();
-  if (page === "debug") renderDebug();
+  if (page === "dashboard") renderRobotGrid();
   renderSidebarRobots();
 }
 
 function showRobotPage(robotId) {
+  const robotChanged = state.selected !== robotId;
   state.page = "robot";
   state.selected = robotId;
   document.querySelectorAll(".page").forEach((s) => s.classList.add("hidden"));
@@ -262,10 +272,24 @@ function showRobotPage(robotId) {
   document.querySelectorAll(".nav-link").forEach((link) =>
       link.classList.toggle("active", link.dataset.robot === robotId));
 
+  if (robotChanged) {
+    // Embedded tabs are per-robot: clear cached frames and return to
+    // Activity so nothing shows the previous robot's data.
+    ["control", "voice", "mind", "leash", "metrics"].forEach((name) => {
+      const frame = $(`#${name}-frame`);
+      if (frame) frame.removeAttribute("src");
+    });
+    document.querySelectorAll(".tab-bar .tab").forEach((t) =>
+        t.classList.toggle("active", t.dataset.tab === "activity"));
+    document.querySelectorAll(".robot-tab").forEach((panel) =>
+        panel.classList.toggle("hidden", panel.id !== "robot-tab-activity"));
+  }
+
   renderRobotHeader(robotId);
   renderActivity(robotId);
   renderArbiter(robotId);
   refreshRobotDetail(robotId);
+  loadPollingPanel(robotId);
   renderSidebarRobots();
 }
 
@@ -282,31 +306,13 @@ function renderSidebarRobots() {
         (state.page === "robot" && state.selected === robot.robotId ? " active" : "");
     link.dataset.robot = robot.robotId;
     link.innerHTML =
-        `<span class="icon">🤖</span><span class="label">${escapeHtml(robot.name)}</span>` +
+        `<span class="label">${escapeHtml(robot.name)}</span>` +
         `<span class="dot ${status?.connected ? "on" : "off"}"></span>`;
     container.appendChild(link);
   });
 }
 
 // ---------- dashboard ----------
-
-function renderStatCards() {
-  const container = $("#stat-cards");
-  const stats = state.stats;
-  const batteries = Object.values(state.statuses)
-      .map((s) => s.battery).filter((b) => b != null);
-  const avgBattery = batteries.length
-      ? Math.round(batteries.reduce((a, b) => a + b, 0) / batteries.length) + "%" : "—";
-
-  const cards = [
-    ["Robots", stats ? stats.totalRobots : state.robots.length],
-    ["Connected", stats ? stats.connectedRobots : "—"],
-    ["Avg battery", avgBattery],
-  ];
-  container.innerHTML = cards.map(([label, value]) =>
-      `<div class="stat-card"><div class="value">${value}</div><div class="label">${label}</div></div>`
-  ).join("");
-}
 
 const MINI_ROBOT_SVG = `
 <svg class="robot-mini" viewBox="0 0 100 90" aria-hidden="true">
@@ -336,26 +342,9 @@ function renderRobotGrid() {
           <div class="bar-track"><div class="bar-fill battery ${batteryClass(status.battery)}"
                style="width:${status.battery ?? 0}%"></div></div>
         </div>
-        <div class="stat">
-          <div class="label">Mood</div>
-          <div class="mood">${status.mood ? escapeHtml(status.mood) + " " + moodEmoji(status.mood) : "—"}</div>
-        </div>
-      </div>
-      <div class="card-actions">
-        <button class="btn-details">Details</button>
-        <button class="btn-mind">💭 Mind</button>
       </div>`;
-    card.querySelector(".btn-details").onclick = () =>
+    card.onclick = () =>
         location.hash = `#robot/${encodeURIComponent(robot.robotId)}`;
-    card.querySelector(".btn-mind").onclick = (event) => {
-      event.stopPropagation();
-      location.href = `mind.html?robot=${encodeURIComponent(robot.robotId)}`;
-    };
-    card.onclick = (event) => {
-      if (event.target.tagName !== "BUTTON") {
-        location.hash = `#robot/${encodeURIComponent(robot.robotId)}`;
-      }
-    };
     container.appendChild(card);
   });
 }
@@ -376,7 +365,57 @@ function renderRobotHeader(robotId) {
   conn.className = "chip " + (status.connected ? "ok" : "err");
   $("#robot-chip-mood").textContent = `mood: ${status.mood ?? "?"}`;
   $("#robot-chip-mode").textContent = `mode: ${status.mode ?? "?"}`;
+  renderUptimeChip();
 }
+
+// Smooth uptime: derived client-side from the adapter's boot epoch
+// (status.startedAt) and ticked every second — no more jumps at the
+// polling interval.
+function renderUptimeChip() {
+  const el = $("#robot-chip-uptime");
+  if (!el || state.page !== "robot" || !state.selected) return;
+  const status = state.statuses[state.selected] || {};
+  if (status.startedAt) {
+    el.textContent = "up " + fmtUptime(Math.max(0,
+        Math.floor(Date.now() / 1000 - status.startedAt)));
+  } else if (status.uptimeSeconds != null) {
+    el.textContent = "up " + fmtUptime(status.uptimeSeconds);
+  } else {
+    el.textContent = "";
+  }
+}
+
+setInterval(renderUptimeChip, 1000);
+
+// ---------- polling panel (adaptive dog-facing pings) ----------
+
+async function loadPollingPanel(robotId) {
+  try {
+    const data = await api(`/api/robots/${robotId}/polling`);
+    $("#poll-ttl").value = data.config.telemetryTtlS;
+    $("#poll-batt").value = data.config.batteryPollS;
+    $("#poll-mult").value = data.config.idleMultiplier;
+    $("#poll-postures").value = data.config.idlePostures.join(", ");
+    $("#polling-state").textContent = data.idle
+        ? `idle (x${data.config.idleMultiplier}) - telemetry every ${data.effectiveTelemetryTtlS}s`
+        : `active - telemetry every ${data.effectiveTelemetryTtlS}s`;
+  } catch { $("#polling-state").textContent = "adapter offline"; }
+}
+
+$("#poll-save").onclick = () => runAction($("#poll-save"), async () => {
+  await api(`/api/robots/${state.selected}/polling`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      telemetryTtlS: parseFloat($("#poll-ttl").value),
+      batteryPollS: parseFloat($("#poll-batt").value),
+      idleMultiplier: parseFloat($("#poll-mult").value),
+      idlePostures: $("#poll-postures").value,
+    }),
+  });
+  toast("Polling policy saved");
+  loadPollingPanel(state.selected);
+});
 
 function renderActivity(robotId) {
   const feed = $("#activity");
@@ -387,39 +426,6 @@ function renderActivity(robotId) {
     li.innerHTML = `<span class="kind">${escapeHtml(entry.kind)}</span>` +
         `${escapeHtml(entry.message)}<span class="at">${at}</span>`;
     feed.appendChild(li);
-  });
-}
-
-// ---------- settings & debug ----------
-
-async function renderSettings() {
-  const table = $("#settings-robots");
-  const rows = state.robots.map((r) => `
-    <tr><td>${escapeHtml(r.robotId)}</td><td>${escapeHtml(r.name)}</td>
-        <td>${escapeHtml(r.type)}</td><td><code>${escapeHtml(r.serviceUrl)}</code></td>
-        <td>${r.active ? "✔" : "—"}</td></tr>`).join("");
-  table.innerHTML =
-      "<tr><th>ID</th><th>Name</th><th>Type</th><th>Adapter URL</th><th>Active</th></tr>" + rows;
-  try {
-    const health = await api("/api/health");
-    $("#settings-health").textContent = JSON.stringify(health, null, 2);
-  } catch (e) {
-    $("#settings-health").textContent = `unreachable: ${e.message}`;
-  }
-}
-
-function renderDebug() {
-  $("#debug-transport").textContent =
-      `websocket connected: ${state.wsConnected} · failures: ${state.wsFailures}` +
-      `${state.wsGaveUp ? " · gave up (polling permanently)" : ""}`;
-  const container = $("#debug-topics");
-  container.innerHTML = "";
-  Object.entries(state.debug).sort().forEach(([topic, entry]) => {
-    const details = document.createElement("details");
-    details.innerHTML = `<summary><code>${escapeHtml(topic)}</code>` +
-        `<span class="at">${entry.at}</span></summary>` +
-        `<pre class="code-block">${escapeHtml(JSON.stringify(entry.body, null, 2).slice(0, 4000))}</pre>`;
-    container.appendChild(details);
   });
 }
 
@@ -466,7 +472,8 @@ setInterval(() => {
   if (state.page === "robot" && state.selected) renderArbiter(state.selected);
 }, 5000);
 
-// Robot page tabs: Activity | Control (Control Panel embedded, lazy-loaded).
+// Robot page tabs. Embedded per-robot pages lazy-load on first activation
+// (frames are cleared whenever the selected robot changes).
 document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab-bar .tab").forEach((t) =>
@@ -474,12 +481,19 @@ document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
     document.querySelectorAll(".robot-tab").forEach((panel) =>
         panel.classList.toggle("hidden",
             panel.id !== `robot-tab-${tab.dataset.tab}`));
-    // Embedded pages lazy-load on first tab activation.
-    const frames = { control: "control.html", voice: "voice.html" };
+    const frames = {
+      control: "control.html", voice: "voice.html", mind: "mind.html",
+      leash: "leash.html", metrics: "metrics.html",
+    };
     const src = frames[tab.dataset.tab];
     if (src) {
       const frame = $(`#${tab.dataset.tab}-frame`);
-      if (frame && !frame.src) frame.src = `${src}?embedded=1`;
+      if (frame && !frame.getAttribute("src")) {
+        frame.src = `${src}?embedded=1&robot=${encodeURIComponent(state.selected)}`;
+      }
+    }
+    if (tab.dataset.tab === "specs") {
+      renderSpecsPage($("#specs-content"), state.selected);
     }
   });
 });
@@ -487,8 +501,9 @@ document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
 // ---------- boot ----------
 
 async function boot() {
-  renderSpecsPage($("#specs-content"));
   window.addEventListener("hashchange", route);
+  renderHealthWidget();
+  setInterval(renderHealthWidget, 10000);
 
   try {
     state.robots = await api("/api/fleet/robots");

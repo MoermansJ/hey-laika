@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Leash</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦮</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
   <style>
     :root {
       color-scheme: light;
@@ -49,7 +49,7 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>🦮 Leash — Laika</h1>
+    <h1>Leash</h1>
     <div class="spacer"></div>
     <button id="toggle" class="primary">…</button>
   </div>
@@ -102,7 +102,7 @@
   <script>
     const ROBOT = new URLSearchParams(location.search).get("robot") || "bittle-1";
     const BASE = `/api/robots/${ROBOT}/leash`;
-    document.querySelector("h1").textContent = `🦮 Leash — ${ROBOT}`;
+    document.querySelector("h1").textContent = `Leash — ${ROBOT}`;
     const CFG_KEYS = ["warnDbm", "farDbm", "lostDbm", "hysteresisDb", "dwellS", "deadManS"];
     const samples = [];  // {t, rssi}
     let latest = null;
@@ -175,7 +175,7 @@
       render(await (await fetch(BASE + "/config", { method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body) })).json());
-      document.getElementById("saveState").textContent = "saved ✓";
+      document.getElementById("saveState").textContent = "saved";
       setTimeout(() => { document.getElementById("saveState").textContent = ""; }, 2000);
     });
 

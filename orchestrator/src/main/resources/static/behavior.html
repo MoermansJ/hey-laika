@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Behavior Lab</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
   <style>
     /* Console design system (style.css palette) — fixed light, matching
        the fleet console. Variable NAMES are load-bearing (behavior.js
@@ -151,7 +151,7 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>🧠 Behavior Lab</h1>
+    <h1>Behavior Lab</h1>
     <select id="robot-select" title="Robot"></select>
     <span id="loop-chip" class="chip">…</span>
     <button id="btn-loop" class="primary">Start</button>
@@ -175,9 +175,9 @@
     <section class="card">
       <h2>Interact</h2>
       <div class="controls">
-        <button data-event="owner_petted">🖐 Pet</button>
-        <button data-event="owner_called_out">📣 Call</button>
-        <button data-event="owner_played">🎾 Play</button>
+        <button data-event="owner_petted">Pet</button>
+        <button data-event="owner_called_out">Call</button>
+        <button data-event="owner_played">Play</button>
       </div>
       <div class="controls">
         <select id="action-select"></select>
@@ -192,12 +192,12 @@
     <h2>Lifecycle behaviors <span class="lc-note">host-managed — the firmware stays silent</span></h2>
     <div class="lifecycle">
       <div class="lc-block">
-        <h3>🌅 Startup greeting <span id="greet-chip" class="chip">…</span></h3>
+        <h3>Startup greeting <span id="greet-chip" class="chip">…</span></h3>
         <div class="hint" id="greet-trigger">—</div>
         <div id="greet-steps" class="step-rows"></div>
         <div class="controls">
           <button id="greet-add">+ Add step</button>
-          <button id="greet-save" class="primary">💾 Save</button>
+          <button id="greet-save" class="primary">Save</button>
           <span class="hint" id="greet-saved"></span>
         </div>
         <div class="controls">
@@ -210,14 +210,14 @@
           the jingle.</div>
       </div>
       <div class="lc-block">
-        <h3>😴 Idle ladder <span id="idle-chip" class="chip">…</span></h3>
+        <h3>Idle ladder <span id="idle-chip" class="chip">…</span></h3>
         <div class="hint">When no motion commands arrive, the dog settles by itself.</div>
         <div class="idle-edit">
           <label>Sit after <input type="number" id="idle-sit-s" min="10" step="5"> s</label>
           <label>Lie down after <input type="number" id="idle-rest-s" min="20" step="5"> s</label>
         </div>
         <div class="controls">
-          <button id="idle-save" class="primary">💾 Save</button>
+          <button id="idle-save" class="primary">Save</button>
           <button id="idle-toggle">…</button>
           <span class="hint" id="idle-now"></span>
           <span class="hint" id="idle-saved"></span>

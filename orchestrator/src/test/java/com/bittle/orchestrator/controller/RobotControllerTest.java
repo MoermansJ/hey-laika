@@ -73,7 +73,7 @@ class RobotControllerTest {
         var agent = mock(RobotAgent.class);
         when(agent.status())
                 .thenReturn(new RobotStatus("bittle-1", true, "mock", "kbalance", 5, false,
-                        "happy", 87.5, "strong", 120L));
+                        "happy", 87.5, "strong", 120L, 1000.0));
         when(fleetManager.get("bittle-1")).thenReturn(agent);
 
         mvc.perform(get("/api/robots/bittle-1/status"))

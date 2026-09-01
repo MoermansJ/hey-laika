@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Voice</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎤</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
   <style>
     /* Console design system (style.css palette) — fixed light. */
     :root {
@@ -67,7 +67,7 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>🎤 Voice — “Hey Laika”</h1>
+    <h1>Voice — “Hey Laika”</h1>
     <select id="robot-select" title="Robot"></select>
     <span id="voice-chip" class="chip">checking…</span>
   </div>
@@ -76,7 +76,7 @@
     <div class="voice-row">
       <input type="text" id="voice-input"
              placeholder="Simulate speech — e.g. “who’s a good dog?”" autocomplete="off">
-      <button id="voice-send" class="primary">🎤 Send</button>
+      <button id="voice-send" class="primary">Send</button>
     </div>
     <div id="voice-log" class="voice-log"></div>
     <div class="hint">Simulates the wake-word → record → respond chain: the dog beeps at
@@ -88,9 +88,9 @@
   <section class="card" style="margin-top:0.9rem">
     <h2>Sounds <span class="chip">host speakers (robot has buzzer only)</span></h2>
     <div class="voice-row" style="margin-bottom:0">
-      <button data-sound="positive_bark">🐶 Positive bark</button>
-      <button data-sound="positive_bark2">🐶 Positive bark 2</button>
-      <button data-sound="negative_bark">🙀 Negative bark</button>
+      <button data-sound="positive_bark">Positive bark</button>
+      <button data-sound="positive_bark2">Positive bark 2</button>
+      <button data-sound="negative_bark">Negative bark</button>
       <label class="hint" style="margin:auto 0 auto auto">
         <input type="checkbox" id="bark-on-reply" checked> bark on replies
       </label>
@@ -121,7 +121,7 @@
       const log = $("#voice-log");
       const msg = document.createElement("div");
       msg.className = `voice-msg ${kind}`;
-      const who = kind === "user" ? "you" : kind === "laika" ? "laika 🐕" : "error";
+      const who = kind === "user" ? "you" : kind === "laika" ? "laika" : "error";
       const lat = latencySec != null
           ? `<span class="lat">${latencySec.toFixed(1)}s think</span>` : "";
       msg.innerHTML = `<span class="who">${who}${lat}</span>${text}`;
@@ -159,7 +159,7 @@
       voiceLogAppend("user", text);
       input.value = "";
       button.disabled = true;
-      button.textContent = "🎤 …";
+      button.textContent = "…";
       try {
         const result = await api("/voice/demo", {
           method: "POST",
@@ -174,7 +174,7 @@
         if ($("#bark-on-reply").checked) playSound("negative_bark");
       } finally {
         button.disabled = false;
-        button.textContent = "🎤 Send";
+        button.textContent = "Send";
         input.focus();
       }
     }

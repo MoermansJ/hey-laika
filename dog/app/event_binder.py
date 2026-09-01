@@ -118,7 +118,11 @@ class EventBinder:
     # ---- battery -----------------------------------------------------------
 
     def _battery_loop(self) -> None:
-        while not self._stop.wait(self.battery_poll_s):
+        # battery_poll_s may be a callable (adaptive poll policy: idle
+        # postures stretch the interval) or a plain number.
+        while not self._stop.wait(self.battery_poll_s()
+                                  if callable(self.battery_poll_s)
+                                  else self.battery_poll_s):
             try:
                 telemetry = self.controller.get_telemetry()
                 battery = telemetry.get("battery")

@@ -176,6 +176,26 @@ public class RobotController {
                 fleetManager.get(robotId).lifecyclePost("/idle/" + action));
     }
 
+    // ---- Power sessions (battery health) passthrough ----
+
+    @GetMapping("/power")
+    public Map<String, Object> power(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/power");
+    }
+
+    // ---- Adaptive polling policy passthrough ----
+
+    @GetMapping("/polling")
+    public Map<String, Object> polling(@PathVariable String robotId) {
+        return fleetManager.get(robotId).lifecycleGet("/polling");
+    }
+
+    @PostMapping("/polling")
+    public Map<String, Object> pollingConfig(@PathVariable String robotId,
+                                             @RequestBody Map<String, Object> body) {
+        return fleetManager.get(robotId).lifecyclePostBody("/polling", body);
+    }
+
     // ---- Senses layer passthrough ----
 
     @GetMapping("/senses")

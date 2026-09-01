@@ -32,7 +32,7 @@ class FleetBroadcasterTest {
     void nothingIsBroadcastWithoutClients() {
         fleet.register(agent("bittle-1",
                 new RobotStatus("bittle-1", true, "mock", null, 0, false, "happy",
-                        80.0, "strong", 10L)));
+                        80.0, "strong", 10L, 1000.0)));
 
         broadcaster.broadcastStatus();
         broadcaster.broadcastPersonalityAndDisplay();
@@ -45,7 +45,7 @@ class FleetBroadcasterTest {
     void statusSweepFeedsFleetRobotAndStatsTopics() {
         fleet.register(agent("bittle-1",
                 new RobotStatus("bittle-1", true, "mock", null, 0, true, "happy",
-                        80.0, "strong", 10L)));
+                        80.0, "strong", 10L, 1000.0)));
         fleet.register(agent("bittle-2", RobotStatus.unreachable("bittle-2")));
         broadcaster.onSessionConnect(mock(SessionConnectEvent.class));
 

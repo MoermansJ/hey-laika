@@ -10,17 +10,12 @@
   // fleet API; hash destinations resolve via the console's router on load.
   // (Control Panel lives as a tab on the robot page; the Sequence Builder
   // is unlisted pending its rebirth as a behavior builder.)
+  // Restructured 2026-09-01: system pages became per-robot tabs on the
+  // Robot Detail page; the sidebar is Dashboard + robots only, no emojis.
   const PAGES = [
-    { href: "index.html#dashboard", icon: "📊", label: "Dashboard" },
+    { href: "index.html#dashboard", label: "Dashboard" },
     { sep: "Robots" },
     { robots: true },
-    { sep: "System" },
-    { href: "behavior.html", icon: "🧠", label: "Behavior Lab" },
-    { href: "mind.html", icon: "💭", label: "Mind" },
-    { href: "leash.html", icon: "🦮", label: "Leash" },
-    { href: "metrics.html", icon: "📈", label: "Metrics" },
-    { href: "index.html#settings", icon: "⚙️", label: "Settings" },
-    { href: "index.html#debug", icon: "🐛", label: "Debug" },
   ];
   const KEY = "heyLaikaNavCollapsed";
   const current = (location.pathname.split("/").pop() || "index.html");
@@ -62,14 +57,13 @@
   const linkHtml = (p) =>
     `<a href="${p.href}" title="${p.label}"` +
     `${p.href === current ? ' class="current"' : ""}>` +
-    `<span class="hl-icon">${p.icon}</span>` +
     `<span class="hl-label">${p.label}</span></a>`;
 
   const nav = document.createElement("nav");
   nav.className = "hl-nav";
   nav.innerHTML =
     `<button class="hl-toggle" title="Collapse navigation">` +
-    `<span class="hl-icon">☰</span><span class="hl-label">Collapse</span></button>` +
+    `<span class="hl-label">Collapse</span></button>` +
     PAGES.map((p) => {
       if (p.sep) return `<div class="hl-sep">${p.sep}</div>`;
       if (p.robots) return `<div class="hl-robots"></div>`;
@@ -83,7 +77,7 @@
       nav.querySelector(".hl-robots").innerHTML = robots.map((r) =>
         linkHtml({
           href: `index.html#robot/${encodeURIComponent(r.robotId)}`,
-          icon: "🤖", label: r.name,
+          label: r.name,
         })).join("");
     })
     .catch(() => { /* fleet API unreachable; static links still work */ });
