@@ -301,7 +301,6 @@ function renderStatCards() {
   const cards = [
     ["Robots", stats ? stats.totalRobots : state.robots.length],
     ["Connected", stats ? stats.connectedRobots : "—"],
-    ["Autonomous", stats ? stats.autonomousRobots : "—"],
     ["Avg battery", avgBattery],
   ];
   container.innerHTML = cards.map(([label, value]) =>
@@ -344,16 +343,13 @@ function renderRobotGrid() {
       </div>
       <div class="card-actions">
         <button class="btn-details">Details</button>
-        <button class="btn-auto">${status.autonomous ? "⏹ Stop" : "▶ Autonomous"}</button>
+        <button class="btn-mind">💭 Mind</button>
       </div>`;
     card.querySelector(".btn-details").onclick = () =>
         location.hash = `#robot/${encodeURIComponent(robot.robotId)}`;
-    card.querySelector(".btn-auto").onclick = (event) => {
+    card.querySelector(".btn-mind").onclick = (event) => {
       event.stopPropagation();
-      const verb = status.autonomous ? "stop" : "start";
-      runAction(event.target, () =>
-          api(`/api/robots/${robot.robotId}/autonomous/${verb}`, { method: "POST" })
-            .then(() => toast(`${robot.name}: autonomous ${verb}`)));
+      location.href = `mind.html?robot=${encodeURIComponent(robot.robotId)}`;
     };
     card.onclick = (event) => {
       if (event.target.tagName !== "BUTTON") {
@@ -428,14 +424,9 @@ function renderDebug() {
 }
 
 // ---------- actions ----------
-
-$("#fleet-auto-start").onclick = (event) =>
-    runAction(event.target, () => api("/api/fleet/autonomous/start", { method: "POST" })
-      .then((result) => toast(`Autonomous started on ${Object.values(result).filter(Boolean).length} robot(s)`)));
-
-$("#fleet-auto-stop").onclick = (event) =>
-    runAction(event.target, () => api("/api/fleet/autonomous/stop", { method: "POST" })
-      .then(() => toast("Autonomous stopped fleet-wide")));
+// (Fleet-wide autonomous handlers removed with their buttons: the legacy
+// adapter loop bypasses the behavior arbiter. Replacement is the Director
+// toggle — agent-priority arbiter submissions — framework Phase 4.)
 
 $("#sidebar-open").onclick = () => $("#sidebar").classList.toggle("open");
 

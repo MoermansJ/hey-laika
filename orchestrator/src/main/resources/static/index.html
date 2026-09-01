@@ -63,10 +63,9 @@
     <section id="page-dashboard" class="page">
       <div class="page-header">
         <h2>Dashboard</h2>
-        <div class="button-row">
-          <button id="fleet-auto-start">▶ Start all autonomous</button>
-          <button id="fleet-auto-stop">⏹ Stop all autonomous</button>
-        </div>
+        <!-- Fleet-wide autonomous buttons removed: the old adapter loop
+             bypasses the behavior arbiter. Its replacement is the Director
+             (agent-priority arbiter submissions), framework Phase 4. -->
       </div>
       <div id="stat-cards" class="stat-cards"></div>
       <div id="robot-grid" class="robot-grid"></div>
