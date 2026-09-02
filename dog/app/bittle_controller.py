@@ -44,6 +44,44 @@ _TIMEOUT_DEFAULT = 3.0
 # The WS task queue adds latency and the firmware's own task timeout is 45s;
 # observed: first skill after boot can exceed 8s before 'completed' arrives.
 _TIMEOUT_SKILL_WS = 20.0
+# After a dropped 'P' the cache holds {None, None} only this long, so a
+# single lost poll cannot mask a low battery for the full telemetry TTL.
+_TELEMETRY_RETRY_S = 5.0
+
+# Commands that may be re-sent after a reconnect: pure reads. Everything
+# else (skills, joint moves, calibration, beeps, module toggles) could have
+# reached the firmware before the link died and must never run twice.
+_RETRY_SAFE = ("?", "P", "j", "gp", "X?", "XWs", "XWr")
+# Commands that do not move the robot and therefore must not reset the idle
+# ladder or block the WiFi sniffer: beeps, reads, and X-tool/module toggles.
+_NON_MOTION_PREFIXES = ("b", "B", "X", "?", "P", "j", "J", "gp", "G", "v")
+
+
+def _retry_safe(command: str) -> bool:
+    return command in _RETRY_SAFE or command.startswith(("X?", "XWs", "XWr"))
+
+
+def _is_motion(command: str) -> bool:
+    return not command.startswith(_NON_MOTION_PREFIXES)
+
+
+def _is_closed_error(exc: BaseException) -> bool:
+    """True when a socket error means the link is gone (not a timeout)."""
+    if isinstance(exc, (TimeoutError,)):
+        return False
+    name = type(exc).__name__
+    if "Timeout" in name:
+        return False
+    return isinstance(exc, (OSError, ConnectionError, RuntimeError)) \
+        or "Closed" in name or "closed" in str(exc).lower()
+
+
+class _SendFailed(Exception):
+    """The command never left the host (socket write failed)."""
+
+
+class _LinkLost(Exception):
+    """The socket died after the command was written; delivery unknown."""
 
 # Battery: firmware 'P' (T_POWER) prints "Voltage: x.xx V" from the pack
 # divider. 2S LiPo: ~8.35 V full, ~6.8 V at the firmware's low-power floor.
@@ -97,6 +135,11 @@ class BaseBittleController(ABC):
     def get_telemetry(self) -> dict:
         """Battery/signal readout; None where the transport can't measure it."""
         return {"battery": None, "signal": None}
+
+    def abort(self) -> bool:
+        """Drop queued firmware work and rest immediately. Only the WiFi
+        transport (hey-laika firmware) supports it; others return False."""
+        return False
 
     def query(self, command: str) -> list[str] | None:
         """Send a command and return the firmware's output lines.
@@ -179,11 +222,16 @@ class MockBittleController(BaseBittleController):
     def disconnect(self) -> None:
         self.connected = False
 
+    def abort(self) -> bool:
+        logger.info("[mock] abort")
+        return True
+
     def send_command(self, command: str) -> bool:
         if not self.connected:
             self.connect()
         self.last_command = command
-        self.last_motion_at = time.time()
+        if _is_motion(command):
+            self.last_motion_at = time.time()
         self.command_log.append({"command": command, "at": time.time()})
         # Keep the in-memory log bounded.
         self.command_log = self.command_log[-200:]
@@ -211,8 +259,10 @@ class MockBittleController(BaseBittleController):
         }
 
     def get_telemetry(self) -> dict:
+        # Drains to a 20% floor and holds there: a fixture must never trip
+        # the 5% battery.low safety binding (rest_now) on its own.
         minutes = (time.time() - self._battery_since) / 60
-        battery = 100.0 - (minutes * self.BATTERY_DRAIN_PER_MINUTE) % 100.0
+        battery = max(20.0, 100.0 - minutes * self.BATTERY_DRAIN_PER_MINUTE)
         return {"battery": round(battery, 1), "signal": "strong"}
 
 
@@ -316,7 +366,8 @@ class SerialBittleController(BaseBittleController):
             logger.error("Serial command failed: %s", exc)
             return False
         self.last_command = command
-        self.last_motion_at = time.time()
+        if _is_motion(command):
+            self.last_motion_at = time.time()
         self.commands_sent += 1
         return found
 
@@ -343,6 +394,7 @@ class SerialBittleController(BaseBittleController):
             logger.error("Serial move failed: %s", exc)
             return False
         self.last_command = "I " + " ".join(f"{i}:{a}" for i, a in moves)
+        self.last_motion_at = time.time()
         self.commands_sent += 1
         return found
 
@@ -554,7 +606,14 @@ class WiFiBittleController(BaseBittleController):
                 while True:
                     try:
                         raw = self._ws.recv()
-                    except Exception:
+                    except Exception as exc:
+                        if _is_closed_error(exc):
+                            # Peer went away: drop the socket now so
+                            # get_status()['connected'] and the power
+                            # tracker stop lying until the next keepalive.
+                            logger.warning("WiFi socket closed by peer (%s)",
+                                           exc)
+                            self.disconnect()
                         break
                     if isinstance(raw, bytes):
                         raw = raw.decode("utf-8", errors="replace")
@@ -582,18 +641,26 @@ class WiFiBittleController(BaseBittleController):
             if self._ws is None:
                 raise RuntimeError("websocket not connected")
             task_id = self._next_task_id()
-            self._ws.send(json.dumps({
-                "type": "command",
-                "taskId": task_id,
-                "commands": [command],
-                "timestamp": int(time.time() * 1000),
-            }))
+            try:
+                self._ws.send(json.dumps({
+                    "type": "command",
+                    "taskId": task_id,
+                    "commands": [command],
+                    "timestamp": int(time.time() * 1000),
+                }))
+            except Exception as exc:
+                raise _SendFailed(str(exc)) from exc
             deadline = time.time() + timeout
             self._ws.settimeout(min(timeout, 5.0))
             while time.time() < deadline:
                 try:
                     raw = self._ws.recv()
-                except Exception:
+                except Exception as exc:
+                    if _is_closed_error(exc):
+                        # A closed socket raises instantly; spinning on it
+                        # for the whole timeout would hold the lock for up
+                        # to 20 s at 100% CPU. Delivery is unknown.
+                        raise _LinkLost(str(exc)) from exc
                     continue  # recv timeout tick; keep waiting until deadline
                 if isinstance(raw, bytes):
                     raw = raw.decode("utf-8", errors="replace")
@@ -640,13 +707,43 @@ class WiFiBittleController(BaseBittleController):
             while time.time() < deadline:
                 try:
                     frame = json.loads(self._ws.recv())
-                except Exception:
+                except Exception as exc:
+                    if _is_closed_error(exc):
+                        return False
                     continue
                 if frame.get("type") == "heartbeat":
                     return True
         except Exception:
             pass
         return False
+
+    def abort(self) -> bool:
+        """Ask the firmware to drop its task queue and rest now (hey-laika
+        abort frame). Best-effort: True only when the firmware acknowledges."""
+        import json
+
+        with self._lock:
+            if self._ws is None and not self.connect():
+                return False
+            try:
+                self._ws.send(json.dumps({"type": "abort"}))
+                deadline = time.time() + 2.0
+                self._ws.settimeout(1.0)
+                while time.time() < deadline:
+                    try:
+                        frame = json.loads(self._ws.recv())
+                    except Exception as exc:
+                        if _is_closed_error(exc):
+                            return False
+                        continue
+                    if str(frame.get("type", "")).startswith("event_"):
+                        self._dispatch_event(frame)
+                        continue
+                    if frame.get("type") == "abort":
+                        return str(frame.get("status", "")).lower() == "ok"
+            except Exception as exc:
+                logger.warning("WiFi abort failed: %s", exc)
+            return False
 
     def _send(self, command: str, timeout: float) -> list[str] | None:
         """_transact with one reconnect-and-retry (firmware drops idle clients).
@@ -659,19 +756,35 @@ class WiFiBittleController(BaseBittleController):
         with self._lock:
             if self._ws is None and not self.connect():
                 return None
+            delivered = True  # unless the write itself failed
             try:
                 result = self._transact(command, timeout)
                 if result is not None:
                     return result
                 if self._heartbeat_ok():
                     return None  # firmware alive; command lost/slow — no retry
-                logger.warning("WiFi socket stale after timeout; reconnecting "
-                               "and retrying %r", command)
-            except Exception as exc:
+                logger.warning("WiFi socket stale after timeout on %r; "
+                               "reconnecting", command)
+            except _SendFailed as exc:
+                delivered = False
                 logger.warning("WiFi send failed (%s); reconnecting", exc)
+            except _LinkLost as exc:
+                logger.warning("WiFi link lost during %r (%s); reconnecting",
+                               command, exc)
+            except Exception as exc:
+                logger.warning("WiFi command error (%s); reconnecting", exc)
             from app.metrics import metrics
             metrics.inc("ws.reconnects")
             if not self.connect():
+                return None
+            # Re-send only when the command provably never reached the
+            # firmware, or is a pure read. A skill that may already be
+            # executing must never be queued a second time.
+            if delivered and not _retry_safe(command):
+                logger.warning("Not re-sending %r after reconnect: delivery "
+                               "unknown and the command is not idempotent",
+                               command)
+                metrics.inc("ws.retry_suppressed")
                 return None
             try:
                 return self._transact(command, timeout)
@@ -689,7 +802,8 @@ class WiFiBittleController(BaseBittleController):
         if result is None:
             return False
         self.last_command = command
-        self.last_motion_at = time.time()
+        if _is_motion(command):
+            self.last_motion_at = time.time()
         self.commands_sent += 1
         return True
 
@@ -708,6 +822,7 @@ class WiFiBittleController(BaseBittleController):
         if self._send(command, _TIMEOUT_DEFAULT) is None:
             return False
         self.last_command = "I " + " ".join(f"{i}:{a}" for i, a in moves)
+        self.last_motion_at = time.time()
         self.commands_sent += 1
         return True
 
@@ -743,7 +858,13 @@ class WiFiBittleController(BaseBittleController):
         if voltage is not None:
             telemetry = {"battery": _voltage_to_percent(voltage),
                          "signal": "wifi"}
-        self._telemetry, self._telemetry_at = telemetry, time.time()
+            self._telemetry_at = time.time()
+        else:
+            # Negative result: retry soon instead of caching the miss for
+            # the full TTL (a lost 'P' must not hide a low battery).
+            self._telemetry_at = (time.time() - self.telemetry_ttl()
+                                  + _TELEMETRY_RETRY_S)
+        self._telemetry = telemetry
         return dict(telemetry)
 
     def get_info(self) -> dict:

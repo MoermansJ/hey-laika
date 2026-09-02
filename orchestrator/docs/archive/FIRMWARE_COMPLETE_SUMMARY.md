@@ -1,3 +1,5 @@
+> **Archived 2026-09-02.** Superseded by [design/FIRMWARE_RESET.md](../design/FIRMWARE_RESET.md); kept for history. Details here no longer match the code.
+
 # Complete Firmware Roadmap: All Components Integrated
 
 **Status:** ✅ All design complete, ready for CLI agent implementation  

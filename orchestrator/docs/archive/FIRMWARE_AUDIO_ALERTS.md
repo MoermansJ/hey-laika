@@ -1,3 +1,5 @@
+> **Archived 2026-09-02.** Superseded by [design/VOICE_RELAY_BRIEF.md](../design/VOICE_RELAY_BRIEF.md); kept for history. Details here no longer match the code.
+
 # Audio Alerts & Voice System
 
 **Status:** Designed, Phase B ready (chirps), Phase C ready (voice TTS)  

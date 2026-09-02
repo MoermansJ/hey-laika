@@ -112,10 +112,9 @@ async function pollReadback() {
 }
 
 async function refreshAutonomy() {
-  try {
-    const status = await api("/autonomous/status");
-    state.autonomyRunning = status.running;
-  } catch { /* adapter down; other chips show it */ }
+  // The adapter's in-process autonomous loop is deprecated (behavior
+  // framework owns motion); only the orchestrator loop is worth polling.
+  state.autonomyRunning = false;
   try {
     const behavior = await api("/behavior/status");
     state.behaviorLoopRunning = behavior.running;
@@ -153,17 +152,19 @@ function renderServos() {
   for (const [group, servos] of groups) {
     const section = document.createElement("div");
     section.className = "servo-group";
-    section.innerHTML = `<h3>${GROUP_LABELS[group] ?? group}</h3>`;
+    section.innerHTML = `<h3>${esc(GROUP_LABELS[group] ?? group)}</h3>`;
     for (const servo of servos) {
       const row = document.createElement("div");
       row.className = "servo-row";
       row.dataset.servo = servo.index;
+      const min = Number(servo.min), max = Number(servo.max);
       row.innerHTML =
-          `<div class="head"><span class="sname" title="${servo.description}">` +
-          `${servo.displayName} <span style="color:var(--muted)">#${servo.index}</span></span>` +
+          `<div class="head"><span class="sname" title="${esc(servo.description)}">` +
+          `${esc(servo.displayName)} <span style="color:var(--muted)">#${Number(servo.index)}</span></span>` +
           `<span class="sval"><span class="target">—</span> <span class="actual"></span></span></div>` +
-          `<input type="range" min="${servo.min}" max="${servo.max}" step="1" value="0">` +
-          `<div class="range-labels"><span>${servo.min}°</span><span>0°</span><span>${servo.max}°</span></div>`;
+          `<input type="range" min="${min}" max="${max}" step="1" value="0"` +
+          ` aria-label="${esc(servo.displayName)} angle">` +
+          `<div class="range-labels"><span>${min}°</span><span>0°</span><span>${max}°</span></div>`;
       const slider = row.querySelector("input");
       const target = row.querySelector(".target");
       slider.addEventListener("pointerdown", () => { state.dragging = servo.index; });
@@ -194,9 +195,9 @@ function renderActions() {
     for (const action of actions) {
       const btn = document.createElement("button");
       btn.dataset.action = action.id;
-      btn.innerHTML = `${action.displayName}` +
+      btn.innerHTML = `${esc(action.displayName)}` +
           (action.verified ? "" : ` <span class="unverified" title="Not yet verified on this firmware">*</span>`) +
-          `<span class="dur">${(action.durationMs / 1000).toFixed(1)}s</span>`;
+          `<span class="dur">${(Number(action.durationMs) / 1000).toFixed(1)}s</span>`;
       btn.onclick = () => runAction(action);
       container.appendChild(btn);
     }
@@ -231,17 +232,17 @@ function setActionsDisabled(disabled) {
 
 function renderSensors() {
   $("#sensors").innerHTML = state.sensors.map((sensor) =>
-      `<div class="sensor ${sensor.available ? "" : "na"}" title="${sensor.description}">` +
-      `<div class="name">${sensor.displayName}</div>` +
+      `<div class="sensor ${sensor.available ? "" : "na"}" title="${esc(sensor.description)}">` +
+      `<div class="name">${esc(sensor.displayName)}</div>` +
       `<div class="value">${sensor.available ? "…" : "n/a"}` +
-      ` <span class="unit">${sensor.available ? sensor.unit : ""}</span></div></div>`).join("");
+      ` <span class="unit">${sensor.available ? esc(sensor.unit) : ""}</span></div></div>`).join("");
 }
 
 function renderMeta() {
   const m = state.metadata;
   $("#meta").innerHTML =
-      `Firmware <b>${m.firmwareVersion ?? "unknown"}</b> · model <b>${m.model ?? "—"}</b>` +
-      ` · transport <b>${m.mode ?? "—"}</b> · ${m.servoCount ?? "?"} servos` +
+      `Firmware <b>${esc(m.firmwareVersion ?? "unknown")}</b> · model <b>${esc(m.model ?? "—")}</b>` +
+      ` · transport <b>${esc(m.mode ?? "—")}</b> · ${Number(m.servoCount) || "?"} servos` +
       ` · calibrated: <b>${m.calibrated ? "yes" : "no"}</b>`;
   const chip = $("#mode-chip");
   chip.textContent = m.mode ?? "…";
@@ -284,7 +285,7 @@ async function loadRobot() {
 function bindTopbar() {
   $("#robot-select").onchange = async (event) => {
     state.robotId = event.target.value;
-    await loadRobot();
+    await startRobot();
   };
   const pinned = (id, fallbackMs) => () => {
     const action = state.actions.find((a) => a.id === id) ??
@@ -295,21 +296,48 @@ function bindTopbar() {
   $("#btn-rest").onclick = pinned("krest", 2000);
 }
 
-async function boot() {
-  const robots = await (await fetch("/api/fleet/robots")).json();
-  state.robots = robots;
-  $("#robot-select").innerHTML = robots.map((r) =>
-      `<option value="${r.robotId}">${r.name}</option>`).join("");
-  state.robotId = robots[0]?.robotId;
-  if (!state.robotId) return;
-  bindTopbar();
-  await loadRobot();
+let pollers = [];
+
+async function startRobot() {
+  pollers.forEach((p) => p.stop());
+  pollers = [];
+  try {
+    await loadRobot();
+  } catch (err) {
+    // Adapter down (502 adapter_unavailable) or schema fetch failed: say
+    // so and offer a retry instead of sitting on "loading schema…".
+    toast(`Cannot load ${state.robotId}: ${err.message}`, true);
+    hlRetryBlock($("#servo-groups"), `Adapter unavailable: ${err.message}`, startRobot);
+    return;
+  }
   await refreshBattery();
-  setInterval(pollReadback, READBACK_INTERVAL_MS);
-  setInterval(refreshAutonomy, 5000);
+  pollers.push(hlPoll(pollReadback, READBACK_INTERVAL_MS, { immediate: false }));
+  pollers.push(hlPoll(refreshAutonomy, 5000, { immediate: false }));
   // Matches the adapter's telemetry cache TTL — polling faster returns
   // the same cached reading anyway.
-  setInterval(refreshBattery, 20000);
+  pollers.push(hlPoll(refreshBattery, 20000, { immediate: false }));
+}
+
+async function boot() {
+  let robots;
+  try {
+    robots = await hlApi("", "/api/fleet/robots");
+  } catch (err) {
+    hlRetryBlock($("#servo-groups"), `Orchestrator unreachable: ${err.message}`, boot);
+    return;
+  }
+  state.robots = robots;
+  $("#robot-select").innerHTML = robots.map((r) =>
+      `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
+  // Embedded as a robot-page tab: the parent says which robot this is.
+  // Falling back to robots[0] here once drove Laika from Mocha's page.
+  const wanted = hlRobotParam(null);
+  state.robotId = robots.some((r) => r.robotId === wanted)
+      ? wanted : robots[0]?.robotId;
+  if (!state.robotId) return;
+  $("#robot-select").value = state.robotId;
+  bindTopbar();
+  await startRobot();
 }
 
 boot();

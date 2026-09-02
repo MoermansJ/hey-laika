@@ -22,6 +22,7 @@ import com.bittle.orchestrator.domain.robot.ServoMoveResult;
 import com.bittle.orchestrator.domain.robot.ServoState;
 import java.util.Map;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -31,26 +32,29 @@ import org.springframework.web.client.RestClientResponseException;
 public class PythonAdapterHttpClient implements RobotAdapterPort {
 
     private final RestClient http;
+    private final RestClient polling;
 
-    public PythonAdapterHttpClient(RestClient pythonRestClient) {
+    public PythonAdapterHttpClient(@Qualifier("pythonRestClient") RestClient pythonRestClient,
+                                   @Qualifier("pollingRestClient") RestClient pollingRestClient) {
         this.http = pythonRestClient;
+        this.polling = pollingRestClient;
     }
 
     @Override
     public Map<String, Object> metrics(Robot robot) {
-        return exchange(() -> http.get().uri(robot.serviceUrl() + "/metrics")
+        return exchange(() -> polling.get().uri(robot.serviceUrl() + "/metrics")
                 .retrieve().body(Map.class));
     }
 
     @Override
     public RobotStatus status(Robot robot) {
-        return exchange(() -> http.get().uri(robotUri(robot, "/status"))
+        return exchange(() -> polling.get().uri(robotUri(robot, "/status"))
                 .retrieve().body(RobotStatus.class));
     }
 
     @Override
     public RobotPersonality personality(Robot robot) {
-        return exchange(() -> http.get().uri(robotUri(robot, "/personality"))
+        return exchange(() -> polling.get().uri(robotUri(robot, "/personality"))
                 .retrieve().body(RobotPersonality.class));
     }
 
@@ -106,7 +110,7 @@ public class PythonAdapterHttpClient implements RobotAdapterPort {
 
     @Override
     public ActivityLog activity(Robot robot) {
-        return exchange(() -> http.get().uri(robotUri(robot, "/activity"))
+        return exchange(() -> polling.get().uri(robotUri(robot, "/activity"))
                 .retrieve().body(ActivityLog.class));
     }
 
@@ -119,7 +123,7 @@ public class PythonAdapterHttpClient implements RobotAdapterPort {
 
     @Override
     public DisplayContent display(Robot robot) {
-        return exchange(() -> http.get().uri(robotUri(robot, "/display"))
+        return exchange(() -> polling.get().uri(robotUri(robot, "/display"))
                 .retrieve().body(DisplayContent.class));
     }
 

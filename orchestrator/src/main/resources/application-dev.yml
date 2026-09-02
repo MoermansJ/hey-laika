@@ -1,7 +1,11 @@
 # Standalone dev profile: no Docker/Postgres needed. Run with
 #   ./mvnw spring-boot:run "-Dspring-boot.run.profiles=dev"
-# Behavior loops auto-start with simulated actions (see behavior.* in
-# application.yml), so decisions and personality drift show in the console.
+# Behavior loops auto-start with simulated actions, so decisions and
+# personality drift show in the console without touching hardware.
+behavior:
+  auto-start: true
+  simulate-actions: true
+
 spring:
   datasource:
     url: jdbc:h2:mem:bittle_fleet;DB_CLOSE_DELAY=-1

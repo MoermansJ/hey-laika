@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: bittle-orchestrator
+  task:
+    scheduling:
+      # Three sweeps plus the hourly rollup share this pool; with one thread a
+      # single slow adapter call (up to the 30 s command read timeout) stalled
+      # every broadcast. Polling reads use a 3 s client (RestClientConfig).
+      pool:
+        size: 3
   datasource:
     # Local dev default matches the compose postgres host mapping (15432);
     # in Docker this is overridden via SPRING_DATASOURCE_URL.
@@ -37,12 +44,27 @@ behavior:
   # a loop is started deliberately (Behavior Lab / POST /behavior/start).
   auto-start: false
   simulate-actions: false
+  # idle-cycle: true lets a calm robot run the sit -> look -> stand cycle
+  # instead of IDLE_CALM only (docs/design/ARCHITECTURE.md §4).
+  idle-cycle: false
 
 # AI cost valuation (metrics brief D.2): adapters measure exact token
-# counts; the orchestrator alone knows prices. USD per million tokens.
+# counts; the orchestrator alone knows prices. USD per million tokens,
+# first-party Anthropic rates as of 2026-09. The adapter reports which
+# model it actually calls (schema metadata.decisionModel); default-model
+# is used only when that is unknown. Add or override entries under prices.
 metrics:
-  claude-input-usd-per-mtok: 15.0
-  claude-output-usd-per-mtok: 75.0
+  default-model: claude-opus-5
+  prices:
+    claude-opus-5:
+      input-usd-per-mtok: 5.0
+      output-usd-per-mtok: 25.0
+    claude-sonnet-5:
+      input-usd-per-mtok: 2.0
+      output-usd-per-mtok: 10.0
+    claude-haiku-4-5:
+      input-usd-per-mtok: 1.0
+      output-usd-per-mtok: 5.0
 
 # Robot instances managed by this platform. Each entry points at the Python
 # adapter service that implements the robot's hardware/AI logic. Override in

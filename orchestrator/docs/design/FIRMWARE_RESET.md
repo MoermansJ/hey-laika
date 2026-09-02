@@ -1,7 +1,15 @@
 # Firmware Reset — "CSS reset" for the BiBoard
 
-**Date:** 2026-08-31 · **Status:** design, ready to build
-**Source base:** `F:\projects\robot\opencat-esp32` (B10_260820 fork; robot runs stock B10_251121)
+**Date:** 2026-08-31 · **Status (updated 2026-09-02):** hey-laika fork flashed on
+Laika. Phase A cuts 1, 3, 4 implemented; cut 2 partial (bounded WS queue exists,
+its normal drain path is broken — audit §4 F1); cut 6 partial (`CAMERA` off,
+`VOICE`/`QUICK_DEMO` still compiled, module defaults unchanged); cuts 5, 7, 8, 9,
+10 not started. Leash/nav additions outside this list are also flashed: `XW`
+tool set, 1 Hz `event_rssi`, second SSID slot, dead-man. Base version
+**B10_251121** with the date pinned (cut 1), so the wire version still reads
+`B10_251121`. Cut-by-cut evidence: `../reports/AUDIT_2026-09-02.md` §4.
+**Source base:** `F:\projects\robot\opencat-esp32` (hey-laika fork, two commits over
+upstream `9ebb48a` / B10_260820 snapshot; the robot reported stock B10_251121 before the fork)
 
 ## Rationale
 

@@ -76,7 +76,16 @@ body.nav-collapsed .sidebar-collapse { margin-left: 0; }
 body.nav-collapsed .nav-link { justify-content: center; padding: 0.55rem 0.4rem; }
 
 /* robot page tabs */
-.tab-bar { display: flex; gap: 0.4rem; margin: 0.75rem 0; border-bottom: 1px solid rgba(127,127,127,0.25); }
+.tab-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.75rem 0; border-bottom: 1px solid rgba(127,127,127,0.25); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.robot-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.spark { display: block; width: 100%; height: 34px; margin-top: 0.4rem; }
+.spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.spark .spark-floor { stroke: rgba(127,127,127,0.35); stroke-width: 1; stroke-dasharray: 3 3; }
+.spark-label { font-size: 0.7rem; color: var(--text-light); display: flex; justify-content: space-between; }
+.hl-retry { font: inherit; font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 6px;
+  border: 1px solid rgba(127,127,127,0.4); background: none; cursor: pointer; color: inherit; }
+.nav-widget-body.degraded { color: #f39c12; }
 .tab {
   background: none; border: none; cursor: pointer; font: inherit;
   color: var(--text-light); padding: 0.5rem 0.9rem;

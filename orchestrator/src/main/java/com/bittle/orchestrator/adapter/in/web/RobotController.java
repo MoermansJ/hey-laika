@@ -329,6 +329,11 @@ public class RobotController {
         return relayPostWithBody.execute(robotId, "/bindings", body);
     }
 
+    @PostMapping("/abort")
+    public Map<String, Object> abort(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/abort");
+    }
+
     @GetMapping("/arbiter/status")
     public Map<String, Object> arbiterStatus(@PathVariable String robotId) {
         return relayGet.execute(robotId, "/arbiter/status");

@@ -8,6 +8,7 @@ addresses fleet members by routing to the right service.
 There is no UI here; the orchestrator serves the frontend.
 """
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -22,8 +23,8 @@ from app.action_executor import execute_action
 from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
 from app.arbiter import Arbiter
-from app.behavior_store import (PRIORITY_AGENT, PRIORITY_MANUAL,
-                                BehaviorStore)
+from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
+                                PRIORITY_MANUAL, BehaviorStore)
 from app.event_binder import EventBinder
 from app.gait_learner import GaitLearner
 from app.leash import LeashService
@@ -83,10 +84,42 @@ power.init()
 
 def _fan_out_event_frame(frame: dict) -> None:
     """Single dispatch point for unsolicited firmware event frames
-    (event_rssi, event_us, ...). Future consumers (senses layer) hook here."""
+    (event_rssi, event_us, event_exception, ...)."""
     leash.handle_event_frame(frame)
-    if frame.get("type") == "event_rssi":
+    kind = frame.get("type")
+    if kind == "event_rssi":
         metrics.inc("ws.event_rssi")
+    elif kind == "event_exception":
+        # hey-laika firmware pushes IMU exceptions even while idle (the
+        # EXCEPTION_REPORT line only rides along inside task results).
+        metrics.inc("ws.event_exception")
+        name = str(frame.get("name") or frame.get("code") or "?").lower()
+        event_binder.handle_output_line(f"EXCEPTION_REPORT {name}")
+
+
+class BadParam(ValueError):
+    """A request parameter failed validation; becomes a 400."""
+
+
+def _num_param(data: dict, key: str, default, lo=None, hi=None, kind=int):
+    """Parse a numeric JSON field with bounds; raises BadParam on junk."""
+    raw = data.get(key)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = kind(raw)
+    except (TypeError, ValueError):
+        raise BadParam(f"'{key}' must be a {kind.__name__}")
+    if lo is not None and value < lo:
+        raise BadParam(f"'{key}' must be >= {lo}")
+    if hi is not None and value > hi:
+        raise BadParam(f"'{key}' must be <= {hi}")
+    return value
+
+
+@app.errorhandler(BadParam)
+def _bad_param(exc):
+    return jsonify({"error": "bad_request", "message": str(exc)}), 400
 
 
 def _observe_for_poll_policy(original_send):
@@ -105,11 +138,16 @@ if hasattr(bittle, "on_event_frame"):
     bittle.on_event_frame = _fan_out_event_frame
 if Config.MOCK_RICH:
     leash.set_enabled(True)  # GUI fixture: live zone data out of the box
-if not Config.GREETING_ENABLED:
-    behavior_store.set_binding_enabled("robot.online", "startup_greeting", False)
-if not Config.IDLE_ENABLED:
-    behavior_store.set_binding_enabled("idle.timeout", "idle_sit", False)
-    behavior_store.set_binding_enabled("idle.timeout", "idle_rest", False)
+# Env toggles are authoritative only when explicitly set; otherwise the DB
+# (Behavior Lab edits) owns the enabled flags across restarts.
+if "GREETING_ENABLED" in os.environ:
+    behavior_store.set_binding_enabled("robot.online", "startup_greeting",
+                                       Config.GREETING_ENABLED)
+if "IDLE_ENABLED" in os.environ:
+    behavior_store.set_binding_enabled("idle.timeout", "idle_sit",
+                                       Config.IDLE_ENABLED)
+    behavior_store.set_binding_enabled("idle.timeout", "idle_rest",
+                                       Config.IDLE_ENABLED)
 event_binder.start()
 bittle.connect()
 choreography = ChoreographyLibrary()
@@ -146,7 +184,10 @@ def execute_animation(name: str) -> bool:
     if not frames:
         return False
     for frame in frames:
-        bittle.send_command(frame.command)
+        if not bittle.send_command(frame.command):
+            logger.warning("Animation %s aborted: %s not acknowledged",
+                           name, frame.command)
+            return False
         # In mock mode don't actually sleep full durations; keep responses snappy.
         time.sleep(0.05 if Config.MOCK_MODE else frame.duration)
     personality.apply_behavior_effects(name)
@@ -425,6 +466,10 @@ def robot_schema(robot_id: str):
             "model": info.get("model"),
             "firmwareVersion": info.get("firmwareVersion"),
             "mode": bittle.get_status().get("mode"),
+            # The orchestrator prices AI usage per model; it must know which
+            # engine and model this adapter actually calls.
+            "decisionEngine": Config.DECISION_ENGINE,
+            "decisionModel": Config.decision_model(),
             "servoCount": len(SERVO_LIMITS),
             # Verified 2026-08-30: non-zero offsets stored in EEPROM. Do not
             # query 'c' live here — it physically moves the robot.
@@ -512,11 +557,8 @@ def robot_execute_action(robot_id: str):
     if not action:
         return jsonify({"error": "bad_request",
                         "message": "'action' is required"}), 400
-    try:
-        duration_ms = int(data.get("durationMs") or 0)
-    except (TypeError, ValueError):
-        return jsonify({"error": "bad_request",
-                        "message": "'durationMs' must be an integer"}), 400
+    duration_ms = _num_param(data, "durationMs", 0, lo=0,
+                             hi=Config.MAX_ACTION_DURATION_MS)
     try:
         success, actual_ms, message = execute_action(bittle, action, duration_ms)
     except KeyError:
@@ -550,11 +592,13 @@ def gait_start(robot_id: str):
                                    "strings"}), 400
     started = gait_learner.start(
         sequence=sequence,
-        iterations=int(data.get("iterations") or 1),
-        batch_size=int(data.get("batchSize") or 2),
+        iterations=_num_param(data, "iterations", 1, lo=1,
+                              hi=Config.MAX_GAIT_ITERATIONS),
+        batch_size=_num_param(data, "batchSize", 2, lo=1, hi=20),
         recenter=data.get("recenter") or "manual",
-        verify_every=int(data.get("verifyEvery") or 3),
-        arena_half_m=float(data.get("arenaHalfM") or 0.5))
+        verify_every=_num_param(data, "verifyEvery", 3, lo=1, hi=100),
+        arena_half_m=_num_param(data, "arenaHalfM", 0.5, lo=0.1, hi=5.0,
+                                kind=float))
     if not started:
         return jsonify({"error": "busy",
                         "message": "A learning session is already running"}), 409
@@ -607,6 +651,7 @@ def behaviors_upsert(robot_id: str):
     if not data.get("name") or not isinstance(data.get("steps"), list):
         return jsonify({"error": "bad_request",
                         "message": "'name' and 'steps' list required"}), 400
+    data["cooldownS"] = _num_param(data, "cooldownS", 0, lo=0, hi=86400)
     return jsonify(behavior_store.upsert_behavior(data))
 
 
@@ -633,6 +678,8 @@ def bindings_upsert(robot_id: str):
     if not data.get("event") or not data.get("behavior"):
         return jsonify({"error": "bad_request",
                         "message": "'event' and 'behavior' required"}), 400
+    data["priority"] = _num_param(data, "priority", PRIORITY_LIFECYCLE,
+                                  lo=1, hi=9)
     return jsonify(behavior_store.upsert_binding(data))
 
 
@@ -706,8 +753,9 @@ def arbiter_invoke(robot_id: str):
         return jsonify({"error": "bad_request",
                         "message": "'behavior' required"}), 400
     source = data.get("source", "manual")
-    priority = int(data.get("priority")
-                   or (PRIORITY_AGENT if source == "agent" else PRIORITY_MANUAL))
+    priority = _num_param(
+        data, "priority",
+        PRIORITY_AGENT if source == "agent" else PRIORITY_MANUAL, lo=1, hi=9)
     if source == "agent":
         cause = {"type": "agent", "decisionId": data.get("decisionId")}
     else:
@@ -722,6 +770,19 @@ def arbiter_invoke(robot_id: str):
 @robot_scoped
 def arbiter_stop(robot_id: str):
     return jsonify({"robotId": robot_id, **arbiter.stop_current()})
+
+
+@app.post("/api/robots/<robot_id>/abort")
+@robot_scoped
+def robot_abort(robot_id: str):
+    """Emergency stop: interrupt the arbiter's current behavior and ask the
+    firmware (hey-laika abort frame) to drop its queue and rest now."""
+    stopped = arbiter.stop_current()
+    aborted = bittle.abort()
+    event_binder.reset_idle()
+    log_activity("safety", f"Abort requested (firmware ack: {aborted})")
+    return jsonify({"robotId": robot_id, "aborted": aborted,
+                    "arbiter": stopped})
 
 
 # ---- Back-compat shims: the /greeting and /idle endpoints the GUI already
@@ -865,7 +926,8 @@ def robot_voice_demo(robot_id: str):
     response_text, error = query_ollama(
         user_input,
         model=data.get("model"),
-        temperature=float(data.get("temperature", 0.7)))
+        temperature=_num_param(data, "temperature", 0.7, lo=0.0, hi=2.0,
+                               kind=float))
     ollama_time = time.time() - ollama_start
     if error:
         log_activity("voice", f"Voice demo failed: {error}")
@@ -944,4 +1006,5 @@ def robot_display(robot_id: str):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=Config.DEBUG, use_reloader=False)
+    app.run(host=Config.HOST, port=5000, debug=Config.DEBUG,
+            use_reloader=False)

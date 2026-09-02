@@ -75,6 +75,7 @@
 
   <div id="robots"></div>
 
+  <script src="common.js"></script>
   <script src="nav.js" defer></script>
   <script>
     // Robot-scoped mode (embedded as a Robot Detail tab): show only that
@@ -144,15 +145,15 @@
       if (!errors.length) return "";
       const rows = errors.map((e) =>
         `<tr><td>${new Date(e.at * 1000).toLocaleTimeString()}</td>` +
-        `<td class="mono">${e.key}</td><td>${e.note || ""}</td></tr>`).join("");
+        `<td class="mono">${esc(e.key)}</td><td>${esc(e.note || "")}</td></tr>`).join("");
       return `<h2>Recent errors</h2><table><thead><tr><th>When</th><th>Key</th>` +
         `<th>Note</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     function renderRobot(id, snap) {
       if (snap.error) {
-        return `<h2>${id}</h2><div class="tiles">` +
-          tile("Adapter", "unreachable", snap.message || "", true) + `</div>`;
+        return `<h2>${esc(id)}</h2><div class="tiles">` +
+          tile("Adapter", "unreachable", esc(snap.message || ""), true) + `</div>`;
       }
       const c = snap.counters || {};
       const ws = (snap.window1h || {})["ws.command"] || {};
@@ -210,8 +211,7 @@
         el.classList.add("err");
       }
     }
-    refresh();
-    setInterval(refresh, 5000);
+    hlPoll(refresh, 5000);
   </script>
 </body>
 </html>

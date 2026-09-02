@@ -1,6 +1,6 @@
 # Bittle X Hardware Reference
 
-**Updated:** 2026-08-31 · Facts validated live unless noted.
+**Updated:** 2026-09-02 (firmware row) · Facts validated live unless noted.
 
 ## The robot
 
@@ -8,7 +8,7 @@
 |---|---|
 | Model | Petoi **Bittle X V2** (voice edition) |
 | Controller | **BiBoard V1.0** — ESP32 (WiFi + BLE + classic BT), IMU ICM42670 at I2C 0x69 |
-| Firmware | **B10_251121** (stock OpenCat ESP32 build; reference clone at `F:\projects\robot\opencat-esp32` is snapshot B10_260820) |
+| Firmware | **hey-laika fork** of OpenCat ESP32 (source `F:\projects\robot\opencat-esp32`, B10_260820 snapshot over upstream `9ebb48a`): firmware-reset Phase A cuts 1, 3, 4 done, cuts 2 and 6 partial, cuts 5, 7–10 not started, plus leash/nav additions (`XW` tools, 1 Hz `event_rssi`, second SSID slot, dead-man). Base version **B10_251121** with the date pinned, so the robot still reports `B10_251121` over the wire. Detail: `../design/FIRMWARE_RESET.md` status line, `../reports/AUDIT_2026-09-02.md` §4 |
 | Battery | 2S LiPo 7.4 V nominal, 1000 mAh (JST-XH). Full ≈ 8.35 V, firmware low-power floor ≈ 6.8 V, cutoff behavior: rest + melody every 10 s. Long-press the battery's own button to power servos |
 | USB | CH343 USB-UART, enumerates as **COM3** on the dev machine, 115200 8N1. Opening the port does **not** reboot the board |
 | Voice module | Onboard (Bittle X): mic + "Hey Bittle"-style hotword on a separate MCU wired to Serial1; emits unsolicited `X…` lines |

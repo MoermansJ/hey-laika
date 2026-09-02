@@ -90,3 +90,18 @@ Autonomous roaming + `z_height: 0.75` (desk) + **no cliff detection** = the dog 
 2. **Ultrasonic module:** worth ordering now? It's the cheapest path to real collision/stuck sensing and is fully supported by stock firmware.
 3. **Roam surface:** floor confirmed as the test arena (per §7)?
 4. **Voice module during trails:** OK to close it (`Xa`) while recording to keep the serial stream clean, re-enabling afterwards?
+
+---
+
+## Addendum 2026-09-02 — the "Leash" conclusion is superseded
+
+§2 item 4 ("The doc's §7 'Leash' is unimplementable — it consumes a user
+position that no sensor in the system produces") no longer holds. The
+proximity leash was re-scoped around the phone's WiFi signal instead of a
+position: see [`../design/PROXIMITY_LEASH_BRIEF.md`](../design/PROXIMITY_LEASH_BRIEF.md).
+It is implemented in the adapter (`dog/app/leash.py`: RSSI watchdog, marks,
+dead-man re-arm, rest-on-lost) and in the hey-laika firmware fork (1 Hz
+`event_rssi` push, `XW` tool set, dead-man), and is exposed on the Leash tab.
+Walk-test validation is not yet recorded (audit 2026-09-02 §9). The rest of
+this review's conclusions (no firmware odometry, adapter-side dead reckoning,
+stuck detection re-scope) stand.

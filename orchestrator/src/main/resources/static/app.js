@@ -193,24 +193,38 @@ function renderConnIndicator() {
 }
 
 async function renderHealthWidget() {
-  // Orchestrator health in the navbar (replaces the old settings section).
+  // Orchestrator health in the navbar. /api/health aggregates adapter
+  // reachability: healthy (all) / degraded (some) / down (none). Older
+  // builds return only {status:"healthy"} — tolerated.
   const el = $("#nav-health");
   if (!el) return;
   try {
     const health = await api("/api/health");
-    el.textContent = `${health.status} - fleet of ${health.fleetSize}`;
-    el.className = "nav-widget-body " +
-        (health.status === "healthy" ? "ok" : "warn");
+    const robots = health.robots || {};
+    const unreachable = Object.entries(robots)
+        .filter(([, r]) => r && r.reachable === false)
+        .map(([id, r]) => r.name || id);
+    el.textContent = `${health.status} - fleet of ${health.fleetSize}` +
+        (unreachable.length ? ` - ${unreachable.length} unreachable` : "");
+    el.title = unreachable.length
+        ? `Unreachable: ${unreachable.join(", ")}` : "All adapters reachable";
+    const cls = health.status === "healthy" ? "ok"
+        : health.status === "degraded" ? "degraded" : "err";
+    el.className = "nav-widget-body " + cls;
   } catch (e) {
     el.textContent = "unreachable";
+    el.title = "";
     el.className = "nav-widget-body err";
   }
 }
 
 // ---------- polling transport (fallback + pre-connect) ----------
 
+let pollInFlight = false;
+
 async function pollTick() {
-  if (state.wsConnected) return;
+  if (state.wsConnected || pollInFlight || document.hidden) return;
+  pollInFlight = true;
   try {
     const [statuses, stats] = await Promise.all([
       api("/api/fleet/status"),
@@ -228,6 +242,8 @@ async function pollTick() {
       el.textContent = "orchestrator unreachable";
       el.className = "nav-widget-body err";
     }
+  } finally {
+    pollInFlight = false;
   }
 }
 
@@ -252,6 +268,45 @@ function route() {
   $("#sidebar").classList.remove("open");
 }
 
+const FRAME_TABS = ["control", "behavior", "voice", "mind", "leash", "metrics"];
+
+function clearFrames() {
+  // Dropping src stops every poll loop inside the embedded pages.
+  FRAME_TABS.forEach((name) => {
+    const frame = $(`#${name}-frame`);
+    if (frame && frame.getAttribute("src")) frame.removeAttribute("src");
+  });
+}
+
+function resetRobotPanels() {
+  $("#arbiter-current").textContent = "—";
+  $("#arbiter-log").innerHTML = "";
+  $("#activity").innerHTML = "";
+  ["#poll-ttl", "#poll-batt", "#poll-mult", "#poll-postures"].forEach((sel) => {
+    $(sel).value = "";
+  });
+  $("#polling-state").textContent = "";
+}
+
+function selectTab(name) {
+  document.querySelectorAll(".tab-bar .tab").forEach((t) => {
+    const active = t.dataset.tab === name;
+    t.classList.toggle("active", active);
+    t.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll(".robot-tab").forEach((panel) =>
+      panel.classList.toggle("hidden", panel.id !== `robot-tab-${name}`));
+  // Tell every embedded page whether it is the visible tab so hidden
+  // frames stop polling (common.js listens for this).
+  FRAME_TABS.forEach((frameName) => {
+    const frame = $(`#${frameName}-frame`);
+    if (frame && frame.contentWindow && frame.getAttribute("src")) {
+      frame.contentWindow.postMessage(
+          { type: "laika-visible", visible: frameName === name }, "*");
+    }
+  });
+}
+
 function showPage(page) {
   state.page = page;
   document.querySelectorAll(".page").forEach((s) => s.classList.add("hidden"));
@@ -259,7 +314,13 @@ function showPage(page) {
   document.querySelectorAll(".nav-link").forEach((link) =>
       link.classList.toggle("active", link.dataset.page === page));
 
-  if (page === "dashboard") renderRobotGrid();
+  if (page === "dashboard") {
+    // Leaving a robot page: unload its frames so nothing keeps polling
+    // the adapters from behind the dashboard.
+    clearFrames();
+    state.selected = null;
+    renderRobotGrid();
+  }
   renderSidebarRobots();
 }
 
@@ -273,16 +334,12 @@ function showRobotPage(robotId) {
       link.classList.toggle("active", link.dataset.robot === robotId));
 
   if (robotChanged) {
-    // Embedded tabs are per-robot: clear cached frames and return to
-    // Activity so nothing shows the previous robot's data.
-    ["control", "voice", "mind", "leash", "metrics"].forEach((name) => {
-      const frame = $(`#${name}-frame`);
-      if (frame) frame.removeAttribute("src");
-    });
-    document.querySelectorAll(".tab-bar .tab").forEach((t) =>
-        t.classList.toggle("active", t.dataset.tab === "activity"));
-    document.querySelectorAll(".robot-tab").forEach((panel) =>
-        panel.classList.toggle("hidden", panel.id !== "robot-tab-activity"));
+    // Embedded tabs are per-robot: clear cached frames, wipe the shared
+    // panels and return to Activity so nothing shows the previous
+    // robot's data while the new robot's fetches are in flight.
+    clearFrames();
+    resetRobotPanels();
+    selectTab("activity");
   }
 
   renderRobotHeader(robotId);
@@ -329,9 +386,13 @@ function renderRobotGrid() {
     const status = state.statuses[robot.robotId] || {};
     const card = document.createElement("div");
     card.className = "robot-card";
+    card.tabIndex = 0;
+    card.setAttribute("role", "link");
+    card.setAttribute("aria-label", `${robot.name}: open robot page`);
     card.innerHTML = `
       <div class="status-header">
-        <span class="dot ${status.connected ? "on" : "off"}"></span>
+        <span class="dot ${status.connected ? "on" : "off"}"
+              title="${status.connected ? "connected" : "disconnected"}"></span>
         <span class="robot-name">${escapeHtml(robot.name)}</span>
         <span class="type-badge">${escapeHtml(robot.type || "?")}</span>
       </div>
@@ -342,11 +403,56 @@ function renderRobotGrid() {
           <div class="bar-track"><div class="bar-fill battery ${batteryClass(status.battery)}"
                style="width:${status.battery ?? 0}%"></div></div>
         </div>
+        <div class="stat" data-spark="${escapeHtml(robot.robotId)}"></div>
       </div>`;
-    card.onclick = () =>
+    const open = () =>
         location.hash = `#robot/${encodeURIComponent(robot.robotId)}`;
+    card.onclick = open;
+    card.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+    };
     container.appendChild(card);
+    renderBatterySparkline(robot.robotId, card.querySelector("[data-spark]"));
   });
+}
+
+// Battery over the last 24 h from the orchestrator's hourly metric rollups
+// (the adapter's /metrics snapshot carries the battery gauge, so every
+// rollup row has snapshot.battery). Hidden when there is no history yet.
+const sparkCache = {};   // robotId -> {at, points}
+
+async function renderBatterySparkline(robotId, host) {
+  if (!host) return;
+  const cached = sparkCache[robotId];
+  const fresh = cached && Date.now() - cached.at < 5 * 60 * 1000;
+  if (!fresh) {
+    try {
+      const rows = await api(`/api/metrics/history?robotId=${encodeURIComponent(robotId)}&limit=24`);
+      const points = (Array.isArray(rows) ? rows : [])
+          .map((r) => ({ t: Date.parse(r.hourStart), v: r.snapshot?.battery }))
+          .filter((p) => Number.isFinite(p.t) && typeof p.v === "number")
+          .sort((a, b) => a.t - b.t);
+      sparkCache[robotId] = { at: Date.now(), points };
+    } catch {
+      sparkCache[robotId] = { at: Date.now(), points: [] };
+    }
+  }
+  const points = sparkCache[robotId].points;
+  if (!host.isConnected) return;           // grid re-rendered meanwhile
+  if (points.length < 2) { host.innerHTML = ""; return; }
+  const w = 120, h = 30;
+  const t0 = points[0].t, t1 = points[points.length - 1].t || t0 + 1;
+  const x = (t) => (w * (t - t0) / Math.max(1, t1 - t0)).toFixed(1);
+  const y = (v) => (h - 2 - (h - 4) * Math.max(0, Math.min(100, v)) / 100).toFixed(1);
+  const pts = points.map((p) => `${x(p.t)},${y(p.v)}`).join(" ");
+  const first = points[0], last = points[points.length - 1];
+  const hours = Math.max(1, Math.round((last.t - first.t) / 3600000));
+  host.innerHTML =
+      `<div class="spark-label"><span>Battery ${hours}h</span>` +
+      `<span>${Math.round(first.v)}% → ${Math.round(last.v)}%</span></div>` +
+      `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">` +
+      `<line class="spark-floor" x1="0" x2="${w}" y1="${y(20)}" y2="${y(20)}"/>` +
+      `<polyline points="${pts}"/></svg>`;
 }
 
 // ---------- robot detail ----------
@@ -392,6 +498,7 @@ setInterval(renderUptimeChip, 1000);
 async function loadPollingPanel(robotId) {
   try {
     const data = await api(`/api/robots/${robotId}/polling`);
+    if (state.selected !== robotId) return;   // user moved on; stale answer
     $("#poll-ttl").value = data.config.telemetryTtlS;
     $("#poll-batt").value = data.config.batteryPollS;
     $("#poll-mult").value = data.config.idleMultiplier;
@@ -438,9 +545,14 @@ $("#sidebar-open").onclick = () => $("#sidebar").classList.toggle("open");
 
 // ---------- behavior arbiter status (robot page) ----------
 
+let arbiterInFlight = false;
+
 async function renderArbiter(robotId) {
+  if (arbiterInFlight) return;              // never pile up on a slow adapter
+  arbiterInFlight = true;
   try {
     const status = await api(`/api/robots/${robotId}/arbiter/status`);
+    if (state.selected !== robotId) return;   // stale: robot changed meanwhile
     const current = status.current;
     $("#arbiter-current").innerHTML = current
         ? `<strong>${escapeHtml(current.behavior)}</strong>` +
@@ -461,6 +573,7 @@ async function renderArbiter(robotId) {
         ? "<tr><th>Behavior</th><th>Status</th><th>Source</th><th>Started</th></tr>" + rows
         : "";
   } catch { /* adapter offline */ }
+  finally { arbiterInFlight = false; }
 }
 
 $("#arbiter-stop").onclick = () =>
@@ -469,21 +582,19 @@ $("#arbiter-stop").onclick = () =>
       .catch((e) => toast(e.message, true));
 
 setInterval(() => {
+  if (document.hidden) return;
   if (state.page === "robot" && state.selected) renderArbiter(state.selected);
 }, 5000);
 
 // Robot page tabs. Embedded per-robot pages lazy-load on first activation
-// (frames are cleared whenever the selected robot changes).
+// (frames are cleared whenever the selected robot changes or the user
+// returns to the dashboard).
 document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab-bar .tab").forEach((t) =>
-        t.classList.toggle("active", t === tab));
-    document.querySelectorAll(".robot-tab").forEach((panel) =>
-        panel.classList.toggle("hidden",
-            panel.id !== `robot-tab-${tab.dataset.tab}`));
+    selectTab(tab.dataset.tab);
     const frames = {
-      control: "control.html", voice: "voice.html", mind: "mind.html",
-      leash: "leash.html", metrics: "metrics.html",
+      control: "control.html", behavior: "behavior.html", voice: "voice.html",
+      mind: "mind.html", leash: "leash.html", metrics: "metrics.html",
     };
     const src = frames[tab.dataset.tab];
     if (src) {
@@ -503,7 +614,7 @@ document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
 async function boot() {
   window.addEventListener("hashchange", route);
   renderHealthWidget();
-  setInterval(renderHealthWidget, 10000);
+  setInterval(() => { if (!document.hidden) renderHealthWidget(); }, 10000);
 
   try {
     state.robots = await api("/api/fleet/robots");

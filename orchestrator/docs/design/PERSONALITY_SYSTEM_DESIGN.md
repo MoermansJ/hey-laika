@@ -2,7 +2,7 @@
 
 **Version:** 1.1
 **Date:** August 2026
-**Status:** Phase 1 in progress
+**Status:** Phase 1b done (orchestrator loop drives the adapter's `execute_action`; updated 2026-09-02)
 **Architecture:** Java Spring Boot Orchestrator (Brain) → Python Flask Adapter (Body)
 
 **Changes vs v1.0 (review outcome):**
@@ -103,6 +103,14 @@ brain. Migration plan:
 
 Until step 3 completes, the adapter's autonomous mode must not run while an
 orchestrator behavior loop is active for the same robot.
+
+> **Status 2026-09-02:** steps 1 and 2 are done; step 3 is **not**. The
+> adapter's `/personality`, `/behavior`, `/autonomous/*` and `/interact/*`
+> routes (`dog/app/app.py`), the orchestrator proxies for them
+> (`adapter.in.web.RobotController`, `FleetController` `/autonomous/*`) and the
+> legacy per-robot personality/display broadcast
+> (`adapter.in.scheduling.FleetBroadcastScheduler`, every 3 s) all still exist.
+> They are deprecated and scheduled for removal (audit 2026-09-02, fix #11).
 
 ---
 
@@ -390,6 +398,12 @@ personality snapshot, posture). No new polling endpoint; `FleetBroadcaster`'s
 legacy adapter-personality broadcast is retired with the adapter migration
 (§2.3). "Next action prediction" is dropped from the contract.
 
+> **Status 2026-09-02:** the `/topic/robot/{id}/behavior` publish exists. The
+> legacy `/topic/robot/{id}/personality` and `/display` broadcasts, fed by the
+> adapter's deprecated `/personality` and `/display` routes, are still
+> running (`FleetBroadcastScheduler`, 3 s) even though the GUI never renders
+> them; removal is scheduled with the §2.3 step 3 cleanup (audit fix #11).
+
 ---
 
 ## 9. DATA MODEL (Java, package `com.bittle.orchestrator.domain.behavior`)
@@ -452,12 +466,19 @@ behavior.sleep-decision-interval-ms=5000
 behavior.history-size=200
 behavior.auto-start=false               # loops started via API by default
 
-# Phase 2
+# Phase 2 (not built)
 behavior.use-claude-director=false
 behavior.director-interval-ms=45000
-behavior.claude.model=claude-haiku-4-5
+behavior.claude.model=claude-opus-5
 behavior.claude.timeout-ms=10000
 ```
+
+> **Model note (2026-09-02):** the decision engine defaults to **Ollama**
+> (local, `DECISION_ENGINE=ollama` in the adapter); Claude is opt-in
+> (`DECISION_ENGINE=claude` + `ANTHROPIC_API_KEY`), and when opted in the
+> model is `claude-opus-5` (adapter `CLAUDE_MODEL` default). The
+> `claude-haiku-4-5` mentions in §5 record the v1.1 design choice, not the
+> configured model. The Phase 2 director keys above are not implemented.
 
 ---
 

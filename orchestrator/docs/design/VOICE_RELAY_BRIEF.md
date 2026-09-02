@@ -25,10 +25,9 @@ becomes an LLM prompting relay.
 - *(superseded)* MAX9814 rationale kept for the record: AGC solved the
   fixed-gain problem that disqualified the Grove Analog Microphone
   ("not a recording device" per Seeed).
-- **Grove-to-female-jumper conversion cable** → any analog socket
-  (ANALOG1..4 = GPIO 34/35 or 32/36/39). Three wires: VDD→VCC, GND→GND,
-  OUT→signal.
-- Mount: stamp-sized board, velcro/tape near the head.
+- *(superseded, MAX9814 wiring)* Grove-to-female-jumper conversion cable →
+  any analog socket (ANALOG1..4 = GPIO 34/35 or 32/36/39). Three wires:
+  VDD→VCC, GND→GND, OUT→signal. Mount: stamp-sized board near the head.
 - **Grove Speaker Plus (the mouth, decided 2026-09-01):** PWM-driven amp +
   separate 2 W enclosed speaker with volume pot. Speech is possible ONLY via
   single-pin sigma-delta/PWM synthesis — a proper I2S DAC amp needs 3 output
@@ -62,49 +61,64 @@ posture** (servos rested — active balancing wrecked recognition).
 
 ## Pipeline
 
+*(Updated 2026-09-02 to match the hardware decision above. Superseded
+pipeline: MAX9814 → BiBoard I2S-ADC ring buffer → `event_audio` WS frames,
+triggered by a voice-module custom slot — the whole BiBoard audio path was
+deleted with the MAX9814 on 2026-09-01.)*
+
 ```
-MAX9814 → ESP32 I2S-ADC DMA, 16 kHz mono, continuous ~1 s ring buffer
-   (audio never leaves the dog un-triggered — privacy by construction)
-        │  trigger: voice module custom slot ("Hey Laika", trained in the
-        │  owner's voice via XAe/XAf; firmware remaps the slot from its
-        │  current skill to "start capture")
+XIAO ESP32S3 Sense PDM mic → 16 kHz mono PCM streamed to the adapter over the
+   XIAO's OWN WiFi (continuous; LAN-only, processed locally on the PC —
+   the dog's BiBoard firmware and its WS channel are untouched)
         ▼
-firmware streams ring buffer + ~6 s live audio as WS event frames
-   (event_audio, base64 PCM chunks — same pattern as event_rssi)
+adapter stream receiver → openWakeWord ("Hey Laika") gates capture
+   (later refinement: on-XIAO micro wake-word so nothing leaves the dog
+   until wake)
         ▼
-adapter reassembles → WAV → faster-whisper (local, CPU) → transcript
+adapter buffers ~6 s after wake → WAV → faster-whisper (local, CPU) → transcript
         ▼
 decision layer prompt (Ollama default / Claude opt-in) with context:
    personality state, behavior catalog, (later) room list
         ├─ command → arbiter submit, cause {type: "voice", transcript}
-        └─ question → host-side TTS answer from the PC speaker
+        └─ question → host TTS → downsampled WAV down the dog's WS →
+           firmware PWM playback → Grove Speaker Plus (the dog's mouth)
         ▼
 Mind page shows: heard "…" → decided "…"  (ordinary provenance)
 ```
 
-- **Wake fallback:** if the trained phrase also recognizes poorly, wake-word
-  detection moves host-side (openWakeWord on the same stream); the module
-  retires to being the dog's speaker. The MAX9814 carries both jobs.
-- **Dog has no speech output** (buzzer + the module's canned phrases only):
-  answers are spoken by the PC (`voice.py` TTS path) while the dog chirps
-  and animates in character.
+- **Wake word is host-side by design** (openWakeWord on the continuous
+  stream); the Petoi voice module is out of the trigger path and only keeps
+  its canned phrases. *(superseded: voice-module custom slot as the trigger,
+  with host-side detection as the fallback and the MAX9814 carrying both
+  jobs.)*
+- **Speech output: Grove Speaker Plus** via firmware PWM (walkie-talkie
+  quality). Until it is wired, answers are spoken by the PC (`voice.py` TTS
+  path) while the dog chirps and animates in character. *(superseded: "dog
+  has no speech output — buzzer + canned phrases only".)*
 
 ## Build plan (~2–4 sessions once the mic arrives)
 
-1. **Firmware:** I2S-ADC capture task + ring buffer; `event_audio` WS frames;
-   custom-slot remap ("Hey Laika" → capture, not skill); bench-validate the
-   ADC signal (speak → sane waveform) before any streaming.
-2. **Adapter:** audio reassembly endpoint, faster-whisper integration,
-   transcript → decision-layer hook with voice provenance.
+1. **XIAO satellite:** PDM-mic capture sketch streaming 16 kHz PCM to the
+   adapter over the XIAO's own WiFi; bench-validate (speak → sane waveform)
+   before anything else. *(superseded: BiBoard I2S-ADC capture task + ring
+   buffer + `event_audio` WS frames + voice-module custom-slot remap — no
+   BiBoard firmware work remains in this plan.)*
+2. **Adapter:** stream receiver + openWakeWord gate, faster-whisper
+   integration, transcript → decision-layer hook with voice provenance.
 3. **End-of-utterance:** start fixed ~6 s window; upgrade to host-side VAD.
-4. **Training session (owner):** "start learning" (`XAe`) → speak the wake
-   phrase (≤6 syllables, nothing resembling Bing-Bing/Di-Di) → `XAf`.
+4. **Speaker Plus:** firmware PWM playback path on the free UART-socket pin
+   (after the ultrasonic pin is validated) + host TTS → downsampled WAV down
+   the WS.
+5. *(optional, superseded as the trigger)* **Module training session:**
+   `XAe` → speak the wake phrase → `XAf`. Only worth doing if the on-module
+   wake refinement is ever wanted.
 
 ## Open questions
 
 1. Wake phrase choice ("Hey Laika" = 3 syllables, distinct — good default).
 2. Whisper model size (start `small`/`base`; latency vs accuracy on this PC).
-3. Capture sample rate 16 kHz vs 8 kHz (start 16 kHz; halve if WS strains).
+3. Capture sample rate 16 kHz vs 8 kHz (start 16 kHz; halve if the XIAO's
+   WiFi link strains).
 4. Should transcripts persist (a "things the owner said" log feeding
    personality/memory)? Lean yes — it is provenance like everything else.
 

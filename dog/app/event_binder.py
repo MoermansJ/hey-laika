@@ -17,14 +17,16 @@ logger = logging.getLogger(__name__)
 
 class EventBinder:
     def __init__(self, arbiter, store, controller,
-                 tick_s: float = 5.0, battery_poll_s: float = 40.0):
+                 tick_s: float = 5.0, battery_poll_s: float = 40.0,
+                 clock=time.time):
         self.arbiter = arbiter
         self.store = store
         self.controller = controller
         self.tick_s = tick_s
         self.battery_poll_s = battery_poll_s
+        self._clock = clock  # injectable for deterministic ladder tests
 
-        self._idle_anchor = time.time()
+        self._idle_anchor = self._clock()
         self._seen_motion_at = None
         self._fired_idle: set[float] = set()
         self._fired_battery: set[float] = set()
@@ -86,17 +88,21 @@ class EventBinder:
             except Exception:
                 logger.exception("Idle tick failed")
 
+    # Arbiter and controller stamp their clocks microseconds apart; anything
+    # further apart than this was not the arbiter's own step.
+    ARBITER_MOTION_TOLERANCE_S = 1.0
+
     def _idle_tick(self) -> None:
         motion_at = getattr(self.controller, "last_motion_at", None)
         arbiter_busy = self.arbiter.status()["current"] is not None
         if motion_at != self._seen_motion_at:
             self._seen_motion_at = motion_at
-            if not arbiter_busy:
+            if not arbiter_busy and not self._arbiter_owns(motion_at):
                 # External motion (GUI, agent bypass, etc.) — reset ladder.
-                self._idle_anchor = time.time()
+                self._idle_anchor = self._clock()
                 self._fired_idle.clear()
                 return
-        idle_s = time.time() - self._idle_anchor
+        idle_s = self._clock() - self._idle_anchor
         for binding in self.store.bindings(event="idle.timeout",
                                            enabled_only=True):
             threshold = float((binding.get("filter") or {}).get("seconds", 0))
@@ -110,9 +116,18 @@ class EventBinder:
                                       {"seconds": threshold,
                                        "idleS": round(idle_s, 1)}, binding))
 
+    def _arbiter_owns(self, motion_at) -> bool:
+        """True when the controller's last motion stamp was the arbiter's own
+        step. Closes the race where the tick lands after the arbiter's short
+        settle: the arbiter's stamp survives, the "busy" flag does not."""
+        arbiter_at = getattr(self.arbiter, "last_motion_at", None)
+        if motion_at is None or arbiter_at is None:
+            return False
+        return abs(motion_at - arbiter_at) <= self.ARBITER_MOTION_TOLERANCE_S
+
     def reset_idle(self) -> None:
         """External signal that activity happened (e.g. manual invoke)."""
-        self._idle_anchor = time.time()
+        self._idle_anchor = self._clock()
         self._fired_idle.clear()
 
     # ---- battery -----------------------------------------------------------

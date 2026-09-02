@@ -58,14 +58,15 @@
         <span id="robot-chip-uptime" class="chip" title="Smooth uptime derived from the adapter's boot epoch"></span>
       </div>
 
-      <div class="tab-bar">
-        <button class="tab active" data-tab="activity">Activity</button>
-        <button class="tab" data-tab="control">Control</button>
-        <button class="tab" data-tab="voice">Voice</button>
-        <button class="tab" data-tab="specs">Specs</button>
-        <button class="tab" data-tab="mind">Mind</button>
-        <button class="tab" data-tab="leash">Leash</button>
-        <button class="tab" data-tab="metrics">Metrics</button>
+      <div class="tab-bar" role="tablist" aria-label="Robot sections">
+        <button class="tab active" role="tab" aria-selected="true" data-tab="activity">Activity</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="control">Control</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="behavior">Behavior</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="voice">Voice</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="specs">Specs</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="mind">Mind</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="leash">Leash</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="metrics">Metrics</button>
       </div>
 
       <div id="robot-tab-activity" class="robot-tab">
@@ -100,6 +101,11 @@
                 title="Control Panel"></iframe>
       </div>
 
+      <div id="robot-tab-behavior" class="robot-tab hidden">
+        <iframe id="behavior-frame" class="control-frame"
+                title="Behavior Lab"></iframe>
+      </div>
+
       <div id="robot-tab-voice" class="robot-tab hidden">
         <iframe id="voice-frame" class="control-frame"
                 title="Voice"></iframe>
@@ -124,9 +130,10 @@
 
   </main>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="vendor/stomp.umd.min.js"></script>
+  <script src="common.js"></script>
   <script src="specs.js"></script>
   <script src="app.js"></script>
 </body>

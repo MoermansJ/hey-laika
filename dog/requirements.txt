@@ -1,9 +1,11 @@
-Flask>=3.0
-Flask-CORS>=4.0
-gunicorn>=21.2 ; sys_platform != "win32"
-python-dotenv>=1.0
-requests>=2.31
-anthropic>=0.116
-pyserial>=3.5
-websocket-client>=1.7
-SQLAlchemy>=2.0
+# Pinned to the versions validated on 2026-09-02 (pip freeze of the dev
+# venv) so the Docker build is reproducible. Bump deliberately.
+Flask==3.1.3
+Flask-CORS==6.0.5
+gunicorn==23.0.0 ; sys_platform != "win32"
+python-dotenv==1.2.3
+requests==2.34.2
+anthropic==1.1.0
+pyserial==3.5
+websocket-client==1.9.1
+SQLAlchemy==2.0.52

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Text, inspect, text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.config import Config
 from app.models import Base, SessionLocal, engine, utcnow
 
 PRIORITY_SAFETY = 1
@@ -154,9 +155,11 @@ SEED_BEHAVIORS = [
 SEED_BINDINGS = [
     {"event": "robot.online", "filter": None,
      "behavior": "startup_greeting", "priority": PRIORITY_LIFECYCLE, "enabled": True},
-    {"event": "idle.timeout", "filter": {"seconds": 60},
+    # Thresholds seed from IDLE_SIT_S / IDLE_REST_S (config.py); once the
+    # bindings exist the Behavior Lab editor owns them.
+    {"event": "idle.timeout", "filter": {"seconds": Config.IDLE_SIT_S},
      "behavior": "idle_sit", "priority": PRIORITY_IDLE, "enabled": True},
-    {"event": "idle.timeout", "filter": {"seconds": 120},
+    {"event": "idle.timeout", "filter": {"seconds": Config.IDLE_REST_S},
      "behavior": "idle_rest", "priority": PRIORITY_IDLE, "enabled": True},
     {"event": "battery.low", "filter": {"pct": 5},
      "behavior": "rest_now", "priority": PRIORITY_SAFETY, "enabled": True},

@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 public class RobotBehaviorLoop {
 
     private static final Logger log = LoggerFactory.getLogger(RobotBehaviorLoop.class);
+    private static final long STOP_JOIN_TIMEOUT_MS = 35_000;
 
     private final Robot robot;
     private final PersonalityStateManager stateManager;
@@ -58,6 +59,7 @@ public class RobotBehaviorLoop {
         if (running.get()) {
             return;
         }
+        joinWorker();
         running.set(true);
         thread = new Thread(this::run, "behavior-" + robot.id());
         thread.setDaemon(true);
@@ -73,11 +75,29 @@ public class RobotBehaviorLoop {
         if (t != null) {
             t.interrupt();
         }
+        joinWorker();
         log.info("Behavior loop stopped for {}", robot.id());
     }
 
     public boolean isRunning() {
-        return running.get();
+        var t = thread;
+        return running.get() || (t != null && t.isAlive());
+    }
+
+    private void joinWorker() {
+        var t = thread;
+        if (t == null || t == Thread.currentThread() || !t.isAlive()) {
+            return;
+        }
+        try {
+            t.join(STOP_JOIN_TIMEOUT_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (t.isAlive()) {
+            log.warn("Behavior worker for {} still executing an action after {} ms",
+                    robot.id(), STOP_JOIN_TIMEOUT_MS);
+        }
     }
 
     public PersonalityState.Snapshot personality() {

@@ -1,9 +1,13 @@
 # Bittle AI Companion — Robot Adapter Service
 
-Python adapter service for ONE AI-powered robot dog (Petoi Bittle X V2). Claude
-makes autonomous behavior decisions through a persistent personality engine;
-all state, decisions, and interactions are stored in a database. Runs in
-**mock mode** by default — no hardware and no API key required.
+Python adapter service for ONE AI-powered robot dog (Petoi Bittle X V2,
+"Laika"). It owns the hardware transport, a single motion arbiter, stored
+behaviors and event bindings, the leash/senses/power watchdogs and the voice
+MVP; the orchestrator's personality loop drives it through `/execute_action`.
+All state, decisions and interactions are stored in SQLite. Drives **real
+hardware over WiFi by default**; set `MOCK_MODE=True` to simulate without a
+robot (no API key is required either way — the decision engine defaults to
+local Ollama).
 
 This service is one robot instance's hardware/AI adapter in a fleet managed by
 the Java orchestrator (`../orchestrator`). It has **no UI** — the orchestrator
@@ -31,8 +35,8 @@ Copy `.env.example` to `.env` and edit. Key settings:
 | `ROBOT_ID` | Identity of the robot this service adapts (default `bittle-1`); requests for other ids get 404 |
 | `DECISION_ENGINE` | `ollama` (default — local model, zero cost, falls back to one mock decision on transient failure), `claude` (requires `ANTHROPIC_API_KEY`, raises a missing-credentials error without it) or `mock` (explicit offline simulation) |
 | `ANTHROPIC_API_KEY` | Required when `DECISION_ENGINE=claude` |
-| `CLAUDE_MODEL` | Model for decisions (default `claude-opus-5`) |
-| `MOCK_MODE` | `True` = no hardware needed |
+| `CLAUDE_MODEL` | Model used only when `DECISION_ENGINE=claude` (default `claude-opus-5`). The decision engine defaults to Ollama; Claude is opt-in |
+| `MOCK_MODE` | `True` = no hardware needed (default `False`: real robot over WiFi). `MOCK_RICH=True` adds synthetic RSSI/scans/battery for GUI work |
 | `BITTLE_COMMUNICATION_METHOD` | `mock` \| `serial` (USB) \| `wifi` (WebSocket to the BiBoard's stock firmware) |
 | `BITTLE_WIFI_HOST` / `BITTLE_WIFI_PORT` | BiBoard address for `wifi` mode (default port 81) |
 | `BITTLE_SERIAL_PORT` / `BITTLE_SERIAL_BAUD` | USB port for `serial` mode (default `COM3` @ 115200) |
@@ -50,35 +54,110 @@ All robot routes are scoped under `/api/robots/<robot_id>/` and return 404
 unless `<robot_id>` matches this instance's `ROBOT_ID`. Responses use
 camelCase keys to match the orchestrator's DTOs.
 
+Generated from the routes in `app/app.py` (2026-09-02). Routes marked
+*deprecated* are the old in-process brain, kept for the orchestrator's legacy
+proxies and scheduled for removal (audit fix #11).
+
+**Unscoped**
+
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/health` | GET | Service health + identity (unscoped, used by probes) |
-| `/api/robots/<id>/status` | GET | Hardware + autonomous status |
-| `/api/robots/<id>/personality` | GET | Personality state |
-| `/api/robots/<id>/behavior` | GET | Ask for one behavior decision |
-| `/api/robots/<id>/command` | POST | Raw controller command `{"command": "kbalance"}` |
-| `/api/robots/<id>/interact/<type>` | POST | Log interaction (`pet`, `play`, `talk`, `feed`) |
-| `/api/robots/<id>/choreography/list` | GET | List animations |
-| `/api/robots/<id>/choreography/execute/<name>` | POST | Execute animation |
-| `/api/robots/<id>/autonomous/start` / `stop` / `status` | POST/GET | Autonomous behavior loop |
-| `/api/robots/<id>/schema` | GET | Capability schema (servos, actions, moves) for UIs |
-| `/api/robots/<id>/servo` | GET/POST | Read commanded joint angles / move joints |
-| `/api/robots/<id>/execute_action` | POST | Execute a named high-level action plan |
-| `/api/robots/<id>/sound` | POST | Play a buzzer tone sequence |
-| `/api/robots/<id>/voice/health` | GET | Ollama reachability + model availability |
-| `/api/robots/<id>/voice/demo` / `voice/speak` | POST | "Hey Laika" text interaction / TTS |
-| `/api/robots/<id>/activity` | GET | Recent activity log |
-| `/api/robots/<id>/display` | GET | Current display text (what the dog "says") |
+| `/api/health` | GET | Service health + identity (used by Docker/orchestrator probes) |
+| `/metrics` | GET | Request/token metrics snapshot plus battery gauge, scraped by the orchestrator's metrics merge and hourly rollups |
+
+**Status and telemetry** (`/api/robots/<id>/...`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/status` | GET | Hardware status: connection, battery, posture, current arbiter behavior |
+| `/power` | GET | Power-session tracker (on/off sessions, last snapshot) |
+| `/polling` | GET / POST | Adaptive telemetry polling policy (read / configure) |
+| `/schema` | GET | Capability schema (servos, actions, moves, transport) for UIs |
+| `/activity` | GET | Recent activity log |
+| `/display` | GET | *deprecated* — current display text |
+
+**Motion**
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/command` | POST | Raw controller token `{"command": "kbalance"}` (bypasses the arbiter) |
+| `/servo` | GET | Commanded joint angles |
+| `/servo` | POST | Move joints with the adapter's safety clamps (bypasses the arbiter) |
+| `/execute_action` | POST | Execute a named high-level action plan; the orchestrator's behavior loop drives the hardware here |
+| `/abort` | POST | Stop the current motion immediately (arbiter + controller), regardless of who started it |
+| `/sound` | POST | Buzzer feedback patterns / tone sequence |
+| `/choreography/list` | GET | List animations |
+| `/choreography/execute/<name>` | POST | Execute an animation (bypasses the arbiter) |
+
+**Behavior framework** (single arbiter owns motion; see `orchestrator/docs/design/BEHAVIOR_FRAMEWORK_BRIEF.md`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/behaviors` | GET / POST | List / upsert stored behaviors (step lists with priority and interruptibility) |
+| `/behaviors/<name>` | GET | One stored behavior |
+| `/bindings` | GET / POST | List / upsert event → behavior bindings |
+| `/arbiter/status` | GET | What the arbiter is running, queue, last result |
+| `/arbiter/invoke` | POST | Submit a behavior with a cause (provenance) |
+| `/arbiter/stop` | POST | Stop the current behavior (non-interruptible ones finish) |
+| `/greeting` | GET | Boot-greeting status (back-compat shim over the framework) |
+| `/greeting/run` / `enable` / `disable` | POST | Run the greeting now / toggle it |
+| `/idle` | GET | Idle-ladder status (sit → rest) |
+| `/idle/enable` / `disable` | POST | Toggle the idle ladder |
+
+**Leash and senses**
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/leash` | GET | Proximity-leash state: RSSI, zone, dead-man, marks |
+| `/leash/config` | POST | Enable/disable and thresholds |
+| `/leash/mark` | POST | Record a labelled RSSI mark |
+| `/senses` | GET | Senses layer status: WiFi sniffer, dead-reckoned pose |
+| `/senses/samples` | GET | Recent sense samples (`?limit=`) |
+| `/senses/sniff` | POST | One WiFi scan now (ignores the politeness clock; blocks ~2 s) |
+
+**Gait learner**
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/gait/start` | POST | Start a supervised learning session (moves the robot in batches) |
+| `/gait/status` | GET | Session state, current trial |
+| `/gait/continue` | POST | Operator confirms the robot is re-centred; next batch proceeds |
+| `/gait/stop` | POST | Stop the session |
+| `/gait/model` | GET | Learned stride/turn model |
+
+**Voice**
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/voice/health` | GET | Ollama reachability + model availability |
+| `/voice/demo` | POST | "Hey Laika" text interaction: text in, LLM reply out, buzzer feedback |
+| `/voice/speak` | POST | Standalone TTS: text → MP3 under `/static/responses/` |
+
+**Deprecated old brain**
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/personality` | GET | *deprecated* — adapter-side personality state |
+| `/behavior` | GET | *deprecated* — one decision from the adapter's engine (Ollama default, Claude opt-in) |
+| `/interact/<type>` | POST | *deprecated* — log interaction (`pet`, `play`, `talk`, `feed`) |
+| `/autonomous/start` / `stop` / `status` | POST/GET | *deprecated* — in-process autonomous loop |
 
 ## Architecture
 
 ```
-Flask (app/app.py)
- ├─ personality_engine.py  — Claude (or mock) decides behavior; state persisted
- ├─ choreography.py        — animation library → command sequences
- ├─ bittle_controller.py   — mock / serial / wifi hardware adapters
- └─ models.py              — SQLAlchemy models (SQLite now, Postgres later)
+Flask (app/app.py)          — composition root: controller, arbiter, watchdogs, routes
+ ├─ bittle_controller.py    — mock / serial / wifi (WebSocket) hardware transports
+ ├─ arbiter.py + behavior_store.py + event_binder.py — single motion owner, stored behaviors, bindings
+ ├─ greeting.py / idle_keeper.py / leash.py / senses.py / power.py — lifecycle watchdogs
+ ├─ gait_learner.py         — supervised stride/turn calibration sessions
+ ├─ personality_engine.py   — decision engine (Ollama default, Claude opt-in, mock); deprecated in-process brain
+ ├─ voice.py                — Ollama text chain + TTS
+ └─ models.py               — SQLAlchemy models (SQLite)
 ```
+
+Runs under gunicorn with `--workers 1` on purpose: the module-level singletons
+(controller, arbiter, watchdog threads) and the firmware's two-client
+WebSocket cap both assume a single process.
 
 ## Tests
 
@@ -89,9 +168,12 @@ pytest tests/ -v
 
 ## Roadmap
 
-Phases 0–1 and the WiFi transport are **done**: hardware validated over USB
-serial (firmware B10_251121), then moved to the BiBoard's onboard WiFi
-(WebSocket, no extra module needed). Remaining: display streaming → LEDs →
-sensors → polish → cloud (Postgres/AWS), plus the personality director and
-voice hardware. See `BITTLE_PROJECT_SETUP.md` for the original plan and
-`CONTEXT.md` for current state.
+Phases 0–1b, the WiFi transport and the behavior framework Phase 1 are
+**done**: hardware validated over USB serial, then moved to the BiBoard's
+onboard WiFi (WebSocket, no extra module needed); firmware is now the
+hey-laika fork (base B10_251121, see
+`orchestrator/docs/design/FIRMWARE_RESET.md`). Next: the adapter items in
+`orchestrator/docs/reports/AUDIT_2026-09-02.md` §8, then voice hardware
+(`VOICE_RELAY_BRIEF.md`) and navigation (`NAVIGATION_MAPPING_BRIEF.md`). See
+`BITTLE_PROJECT_SETUP.md` for the original plan and `CONTEXT.md` for current
+state.

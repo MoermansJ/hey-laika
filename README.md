@@ -1,8 +1,9 @@
 # hey-laika 🐕
 
 AI companion robot project built around **Laika**, a Petoi Bittle X V2 robot
-dog driven over WiFi. Claude-powered personality, fleet orchestration, live
-servo control, voice interaction, and dead-reckoning navigation experiments.
+dog driven over WiFi. LLM-driven personality (local Ollama by default, Claude
+opt-in), fleet orchestration, live servo control, a proximity leash, voice
+interaction, and dead-reckoning navigation experiments.
 
 ## Layout
 

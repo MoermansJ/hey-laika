@@ -31,7 +31,7 @@ def clear_sessions():
 def test_session_opens_and_closes_with_snapshots():
     clear_sessions()
     ctrl = FakeController()
-    tracker = PowerTracker(ctrl, poll_s=999)
+    tracker = PowerTracker(ctrl, poll_s=999, unreachable_grace_s=0)
     tracker.init()
     tracker.shutdown()  # drive ticks manually
 
@@ -66,7 +66,7 @@ def test_drain_rate_and_prediction():
         db.commit()
 
     ctrl = FakeController()
-    tracker = PowerTracker(ctrl, poll_s=999)
+    tracker = PowerTracker(ctrl, poll_s=999, unreachable_grace_s=0)
     ctrl.connected, ctrl.battery = True, 50.0
     tracker._tick()
 

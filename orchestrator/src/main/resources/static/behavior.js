@@ -66,7 +66,13 @@ function appendPoint(point) {
 
 async function loadHistory() {
   const res = await fetch(`/api/robots/${state.robotId}/behavior/history?limit=${MAX_POINTS}`);
-  const decisions = await res.json();       // newest first
+  const decisions = await res.json().catch(() => null);   // newest first
+  if (!Array.isArray(decisions)) {
+    // An error object ({error, message}) has no reverse(); show it instead.
+    $("#decisions").innerHTML =
+        `<tr><td colspan="5" class="hint">${esc(decisions?.message || "history unavailable")}</td></tr>`;
+    return;
+  }
   state.points = decisions.reverse().map(toPoint);
   renderAll();
 }
@@ -312,8 +318,8 @@ function onChartHover(event) {
   const failed = p.success === false ? " <span style='color:var(--critical)'>(failed)</span>" : "";
   tooltip.innerHTML =
       `<div class="t-time">${new Date(p.t).toLocaleTimeString()}</div>` + rows +
-      `<div class="t-action">${POSTURE_ICON[p.posture] ?? ""} ${p.action ?? "resting"}${failed}<br>` +
-      `<span style="color:var(--muted)">${p.reasoning ?? ""}</span></div>`;
+      `<div class="t-action">${esc(POSTURE_ICON[p.posture] ?? "")} ${esc(p.action ?? "resting")}${failed}<br>` +
+      `<span style="color:var(--muted)">${esc(p.reasoning ?? "")}</span></div>`;
   tooltip.style.display = "block";
   const tipX = mx + 14 + tooltip.offsetWidth > canvas.clientWidth
       ? mx - tooltip.offsetWidth - 10 : mx + 14;
@@ -339,7 +345,7 @@ function renderFreq() {
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const max = sorted.length ? sorted[0][1] : 1;
   $("#freq").innerHTML = sorted.map(([action, count]) =>
-      `<div class="freq-row"><span class="fname">${action}</span>` +
+      `<div class="freq-row"><span class="fname">${esc(action)}</span>` +
       `<span class="fbar-track"><span class="fbar" style="display:block;width:${(count / max) * 100}%"></span></span>` +
       `<span class="fcount">${count}</span></div>`).join("") ||
       `<span class="hint">no actions yet</span>`;
@@ -349,10 +355,10 @@ function renderDecisions() {
   const rows = [...state.points].reverse().slice(0, 100).map((p) => {
     const failed = p.success === false ? ` <span class="fail">failed</span>` : "";
     return `<tr><td class="time">${new Date(p.t).toLocaleTimeString()}</td>` +
-        `<td>${p.action ?? "<span class='hint'>rest</span>"}${failed}</td>` +
-        `<td><span class="src">${p.source ?? ""}</span></td>` +
-        `<td>${(p.posture ?? "").toLowerCase()}</td>` +
-        `<td>${p.reasoning ?? ""}</td></tr>`;
+        `<td>${p.action ? esc(p.action) : "<span class='hint'>rest</span>"}${failed}</td>` +
+        `<td><span class="src">${esc(p.source ?? "")}</span></td>` +
+        `<td>${esc((p.posture ?? "").toLowerCase())}</td>` +
+        `<td>${esc(p.reasoning ?? "")}</td></tr>`;
   });
   $("#decisions").innerHTML = rows.join("");
 }
@@ -392,21 +398,36 @@ function bindControls() {
 // ---------- boot ----------
 
 async function boot() {
-  const robots = await (await fetch("/api/fleet/robots")).json();
+  let robots;
+  try {
+    robots = await hlApi("", "/api/fleet/robots");
+  } catch (err) {
+    $("#conn-chip").textContent = "orchestrator unreachable";
+    return;
+  }
   state.robots = robots;
   const select = $("#robot-select");
   select.innerHTML = robots.map((r) =>
-      `<option value="${r.robotId}">${r.name}</option>`).join("");
-  state.robotId = robots[0]?.robotId;
+      `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
+  // Embedded tab: honour the parent's robot; never default to robots[0].
+  const wanted = hlRobotParam(null);
+  state.robotId = robots.some((r) => r.robotId === wanted)
+      ? wanted : robots[0]?.robotId;
   if (!state.robotId) return;
+  select.value = state.robotId;
 
   renderLegend();
   bindControls();
-  await loadHistory();
-  await refreshStatus();
+  try {
+    await loadHistory();
+    await refreshStatus();
+  } catch (err) {
+    $("#conn-chip").textContent = `adapter unavailable: ${err.message}`;
+  }
   connectStomp();
 
-  setInterval(refreshStatus, 3000);
+  hlPoll(async () => { try { await refreshStatus(); } catch { /* shown by chip */ } },
+         3000, { immediate: false });
   new ResizeObserver(() => drawChart()).observe($("#chart"));
   window.matchMedia("(prefers-color-scheme: dark)")
       .addEventListener("change", () => { renderLegend(); renderAll(); });
@@ -433,8 +454,8 @@ function renderGreetSteps() {
   container.innerHTML = (lifecycleState.greeting?.steps ?? [])
       .map((s, i) => `<div class="step-row" data-idx="${i}">
         <span class="idx">${i + 1}</span>
-        <input type="text" class="st-cmd" value="${s.command.replace(/"/g, "&quot;")}"
-               title="${lifecycleLabel(s.command)}">
+        <input type="text" class="st-cmd" value="${esc(s.command)}"
+               title="${esc(lifecycleLabel(s.command))}">
         <input type="number" class="st-settle" value="${s.settleS}" min="0" step="0.5">
         <span class="unit">s</span>
         <button class="rm" title="Remove step">×</button>
@@ -556,9 +577,8 @@ async function refreshLifecycle() {
   });
   const tryStart = () => {
     if (state.robotId) {
-      refreshLifecycle();
       loadLifecycleEditors();
-      setInterval(refreshLifecycle, 15000);
+      hlPoll(refreshLifecycle, 15000);
     } else {
       setTimeout(tryStart, 500);
     }

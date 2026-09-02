@@ -9,11 +9,16 @@ RUN mvn -q clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 
+# Run as an unprivileged user; the app only needs to read its own jar.
+RUN adduser -D app
 WORKDIR /app
-COPY --from=build /build/target/bittle-orchestrator-*.jar app.jar
+COPY --from=build --chown=app:app /build/target/bittle-orchestrator-*.jar app.jar
+RUN chown -R app:app /app
+USER app
 
 EXPOSE 8080
 
+# busybox wget works unprivileged; 8080 is not a privileged port.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s \
   CMD wget -q --spider http://localhost:8080/actuator/health || exit 1
 

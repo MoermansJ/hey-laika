@@ -57,15 +57,19 @@
       <h2>Why — recent decisions (event → binding → behavior)</h2>
       <div id="why" class="empty">…</div>
     </div>
+    <div class="panel" style="grid-column: 1 / -1;">
+      <h2>Agent thoughts — the personality loop's own reasoning</h2>
+      <div id="thoughts" class="empty">…</div>
+    </div>
   </div>
 
+  <script src="common.js"></script>
   <script src="nav.js" defer></script>
   <script>
-    const ROBOT = new URLSearchParams(location.search).get("robot") || "bittle-1";
-    const R = `/api/robots/${ROBOT}`;
+    const ROBOT = hlRobotParam("bittle-1");
+    const R = `/api/robots/${encodeURIComponent(ROBOT)}`;
     document.querySelector("h1").textContent = `Mind — ${ROBOT}`;
-    const esc = (s) => String(s ?? "").replace(/[<>&]/g, (c) =>
-      ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+    // esc() comes from common.js.
 
     function causeText(run) {
       const c = run.cause;
@@ -137,20 +141,45 @@
         rows.map(([k, v]) => `<span class="label">${k}</span><span>${v}</span>`).join("") + `</div>`;
     }
 
+    // The orchestrator's behavior loop stores every decision with its
+    // reasoning (/behavior/history); this is the loop thinking out loud.
+    function renderThoughts(decisions) {
+      const el = document.getElementById("thoughts");
+      if (!Array.isArray(decisions) || !decisions.length) {
+        el.className = "empty";
+        el.textContent = "no decisions yet — start the loop in the Behavior tab";
+        return;
+      }
+      el.className = "";
+      el.innerHTML = decisions.slice(0, 10).map((d) => {
+        const at = d.decidedAt ? new Date(d.decidedAt).toLocaleTimeString() : "";
+        const failed = d.success === false
+          ? ` <span class="pill" style="color:var(--critical)">failed</span>` : "";
+        return `<div class="why-line"><span class="cause mono">${esc(at)}</span> ` +
+          `<span class="arrow">→</span> <b>${esc(d.selectedAction ?? "rest")}</b>` +
+          `<span class="pill">${esc(d.source ?? "")}</span>${failed}` +
+          `<div class="sub">${esc(d.reasoning ?? "")}</div></div>`;
+      }).join("");
+    }
+
     async function get(path) {
-      try { const r = await fetch(R + path); return r.ok ? await r.json() : null; }
-      catch (e) { return null; }
+      try {
+        const { res, body } = await hlFetchJson(R + path, {}, 6000);
+        return res.ok ? body : null;
+      } catch (e) { return null; }
     }
 
     async function refresh() {
-      const [arb, senses, leash] = await Promise.all([
-        get("/arbiter/status"), get("/senses"), get("/leash")]);
+      const [arb, senses, leash, thoughts] = await Promise.all([
+        get("/arbiter/status"), get("/senses"), get("/leash"),
+        get("/behavior/history?limit=10")]);
       if (arb) { renderDoing(arb); renderWhy(arb); }
       renderWhere(senses);
       renderSenses(senses, leash);
+      renderThoughts(thoughts);
     }
-    refresh();
-    setInterval(refresh, 2000);
+    // 2 s cadence with overlap guard and hidden-tab pause (common.js).
+    hlPoll(refresh, 2000);
   </script>
 </body>
 </html>

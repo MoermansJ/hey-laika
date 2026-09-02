@@ -258,15 +258,27 @@ class PersonalityEngine:
 
         # Server-side fallback: if a safety classifier declines, the request is
         # re-served by Anthropic's recommended fallback model in the same call.
+        # The system prompt is stable, so it carries a cache breakpoint; the
+        # JSON schema makes the reply parse-free (the regex parse below is
+        # only a safety net if the SDK/endpoint rejects output_config).
+        request = dict(
+            model=Config.CLAUDE_MODEL,
+            max_tokens=1024,
+            system=[{"type": "text", "text": SYSTEM_PROMPT,
+                     "cache_control": {"type": "ephemeral"}}],
+            messages=messages,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
         try:
-            response = client.beta.messages.create(
-                model=Config.CLAUDE_MODEL,
-                max_tokens=1024,
-                system=SYSTEM_PROMPT,
-                messages=messages,
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            )
+            try:
+                response = client.beta.messages.create(
+                    **request,
+                    output_config=self._decision_output_config(available))
+            except (TypeError, anthropic.BadRequestError) as exc:
+                logger.warning("Structured output unavailable (%s); "
+                               "falling back to free-text parsing", exc)
+                response = client.beta.messages.create(**request)
         except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
             raise MissingCredentialsError(
                 f"Anthropic rejected the configured API key: {exc}"
@@ -297,7 +309,22 @@ class PersonalityEngine:
                 session.add(ConversationMessage(robot_id=self.robot_id, role="assistant",
                                                 content=text))
                 session.commit()
+                self._prune_history(session)
         return decision
+
+    HISTORY_KEEP_ROWS = 200
+
+    def _prune_history(self, session) -> None:
+        """Keep the table bounded: only the last N rows per robot survive."""
+        stale_ids = [r.id for r in (session.query(ConversationMessage.id)
+                                    .filter_by(robot_id=self.robot_id)
+                                    .order_by(ConversationMessage.id.desc())
+                                    .offset(self.HISTORY_KEEP_ROWS).all())]
+        if stale_ids:
+            (session.query(ConversationMessage)
+             .filter(ConversationMessage.id.in_(stale_ids))
+             .delete(synchronize_session=False))
+            session.commit()
 
     def _recent_interactions(self, limit: int = 5) -> list[str]:
         with SessionLocal() as session:
@@ -306,6 +333,18 @@ class PersonalityEngine:
                     .order_by(Interaction.id.desc())
                     .limit(limit).all())
             return [r.interaction_type for r in rows]
+
+    @staticmethod
+    def _decision_output_config(available: list[str]) -> dict:
+        return {"format": {"type": "json_schema", "schema": {
+            "type": "object",
+            "properties": {
+                "behavior": {"type": "string", "enum": list(available)},
+                "reason": {"type": "string"},
+            },
+            "required": ["behavior", "reason"],
+            "additionalProperties": False,
+        }}}
 
     @staticmethod
     def _parse_decision(text: str, available: list[str]) -> dict | None:

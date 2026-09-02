@@ -9,9 +9,11 @@ arbitrated system the host fully owns.
 
 ## 1. Why now
 
-The firmware reset (Phase A, flashed & validated) made the robot a **silent,
-honest machine**: no reflex motion, no silent command drops, exceptions are
-*reported* to the host instead of acted on. All personality has moved host-side —
+The firmware reset (Phase A flashed & validated — cuts 1, 3, 4 complete, cut 2
+partial; status in `FIRMWARE_RESET.md`) made the robot a **silent, honest
+machine**: no reflex motion, commands queued instead of dropped (one drain-path
+bug remains, audit 2026-09-02 §4 F1), exceptions are *reported* to the host
+instead of acted on. All personality has moved host-side —
 but it moved as **independent, uncoordinated pieces**. The framework's job is to
 unify them.
 

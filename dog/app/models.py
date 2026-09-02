@@ -84,9 +84,24 @@ class SystemConfiguration(Base):
     value: Mapped[str] = mapped_column(Text)
 
 
-engine = create_engine(Config.sqlalchemy_url(), connect_args={"check_same_thread": False}
-                       if Config.sqlalchemy_url().startswith("sqlite") else {})
+_IS_SQLITE = Config.sqlalchemy_url().startswith("sqlite")
+# ~9 threads write this file (arbiter run log, metrics flush, sniffer, power
+# tracker, request threads). A 30 s busy timeout plus WAL keeps readers
+# from tripping over writers with "database is locked".
+engine = create_engine(
+    Config.sqlalchemy_url(),
+    connect_args={"check_same_thread": False, "timeout": 30} if _IS_SQLITE else {})
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
+if _IS_SQLITE:
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
 
 
 def init_db() -> None:

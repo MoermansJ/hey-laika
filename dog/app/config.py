@@ -15,7 +15,15 @@ def _bool(name: str, default: bool = False) -> bool:
 
 class Config:
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-    DEBUG = _bool("DEBUG", True)
+    # DEBUG=True exposes the Werkzeug interactive debugger to anyone who can
+    # reach the port; it is opt-in only. HOST defaults to loopback for the
+    # native `python -m app.app` run; Docker (gunicorn) binds 0.0.0.0 itself.
+    DEBUG = _bool("DEBUG", False)
+    HOST = os.getenv("HOST", "127.0.0.1").strip()
+
+    # Request caps: a huge durationMs would pin a worker thread for hours.
+    MAX_ACTION_DURATION_MS = int(os.getenv("MAX_ACTION_DURATION_MS", "60000"))
+    MAX_GAIT_ITERATIONS = int(os.getenv("MAX_GAIT_ITERATIONS", "20"))
 
     # Identity: which robot instance this service is the adapter for. The
     # orchestrator addresses services by this id; requests for any other id

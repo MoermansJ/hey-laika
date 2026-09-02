@@ -98,6 +98,7 @@
     <table id="marks"><thead><tr><th>Label</th><th>RSSI</th><th>When</th></tr></thead><tbody></tbody></table>
   </div>
 
+  <script src="common.js"></script>
   <script src="nav.js" defer></script>
   <script>
     const ROBOT = new URLSearchParams(location.search).get("robot") || "bittle-1";
@@ -148,22 +149,36 @@
           document.getElementById("beaconSsid").value = s.config.beaconSsid || "";
       }
       const tbody = document.querySelector("#marks tbody");
+      // Mark labels are user-typed and persisted: escape them.
       tbody.innerHTML = (s.marks || []).slice().reverse().map((m) =>
-        `<tr><td>${m.label}</td><td>${m.rssi != null ? m.rssi.toFixed(1) + " dBm" : "—"}</td>` +
+        `<tr><td>${esc(m.label)}</td><td>${typeof m.rssi === "number" ? m.rssi.toFixed(1) + " dBm" : "—"}</td>` +
         `<td>${new Date(m.at * 1000).toLocaleTimeString()}</td></tr>`).join("");
       if (s.rssi != null) samples.push({ t: Date.now() / 1000, rssi: s.rssi });
       drawChart(s.config);
     }
 
     async function refresh() {
-      try { render(await (await fetch(BASE)).json()); } catch (e) { /* offline */ }
+      try { render(await hlApi(BASE, "")); } catch (e) { /* offline */ }
+    }
+
+    async function post(path, body) {
+      // Throws on 502 adapter_unavailable etc. — callers must not paint
+      // an error object as leash state or claim "saved".
+      return hlApi(BASE, path, { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body) });
+    }
+
+    function showError(err) {
+      const el = document.getElementById("saveState");
+      el.textContent = `failed: ${err.message}`;
+      setTimeout(() => { el.textContent = ""; }, 4000);
     }
 
     document.getElementById("toggle").addEventListener("click", async () => {
       if (!latest) return;
-      render(await (await fetch(BASE + "/config", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !latest.enabled }) })).json());
+      try { render(await post("/config", { enabled: !latest.enabled })); }
+      catch (err) { showError(err); }
     });
 
     document.getElementById("save").addEventListener("click", async () => {
@@ -172,23 +187,24 @@
         beaconSsid: document.getElementById("beaconSsid").value,
       };
       CFG_KEYS.forEach((k) => { body[k] = parseFloat(document.getElementById(k).value); });
-      render(await (await fetch(BASE + "/config", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body) })).json());
-      document.getElementById("saveState").textContent = "saved";
-      setTimeout(() => { document.getElementById("saveState").textContent = ""; }, 2000);
+      try {
+        render(await post("/config", body));
+        document.getElementById("saveState").textContent = "saved";
+        setTimeout(() => { document.getElementById("saveState").textContent = ""; }, 2000);
+      } catch (err) { showError(err); }
     });
 
     document.getElementById("markBtn").addEventListener("click", async () => {
       const label = document.getElementById("markLabel").value || "mark";
-      render(await (await fetch(BASE + "/mark", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }) })).json());
-      document.getElementById("markLabel").value = "";
+      try {
+        render(await post("/mark", { label }));
+        document.getElementById("markLabel").value = "";
+      } catch (err) { showError(err); }
     });
 
-    refresh();
-    setInterval(refresh, 1000);
+    // 1 s cadence, but never two requests in flight and nothing while
+    // the tab is hidden (a hung adapter used to pile up ~30 requests).
+    hlPoll(refresh, 1000);
   </script>
 </body>
 </html>

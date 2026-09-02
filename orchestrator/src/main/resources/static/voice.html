@@ -63,6 +63,7 @@
     .voice-msg .lat { font-size: 0.65rem; color: var(--muted); margin-left: 0.5rem; }
     .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
   </style>
+  <script src="common.js"></script>
   <script src="nav.js" defer></script>
 </head>
 <body>
@@ -81,8 +82,8 @@
     <div id="voice-log" class="voice-log"></div>
     <div class="hint">Simulates the wake-word → record → respond chain: the dog beeps at
       each stage and the reply comes from the local LLM. Microphone and speaker are
-      stubbed until the INMP441/MAX98357A hardware arrives — until then, bark
-      sounds play through THIS device's speakers as Laika's voice.</div>
+      stubbed until the XIAO microphone and Grove speaker are installed — until
+      then, bark sounds play through THIS device's speakers as Laika's voice.</div>
   </section>
 
   <section class="card" style="margin-top:0.9rem">
@@ -122,9 +123,10 @@
       const msg = document.createElement("div");
       msg.className = `voice-msg ${kind}`;
       const who = kind === "user" ? "you" : kind === "laika" ? "laika" : "error";
-      const lat = latencySec != null
+      const lat = typeof latencySec === "number"
           ? `<span class="lat">${latencySec.toFixed(1)}s think</span>` : "";
-      msg.innerHTML = `<span class="who">${who}${lat}</span>${text}`;
+      // LLM output and the user's own text: never raw HTML.
+      msg.innerHTML = `<span class="who">${who}${lat}</span>${esc(text)}`;
       log.appendChild(msg);
       log.scrollTop = log.scrollHeight;
     }
@@ -180,18 +182,27 @@
     }
 
     async function boot() {
-      const robots = await (await fetch("/api/fleet/robots")).json();
+      let robots;
+      try {
+        robots = await hlApi("", "/api/fleet/robots");
+      } catch (err) {
+        $("#voice-chip").textContent = "orchestrator unreachable";
+        return;
+      }
       $("#robot-select").innerHTML = robots.map((r) =>
-          `<option value="${r.robotId}">${r.name}</option>`).join("");
-      state.robotId = robots[0]?.robotId;
+          `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
+      // Embedded tab: honour the parent's robot; never default to robots[0].
+      const wanted = hlRobotParam(null);
+      state.robotId = robots.some((r) => r.robotId === wanted)
+          ? wanted : robots[0]?.robotId;
       if (!state.robotId) return;
+      $("#robot-select").value = state.robotId;
       $("#robot-select").onchange = (e) => { state.robotId = e.target.value; refreshVoiceHealth(); };
       $("#voice-send").onclick = sendVoiceInput;
       $("#voice-input").addEventListener("keydown", (e) => {
         if (e.key === "Enter") sendVoiceInput();
       });
-      await refreshVoiceHealth();
-      setInterval(refreshVoiceHealth, 15000);
+      hlPoll(refreshVoiceHealth, 15000);
     }
     boot();
   </script>

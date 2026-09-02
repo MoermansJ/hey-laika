@@ -1,3 +1,5 @@
+> **Archived 2026-09-02.** Superseded by [design/ARCHITECTURE.md](../design/ARCHITECTURE.md); kept for history. Details here no longer match the code.
+
 # BITTLE FLEET MANAGEMENT CONSOLE - ENHANCED GUI SPECIFICATION
 
 **Objective:** Transform the temporary UI into a professional fleet management console that reflects the physical reality of Bittle robots, organized by information hierarchy.

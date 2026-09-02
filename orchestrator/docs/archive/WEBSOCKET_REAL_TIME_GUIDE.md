@@ -1,3 +1,5 @@
+> **Archived 2026-09-02.** Superseded by [design/ARCHITECTURE.md](../design/ARCHITECTURE.md); kept for history. Details here no longer match the code.
+
 # WEBSOCKET REAL-TIME UPDATES - COMPLETE IMPLEMENTATION GUIDE
 
 **Objective:** Replace HTTP polling with WebSocket for real-time, bidirectional communication. Dashboard updates instantly without network overhead.

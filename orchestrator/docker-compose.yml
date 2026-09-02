@@ -21,13 +21,17 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Local LLM for the "Hey Laika" voice feature. Temporary stand-in until
-  # real voice hardware + a bigger model. The adapter container gets
-  # OLLAMA_URL=http://ollama:11434 below; a natively-run adapter uses its
-  # localhost:11434 default via the published port.
-  # Start standalone with: docker compose up -d ollama
+  # Local LLM: the default decision engine and the "Hey Laika" voice feature.
+  # The adapter container gets OLLAMA_URL=http://ollama:11434 below; a
+  # natively-run adapter uses its localhost:11434 default via the published
+  # port. Start standalone with: docker compose up -d ollama
+  #
+  # Pinned by digest to the image that was pulled and validated locally
+  # (ollama/ollama:latest as of 2026-08-28, Ubuntu 24.04 base) so a rebuild
+  # cannot silently pick up a new release. To upgrade: docker pull
+  # ollama/ollama:latest, then copy the new RepoDigest here.
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama@sha256:020e4134285e2ef4d8fd801234176de3b4faadc992a3eb06c8e66a2f9d4c4ba2
     container_name: bittle-ollama
     ports:
       - "11434:11434"

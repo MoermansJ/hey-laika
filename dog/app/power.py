@@ -62,13 +62,32 @@ class PowerSession(Base):
 
 
 class PowerTracker:
-    def __init__(self, controller, poll_s: float = 10.0):
+    """States: "off" (no session), "on" (session open, robot answering),
+    "unreachable" (session open, transport lost). A session opens on the
+    first successful battery read, not on socket connect, and closes only
+    after the transport has been gone for `unreachable_grace_s` — a WiFi
+    blip is not a power cycle. Battery below the firmware floor at the time
+    of loss closes immediately (the dog really died)."""
+
+    LOW_BATTERY_FLOOR_PCT = 5.0
+
+    def __init__(self, controller, poll_s: float = 10.0,
+                 unreachable_grace_s: float = 300.0, clock=time.time):
         self.controller = controller
         self.poll_s = poll_s
+        self.unreachable_grace_s = unreachable_grace_s
+        self._clock = clock
         self._connected = False
         self._session_id: int | None = None
         self._last_battery: float | None = None
+        self._unreachable_since: float | None = None
         self._stop = threading.Event()
+
+    @property
+    def state(self) -> str:
+        if self._session_id is None:
+            return "off"
+        return "unreachable" if self._unreachable_since else "on"
 
     def init(self) -> None:
         Base.metadata.create_all(engine)
@@ -100,15 +119,36 @@ class PowerTracker:
 
     def _tick(self) -> None:
         connected = bool(self.controller.get_status().get("connected"))
+        battery = None
         if connected:
             battery = self.controller.get_telemetry().get("battery")
             if battery is not None:
                 self._last_battery = battery
-        if connected and not self._connected:
-            self._open_session(self._last_battery)
-        elif not connected and self._connected:
-            self._close_session(self._last_battery)
         self._connected = connected
+
+        if connected and battery is not None:
+            # A positive sign of life: open a session if none, and forgive
+            # any outage that was in progress.
+            if self._session_id is None:
+                self._open_session(battery)
+            elif self._unreachable_since:
+                logger.info("Robot reachable again after %.0fs",
+                            self._clock() - self._unreachable_since)
+            self._unreachable_since = None
+            return
+
+        if self._session_id is None:
+            return  # off, and still off
+        now = self._clock()
+        if self._unreachable_since is None:
+            self._unreachable_since = now
+            logger.info("Robot unreachable (battery was %s); grace %.0fs",
+                        self._last_battery, self.unreachable_grace_s)
+        died = (self._last_battery is not None
+                and self._last_battery <= self.LOW_BATTERY_FLOOR_PCT)
+        if died or now - self._unreachable_since >= self.unreachable_grace_s:
+            self._close_session(self._last_battery)
+            self._unreachable_since = None
 
     def _open_session(self, battery: float | None) -> None:
         with SessionLocal() as session:
@@ -146,6 +186,8 @@ class PowerTracker:
             predicted_minutes = round(self._last_battery / avg_drain * 60)
         return {
             "connected": self._connected,
+            "state": self.state,
+            "unreachableSince": self._unreachable_since,
             "battery": self._last_battery,
             "avgDrainPctPerHour": avg_drain,
             "predictedMinutesLeft": predicted_minutes,

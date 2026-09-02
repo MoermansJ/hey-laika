@@ -44,6 +44,10 @@ class Arbiter:
         self._interrupted_by: str | None = None  # preemptor run id | "manual_stop"
         self._seq = 0
         self._last_start: dict[str, float] = {}
+        # Wall-clock of the last command THIS arbiter sent. The idle ladder
+        # compares it with controller.last_motion_at to tell arbiter motion
+        # (must not reset the ladder) from external motion (must).
+        self.last_motion_at: float | None = None
         self._stop_thread = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -103,6 +107,11 @@ class Arbiter:
         with self._lock:
             if self._current is None:
                 return {"stopped": False, "reason": "nothing running"}
+            if not self._current.get("interruptible", True):
+                # The executor ignores the flag for these; say so instead
+                # of promising a stop that will not happen.
+                return {"stopped": False, "reason": "not interruptible",
+                        "behavior": self._current["behavior"]}
             self._interrupt = True
             self._interrupted_by = "manual_stop"
             self._work.notify_all()
@@ -167,9 +176,11 @@ class Arbiter:
                         break
                     submission["step"] = index + 1
                 sent = self.controller.send_command(step["command"])
+                self.last_motion_at = time.time()
                 if not sent and step["command"] != "kup":
                     logger.warning("Behavior %s step failed: %s",
                                    behavior["name"], step["command"])
+                    status = "failed"
                     detail = f"step {index + 1} failed: {step['command']}"
                 self._sleep(float(step.get("settleS", 1.0)))
                 self._notify()

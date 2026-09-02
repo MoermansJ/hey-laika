@@ -69,7 +69,9 @@ def query_ollama(prompt: str, model: str | None = None,
             timeout=Config.OLLAMA_TIMEOUT,
         )
         response.raise_for_status()
-        text = (response.json().get("response") or "").strip()
+        body = response.json()
+        _count_ollama_usage(body)
+        text = (body.get("response") or "").strip()
         if not text:
             return None, "Ollama returned an empty response"
         return text, None
@@ -79,6 +81,16 @@ def query_ollama(prompt: str, model: str | None = None,
         return None, f"Ollama unreachable at {Config.OLLAMA_URL}"
     except requests.exceptions.RequestException as exc:
         return None, f"Ollama error: {exc}"
+
+
+def _count_ollama_usage(body: dict) -> None:
+    """Token accounting for the default engine, mirroring ai.claude.*: the
+    /api/generate reply carries prompt_eval_count / eval_count."""
+    from app.metrics import metrics
+
+    metrics.inc("ai.ollama.calls")
+    metrics.inc("ai.ollama.tokensIn", float(body.get("prompt_eval_count") or 0))
+    metrics.inc("ai.ollama.tokensOut", float(body.get("eval_count") or 0))
 
 
 def ollama_health() -> dict:
@@ -131,4 +143,18 @@ def save_tts_audio(audio_bytes: bytes, static_root: Path) -> str:
     responses_dir.mkdir(parents=True, exist_ok=True)
     filename = f"response_{int(time.time() * 1000)}.mp3"
     (responses_dir / filename).write_bytes(audio_bytes)
+    _prune_tts_files(responses_dir)
     return f"/static/responses/{filename}"
+
+
+TTS_KEEP_FILES = 50
+
+
+def _prune_tts_files(responses_dir: Path, keep: int = TTS_KEEP_FILES) -> None:
+    files = sorted(responses_dir.glob("response_*.mp3"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    for stale in files[keep:]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass

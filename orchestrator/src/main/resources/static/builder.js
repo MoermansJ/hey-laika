@@ -340,14 +340,32 @@ async function refreshLoopChip() {
 // ---------- boot ----------
 
 async function boot() {
-  const robots = await (await fetch("/api/fleet/robots")).json();
+  let robots;
+  try {
+    robots = await hlApi("", "/api/fleet/robots");
+  } catch (err) {
+    hlRetryBlock($("#palette"), `Orchestrator unreachable: ${err.message}`, boot);
+    return;
+  }
   $("#robot-select").innerHTML = robots.map((r) =>
-      `<option value="${r.robotId}">${r.name}</option>`).join("");
-  state.robotId = robots[0]?.robotId;
+      `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
+  // Honour ?robot= (embedded / deep link); never default to robots[0]
+  // when the caller named a robot.
+  const wanted = hlRobotParam(null);
+  state.robotId = robots.some((r) => r.robotId === wanted)
+      ? wanted : robots[0]?.robotId;
   if (!state.robotId) return;
+  $("#robot-select").value = state.robotId;
   $("#robot-select").onchange = (event) => { state.robotId = event.target.value; };
 
-  const caps = await api("/capabilities");
+  let caps;
+  try {
+    caps = await api("/capabilities");
+  } catch (err) {
+    toast(`Cannot load capabilities: ${err.message}`, true);
+    hlRetryBlock($("#palette"), `Adapter unavailable: ${err.message}`, boot);
+    return;
+  }
   state.movements = caps.schema.movements ?? [];
   state.byId = new Map(state.movements.map((m) => [m.id, m]));
 
@@ -359,8 +377,7 @@ async function boot() {
   bindLibrary();
   $("#btn-play").onclick = play;
   $("#btn-stop").onclick = () => { state.stopRequested = true; };
-  await refreshLoopChip();
-  setInterval(refreshLoopChip, 4000);
+  hlPoll(refreshLoopChip, 4000);
 }
 
 boot();
