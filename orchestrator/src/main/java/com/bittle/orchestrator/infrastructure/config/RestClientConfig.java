@@ -17,7 +17,7 @@ public class RestClientConfig {
 
     @Bean
     public RestClient pollingRestClient() {
-        return client(2_000, 3_000);
+        return client(2_000, 8_000);
     }
 
     private static RestClient client(int connectTimeoutMs, int readTimeoutMs) {

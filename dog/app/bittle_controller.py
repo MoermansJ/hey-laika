@@ -47,6 +47,9 @@ _TIMEOUT_SKILL_WS = 20.0
 # After a dropped 'P' the cache holds {None, None} only this long, so a
 # single lost poll cannot mask a low battery for the full telemetry TTL.
 _TELEMETRY_RETRY_S = 5.0
+# With the robot down, read-only polls skip the reconnect attempt for this
+# long after a failed connect (each attempt costs a 3 s timeout).
+_CONNECT_BACKOFF_S = 10.0
 
 # Commands that may be re-sent after a reconnect: pure reads. Everything
 # else (skills, joint moves, calibration, beeps, module toggles) could have
@@ -511,6 +514,7 @@ class WiFiBittleController(BaseBittleController):
         # heartbeats the link whenever the transaction lock is free.
         self._pump_stop = threading.Event()
         self._last_keepalive = 0.0
+        self._last_connect_failure = 0.0
         threading.Thread(target=self._pump_loop, daemon=True).start()
 
     def connect(self) -> bool:
@@ -525,6 +529,7 @@ class WiFiBittleController(BaseBittleController):
                 logger.error("WiFi WS connect failed to %s:%s: %s",
                              self.host, self.port, exc)
                 self._ws = None
+                self._last_connect_failure = time.time()
                 # Robot genuinely unreachable: the next successful connect is
                 # a came-online transition (idle socket cycling is not).
                 self._was_connected = False
@@ -754,8 +759,16 @@ class WiFiBittleController(BaseBittleController):
         or motion could execute twice.
         """
         with self._lock:
-            if self._ws is None and not self.connect():
-                return None
+            if self._ws is None:
+                # While the robot is down, every status poll would otherwise
+                # spend a 3 s connect timeout under the lock and push the
+                # adapter past the orchestrator's polling deadline. Reads
+                # back off; commands always try.
+                since_failure = time.time() - self._last_connect_failure
+                if _retry_safe(command) and since_failure < _CONNECT_BACKOFF_S:
+                    return None
+                if not self.connect():
+                    return None
             delivered = True  # unless the write itself failed
             try:
                 result = self._transact(command, timeout)
