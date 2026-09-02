@@ -9,11 +9,6 @@ import com.bittle.orchestrator.domain.robot.ExecuteActionRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Sends actions to the robot's adapter and normalizes failures: an
- * unreachable or erroring adapter yields a failed {@link ActionResult} instead
- * of an exception, so the behavior loop can keep running and back off.
- */
 public class ActionExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ActionExecutor.class);
@@ -43,7 +38,6 @@ public class ActionExecutor {
         }
     }
 
-    /** Dev mode (behavior.simulate-actions): pretend to execute, pacing like the real robot. */
     private ActionResult simulate(String robotId, Action action) {
         try {
             Thread.sleep(action.durationMs());

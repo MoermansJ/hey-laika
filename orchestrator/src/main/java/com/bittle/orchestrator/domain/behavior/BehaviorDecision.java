@@ -3,7 +3,6 @@ package com.bittle.orchestrator.domain.behavior;
 import java.time.Instant;
 import java.util.List;
 
-/** Audit-trail entry for one decision/action cycle of the behavior loop. */
 public record BehaviorDecision(String robotId, Instant decidedAt,
                                PersonalityState.Snapshot stateAtDecision,
                                List<String> validActions, String selectedAction,

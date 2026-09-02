@@ -8,7 +8,6 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/** JPA-backed fleet metadata. Each call is its own transaction. */
 @Component
 public class FleetRepositoryAdapter implements FleetRepositoryPort {
 

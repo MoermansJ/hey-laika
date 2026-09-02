@@ -10,12 +10,19 @@ import org.junit.jupiter.api.Test;
 
 class RuleBasedDecisionEngineTest {
 
+    private static final PersonalityDelta EXHAUSTED = new PersonalityDelta(-0.5, 0, 0, 0, 0, 0);
+    private static final PersonalityDelta STILL_DROWSY = new PersonalityDelta(-0.3, 0, 0, 0, 0, 0);
+    private static final PersonalityDelta RESTED = new PersonalityDelta(0.1, 0, 0, 0, 0, 0);
+    private static final PersonalityDelta BORED_AND_ENERGETIC = new PersonalityDelta(0.2, 0, 0.5, 0, 0, 0);
+    private static final EnumSet<Action> IDLE_CYCLE_ACTIONS = EnumSet.of(Action.SIT_DOWN,
+            Action.LOOK_AROUND_LOW, Action.STAND_UP, Action.IDLE_CALM, Action.LOOK_AROUND_SLOW);
+
     private final RuleBasedDecisionEngine engine = new RuleBasedDecisionEngine(false);
     private final PersonalityStateManager manager = new PersonalityStateManager();
 
     @Test
     void givenContentStandingRobot_whenIdleCycleDisabled_thenItIdlesCalmly() {
-        var state = new PersonalityState(); // content defaults, standing
+        var state = new PersonalityState();
 
         var decision = engine.decide(state);
 
@@ -25,7 +32,7 @@ class RuleBasedDecisionEngineTest {
     @Test
     void givenExhaustedStandingRobot_whenDeciding_thenItLiesDownFirst() {
         var state = new PersonalityState();
-        state.apply(new PersonalityDelta(-0.5, 0, 0, 0, 0, 0)); // energy 0.1
+        state.apply(EXHAUSTED);
 
         var decision = engine.decide(state);
 
@@ -36,7 +43,7 @@ class RuleBasedDecisionEngineTest {
     void givenExhaustedLyingRobot_whenDeciding_thenItSleeps() {
         var state = new PersonalityState();
         state.setPosture(Posture.LYING);
-        state.apply(new PersonalityDelta(-0.5, 0, 0, 0, 0, 0));
+        state.apply(EXHAUSTED);
 
         var decision = engine.decide(state);
 
@@ -47,7 +54,7 @@ class RuleBasedDecisionEngineTest {
     void givenSleepingRobot_whenEnergyIsStillLow_thenItKeepsResting() {
         var state = new PersonalityState();
         state.setPosture(Posture.SLEEPING);
-        state.apply(new PersonalityDelta(-0.3, 0, 0, 0, 0, 0)); // energy 0.3
+        state.apply(STILL_DROWSY);
 
         var decision = engine.decide(state);
 
@@ -58,7 +65,7 @@ class RuleBasedDecisionEngineTest {
     void givenSleepingRobot_whenEnergyHasRecovered_thenItWakesUp() {
         var state = new PersonalityState();
         state.setPosture(Posture.SLEEPING);
-        state.apply(new PersonalityDelta(0.1, 0, 0, 0, 0, 0)); // energy 0.7
+        state.apply(RESTED);
 
         var decision = engine.decide(state);
 
@@ -68,7 +75,7 @@ class RuleBasedDecisionEngineTest {
     @Test
     void givenBoredEnergeticStandingRobot_whenDeciding_thenItPlays() {
         var state = new PersonalityState();
-        state.apply(new PersonalityDelta(0.2, 0, 0.5, 0, 0, 0)); // energy .8, boredom .9
+        state.apply(BORED_AND_ENERGETIC);
 
         var decision = engine.decide(state);
 
@@ -80,7 +87,7 @@ class RuleBasedDecisionEngineTest {
     void givenBoredLyingRobot_whenDeciding_thenItStandsUpFirst() {
         var state = new PersonalityState();
         state.setPosture(Posture.LYING);
-        state.apply(new PersonalityDelta(0.2, 0, 0.5, 0, 0, 0));
+        state.apply(BORED_AND_ENERGETIC);
 
         var decision = engine.decide(state);
 
@@ -105,42 +112,33 @@ class RuleBasedDecisionEngineTest {
         });
     }
 
-    /**
-     * With behavior.idle-cycle enabled, the active behavior is the stationary
-     * cycle: sit → look around (low) → stand → stand a moment →
-     * look around (slow) → sit, with variable-length chains. No stretch.
-     */
     @Test
-    void givenIdleCycleEnabled_whenRunningSixtySteps_thenOnlyCycleActionsOccurInOrder() {
+    void givenIdleCycleEnabled_whenRunningSixtySteps_thenOnlyCycleActionsOccurAndSlowLookFollowsAStandingHold() {
         var cycleEngine = new RuleBasedDecisionEngine(true);
-        var cycleActions = EnumSet.of(Action.SIT_DOWN, Action.LOOK_AROUND_LOW,
-                Action.STAND_UP, Action.IDLE_CALM, Action.LOOK_AROUND_SLOW);
-        var state = new PersonalityState(); // content defaults, standing
+        var state = new PersonalityState();
 
         var seen = IntStream.range(0, 60)
                 .mapToObj(step -> {
                     var action = cycleEngine.decide(state).action();
-                    assertThat(action).as("cycle step %d", step).isNotNull().isIn(cycleActions);
+                    assertThat(action).as("cycle step %d", step).isNotNull().isIn(IDLE_CYCLE_ACTIONS);
                     manager.onActionCompleted(state, action, true, Instant.now());
                     return action;
                 })
                 .toList();
 
-        assertThat(seen).containsAll(cycleActions);
+        assertThat(seen).containsAll(IDLE_CYCLE_ACTIONS);
         IntStream.range(1, seen.size())
                 .filter(i -> seen.get(i) == Action.LOOK_AROUND_SLOW)
                 .forEach(i -> assertThat(seen.get(i - 1))
-                        .as("slow look-around follows the standing hold (or chains)")
+                        .as("action before slow look-around at step %d", i)
                         .isIn(Action.IDLE_CALM, Action.LOOK_AROUND_SLOW));
     }
 
-    /** Regression for the v1.0 nap-loop: an exhausted robot must sleep, recover and wake. */
     @Test
-    void givenExhaustedStandingRobot_whenCyclingWithDrift_thenItSleepsRecoversAndWakes() {
+    void givenExhaustedStandingRobot_whenCyclingWithDrift_thenItSleepsRecoversAndWakesWithinFortyCycles() {
         var state = new PersonalityState();
-        state.apply(new PersonalityDelta(-0.5, 0, 0, 0, 0, 0)); // exhausted, standing
+        state.apply(EXHAUSTED);
 
-        // Stateful with an early exit on wake-up, so a plain loop reads clearer than a stream.
         boolean slept = false;
         boolean woke = false;
         for (int cycle = 0; cycle < 40 && !woke; cycle++) {

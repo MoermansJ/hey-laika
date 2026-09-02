@@ -9,6 +9,9 @@ import org.junit.jupiter.api.Test;
 
 class PersonalityStateManagerTest {
 
+    private static final PersonalityDelta TIRED = new PersonalityDelta(-0.5, 0, 0, 0, 0, 0);
+    private static final PersonalityDelta TIRED_AND_BORED = new PersonalityDelta(-0.6, 0, 0.5, 0, 0, 0);
+
     private final PersonalityStateManager manager = new PersonalityStateManager();
     private PersonalityState state;
 
@@ -55,8 +58,7 @@ class PersonalityStateManagerTest {
     @Test
     void givenTiredBoredLyingRobot_whenSleepSucceeds_thenEnergyIsRestoredAndBoredomCapped() {
         manager.onActionCompleted(state, Action.LIE_DOWN, true, Instant.now());
-        // Make it tired and bored before the nap.
-        state.apply(new PersonalityDelta(-0.6, 0, 0.5, 0, 0, 0));
+        state.apply(TIRED_AND_BORED);
         double energyBefore = state.energy();
 
         manager.onActionCompleted(state, Action.SLEEP, true, Instant.now());
@@ -68,7 +70,7 @@ class PersonalityStateManagerTest {
 
     @Test
     void givenSleepingRobot_whenPassiveDriftApplied_thenEnergyRecoversAndBoredomIsUnchanged() {
-        state.apply(new PersonalityDelta(-0.5, 0, 0, 0, 0, 0)); // tired first
+        state.apply(TIRED);
         manager.onActionCompleted(state, Action.LIE_DOWN, true, Instant.now());
         manager.onActionCompleted(state, Action.SLEEP, true, Instant.now());
         double energyBefore = state.energy();
@@ -77,7 +79,7 @@ class PersonalityStateManagerTest {
         manager.applyPassiveDrift(state, Instant.now());
 
         assertThat(state.energy()).isGreaterThan(energyBefore);
-        assertThat(state.boredom()).isEqualTo(boredomBefore); // no boredom growth asleep
+        assertThat(state.boredom()).isEqualTo(boredomBefore);
     }
 
     @Test

@@ -8,11 +8,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
-/**
- * One hourly usage-metrics snapshot per robot (plus one for the orchestrator
- * itself under robotId "orchestrator"). Kept permanently — hourly rows are
- * tiny and the totals are accounting data (see OBSERVABILITY_MIND_BRIEF §D.1).
- */
 @Entity
 @Table(name = "metrics_rollups")
 public class MetricsRollupEntity {

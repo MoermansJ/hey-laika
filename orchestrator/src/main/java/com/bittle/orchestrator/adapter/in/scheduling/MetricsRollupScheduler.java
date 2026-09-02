@@ -1,21 +1,20 @@
 package com.bittle.orchestrator.adapter.in.scheduling;
 
-import com.bittle.orchestrator.application.port.in.MetricsUseCase;
+import com.bittle.orchestrator.application.usecase.RollupMetricsHourUseCase;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** Persists the hourly metrics rollup at the top of every hour. */
 @Component
 public class MetricsRollupScheduler {
 
-    private final MetricsUseCase metrics;
+    private final RollupMetricsHourUseCase rollupHour;
 
-    public MetricsRollupScheduler(MetricsUseCase metrics) {
-        this.metrics = metrics;
+    public MetricsRollupScheduler(RollupMetricsHourUseCase rollupHour) {
+        this.rollupHour = rollupHour;
     }
 
     @Scheduled(cron = "0 0 * * * *")
     public void rollup() {
-        metrics.rollupHour();
+        rollupHour.execute();
     }
 }

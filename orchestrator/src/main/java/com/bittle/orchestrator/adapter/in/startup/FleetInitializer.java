@@ -1,30 +1,29 @@
 package com.bittle.orchestrator.adapter.in.startup;
 
 import com.bittle.orchestrator.application.ConfiguredFleet;
-import com.bittle.orchestrator.application.port.in.BehaviorUseCase;
-import com.bittle.orchestrator.application.port.in.SyncFleetUseCase;
+import com.bittle.orchestrator.application.usecase.AutoStartBehaviorLoopsUseCase;
+import com.bittle.orchestrator.application.usecase.SyncFleetUseCase;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
-/** At boot: sync the configured fleet, then auto-start behavior loops if configured. */
 @Component
 public class FleetInitializer implements ApplicationRunner {
 
     private final ConfiguredFleet configuredFleet;
     private final SyncFleetUseCase syncFleet;
-    private final BehaviorUseCase behavior;
+    private final AutoStartBehaviorLoopsUseCase autoStartLoops;
 
     public FleetInitializer(ConfiguredFleet configuredFleet, SyncFleetUseCase syncFleet,
-                            BehaviorUseCase behavior) {
+                            AutoStartBehaviorLoopsUseCase autoStartLoops) {
         this.configuredFleet = configuredFleet;
         this.syncFleet = syncFleet;
-        this.behavior = behavior;
+        this.autoStartLoops = autoStartLoops;
     }
 
     @Override
     public void run(ApplicationArguments args) {
-        syncFleet.sync(configuredFleet.robots());
-        behavior.autoStart();
+        syncFleet.execute(configuredFleet.robots());
+        autoStartLoops.execute();
     }
 }

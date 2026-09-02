@@ -23,14 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * The autonomous brain of one robot. Owns the robot's {@link PersonalityState}
- * (which exists and accepts events even while the loop is stopped), runs the
- * decide → execute → update cycle on its own thread, and drains manual actions
- * before making autonomous decisions so manual control and autonomy never race
- * on the servos.
- */
-class RobotBehaviorLoop {
+public class RobotBehaviorLoop {
 
     private static final Logger log = LoggerFactory.getLogger(RobotBehaviorLoop.class);
 
@@ -50,9 +43,9 @@ class RobotBehaviorLoop {
 
     private volatile Thread thread;
 
-    RobotBehaviorLoop(Robot robot, PersonalityStateManager stateManager,
-                      DecisionEngine decisionEngine, ActionExecutor executor,
-                      EventPublisherPort publisher, BehaviorSettings settings) {
+    public RobotBehaviorLoop(Robot robot, PersonalityStateManager stateManager,
+                             DecisionEngine decisionEngine, ActionExecutor executor,
+                             EventPublisherPort publisher, BehaviorSettings settings) {
         this.robot = robot;
         this.stateManager = stateManager;
         this.decisionEngine = decisionEngine;
@@ -61,7 +54,7 @@ class RobotBehaviorLoop {
         this.settings = settings;
     }
 
-    synchronized void start() {
+    public synchronized void start() {
         if (running.get()) {
             return;
         }
@@ -72,7 +65,7 @@ class RobotBehaviorLoop {
         log.info("Behavior loop started for {}", robot.id());
     }
 
-    synchronized void stop() {
+    public synchronized void stop() {
         if (!running.getAndSet(false)) {
             return;
         }
@@ -83,38 +76,32 @@ class RobotBehaviorLoop {
         log.info("Behavior loop stopped for {}", robot.id());
     }
 
-    boolean isRunning() {
+    public boolean isRunning() {
         return running.get();
     }
 
-    PersonalityState.Snapshot personality() {
+    public PersonalityState.Snapshot personality() {
         synchronized (stateLock) {
             return state.snapshot(robot.id());
         }
     }
 
-    BehaviorDecision lastDecision() {
+    public BehaviorDecision lastDecision() {
         return history.peekFirst();
     }
 
-    List<BehaviorDecision> history(int limit) {
+    public List<BehaviorDecision> history(int limit) {
         return history.stream().limit(limit).toList();
     }
 
-    /** Applies an external owner/sensor event; works whether or not the loop runs. */
-    PersonalityState.Snapshot applyEvent(BehaviorEvent event) {
+    public PersonalityState.Snapshot applyEvent(BehaviorEvent event) {
         synchronized (stateLock) {
             stateManager.applyEvent(state, event, Instant.now());
             return state.snapshot(robot.id());
         }
     }
 
-    /**
-     * Manual action entry point. With the loop running the action is queued and
-     * executed ahead of autonomous decisions; with the loop stopped it executes
-     * immediately on the caller's thread.
-     */
-    ActionResult submitManualAction(Action action) {
+    public ActionResult submitManualAction(Action action) {
         if (running.get()) {
             manualQueue.offer(action);
             return new ActionResult(robot.id(), action.actionId(), true, null, "queued");

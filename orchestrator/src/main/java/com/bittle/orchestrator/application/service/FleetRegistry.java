@@ -6,7 +6,6 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** In-memory registry of the live robots in the fleet. */
 public class FleetRegistry {
 
     private final Map<String, Robot> robots = new ConcurrentHashMap<>();

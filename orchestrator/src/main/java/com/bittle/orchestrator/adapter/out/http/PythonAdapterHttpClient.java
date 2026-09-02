@@ -27,11 +27,6 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
-/**
- * HTTP client for the Python robot adapter services. The adapters expose a
- * generic robot-scoped API (/api/robots/{robotId}/...); which physical robot
- * answers is determined purely by which service URL is called.
- */
 @Component
 public class PythonAdapterHttpClient implements RobotAdapterPort {
 

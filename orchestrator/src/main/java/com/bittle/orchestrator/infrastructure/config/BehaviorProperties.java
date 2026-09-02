@@ -4,7 +4,6 @@ import com.bittle.orchestrator.application.BehaviorSettings;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-/** Tuning knobs for the autonomous behavior loops (behavior.* keys). */
 @ConfigurationProperties(prefix = "behavior")
 public record BehaviorProperties(
         @DefaultValue("2500") long decisionIntervalMs,

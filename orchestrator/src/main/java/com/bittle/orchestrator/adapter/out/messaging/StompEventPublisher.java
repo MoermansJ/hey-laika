@@ -4,7 +4,6 @@ import com.bittle.orchestrator.application.port.out.EventPublisherPort;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
-/** Publishes dashboard events over STOMP (see WebSocketConfig). */
 @Component
 public class StompEventPublisher implements EventPublisherPort {
 

@@ -6,11 +6,9 @@ import io.micrometer.core.instrument.Timer;
 import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Component;
 
-/** Reads the orchestrator's own numbers from Micrometer. */
 @Component
 public class MicrometerMetricsAdapter implements OrchestratorMetricsPort {
 
-    /** Counter name for proxied calls that found the adapter down. */
     static final String ADAPTER_UNAVAILABLE_COUNTER = "bittle.adapter.unavailable";
 
     private final MeterRegistry meterRegistry;

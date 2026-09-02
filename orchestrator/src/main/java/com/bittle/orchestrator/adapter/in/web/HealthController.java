@@ -1,6 +1,6 @@
 package com.bittle.orchestrator.adapter.in.web;
 
-import com.bittle.orchestrator.application.port.in.FleetUseCase;
+import com.bittle.orchestrator.application.usecase.ListRobotsUseCase;
 import java.time.Instant;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,10 +9,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class HealthController {
 
-    private final FleetUseCase fleet;
+    private final ListRobotsUseCase listRobots;
 
-    public HealthController(FleetUseCase fleet) {
-        this.fleet = fleet;
+    public HealthController(ListRobotsUseCase listRobots) {
+        this.listRobots = listRobots;
     }
 
     @GetMapping("/api/health")
@@ -20,7 +20,7 @@ public class HealthController {
         return Map.of(
                 "status", "healthy",
                 "service", "bittle-orchestrator",
-                "fleetSize", fleet.robots().size(),
+                "fleetSize", listRobots.execute().size(),
                 "timestamp", Instant.now().toString());
     }
 }

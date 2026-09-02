@@ -18,15 +18,8 @@ import com.bittle.orchestrator.domain.robot.ServoMoveResult;
 import com.bittle.orchestrator.domain.robot.ServoState;
 import java.util.Map;
 
-/**
- * The robot's adapter service, which implements all hardware/AI logic.
- * Implementations throw {@link AdapterUnavailableException} when the adapter
- * cannot be reached and {@link AdapterErrorException} when it answers with an
- * error status.
- */
 public interface RobotAdapterPort {
 
-    /** The adapter's service-level metrics snapshot (untyped passthrough). */
     Map<String, Object> metrics(Robot robot);
 
     RobotStatus status(Robot robot);
@@ -55,7 +48,6 @@ public interface RobotAdapterPort {
 
     DisplayContent display(Robot robot);
 
-    /** The adapter's capability schema, untyped so new capability kinds need no release here. */
     Map<String, Object> capabilities(Robot robot);
 
     ServoState servoState(Robot robot);
@@ -67,8 +59,6 @@ public interface RobotAdapterPort {
     Map<String, Object> voiceHealth(Robot robot);
 
     Map<String, Object> sound(Robot robot, Map<String, Object> body);
-
-    // ---- Untyped passthrough; path is relative to the adapter's robot root ----
 
     Map<String, Object> get(Robot robot, String path);
 

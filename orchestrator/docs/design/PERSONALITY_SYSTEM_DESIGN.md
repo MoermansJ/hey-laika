@@ -405,9 +405,12 @@ legacy adapter-personality broadcast is retired with the adapter migration
   `ClaudeDirector` (Phase 2).
 - `BehaviorDecision` — record: robotId, timestamp, state snapshot, valid
   actions, chosen action, source (RULE/CLAUDE/MANUAL), reasoning, result.
-- `ActionExecutor` — adapter call + error mapping (application layer).
-- `RobotBehaviorLoop` / `BehaviorService` — per-robot lifecycle (application layer,
-  `com.bittle.orchestrator.application.service`).
+- `ActionExecutor` — adapter call + error mapping (`application.service`).
+- `RobotBehaviorLoop` / `BehaviorLoops` — per-robot loop and its registry
+  (`application.service`).
+- `application.usecase` — one class per operation the API exposes
+  (`StartBehaviorLoopUseCase`, `ApplyBehaviorEventUseCase`, `SubmitManualActionUseCase`,
+  ...); see `docs/design/ARCHITECTURE.md`.
 
 Persistence (Phase 4): `BehaviorDecisionEntity` via existing Postgres/JPA;
 personality snapshot saved on loop stop and restored on start.

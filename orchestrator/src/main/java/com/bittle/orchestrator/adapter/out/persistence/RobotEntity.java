@@ -8,7 +8,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
-/** Fleet metadata for one managed robot instance. */
 @Entity
 @Table(name = "robots")
 public class RobotEntity {

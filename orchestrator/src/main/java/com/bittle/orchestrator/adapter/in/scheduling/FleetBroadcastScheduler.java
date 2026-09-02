@@ -1,6 +1,8 @@
 package com.bittle.orchestrator.adapter.in.scheduling;
 
-import com.bittle.orchestrator.application.port.in.FleetBroadcastUseCase;
+import com.bittle.orchestrator.application.usecase.BroadcastActivityUseCase;
+import com.bittle.orchestrator.application.usecase.BroadcastFleetStatusUseCase;
+import com.bittle.orchestrator.application.usecase.BroadcastPersonalityAndDisplayUseCase;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -8,19 +10,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-/**
- * Drives the fleet broadcasts on a fixed cadence. Broadcasts are skipped
- * while no WebSocket client is connected so the Python adapters are not
- * polled for nobody.
- */
 @Component
 public class FleetBroadcastScheduler {
 
-    private final FleetBroadcastUseCase broadcast;
+    private final BroadcastFleetStatusUseCase broadcastStatus;
+    private final BroadcastPersonalityAndDisplayUseCase broadcastPersonalityAndDisplay;
+    private final BroadcastActivityUseCase broadcastActivity;
     private final AtomicInteger clients = new AtomicInteger();
 
-    public FleetBroadcastScheduler(FleetBroadcastUseCase broadcast) {
-        this.broadcast = broadcast;
+    public FleetBroadcastScheduler(BroadcastFleetStatusUseCase broadcastStatus,
+                                   BroadcastPersonalityAndDisplayUseCase broadcastPersonalityAndDisplay,
+                                   BroadcastActivityUseCase broadcastActivity) {
+        this.broadcastStatus = broadcastStatus;
+        this.broadcastPersonalityAndDisplay = broadcastPersonalityAndDisplay;
+        this.broadcastActivity = broadcastActivity;
     }
 
     @EventListener
@@ -37,26 +40,24 @@ public class FleetBroadcastScheduler {
         return clients.get();
     }
 
-    /** 4s (was 2s): halved per owner request — with the adapter's 40s
-     *  telemetry TTL this keeps dog-facing traffic minimal. */
     @Scheduled(fixedRate = 4000)
     public void broadcastStatus() {
         if (hasClients()) {
-            broadcast.broadcastStatus();
+            broadcastStatus.execute();
         }
     }
 
     @Scheduled(fixedRate = 3000)
     public void broadcastPersonalityAndDisplay() {
         if (hasClients()) {
-            broadcast.broadcastPersonalityAndDisplay();
+            broadcastPersonalityAndDisplay.execute();
         }
     }
 
     @Scheduled(fixedRate = 5000)
     public void broadcastActivity() {
         if (hasClients()) {
-            broadcast.broadcastActivity();
+            broadcastActivity.execute();
         }
     }
 

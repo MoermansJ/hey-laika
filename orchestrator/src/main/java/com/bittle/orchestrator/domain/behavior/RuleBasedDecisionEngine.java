@@ -6,18 +6,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * Rule-based reflex decision tree. Runs every cycle and doubles as the
- * fallback whenever the Claude director (Phase 2) is disabled or unavailable —
- * the robot never freezes because an API call failed. Only ever returns
- * actions valid for the current posture and energy level.
- */
 public class RuleBasedDecisionEngine implements DecisionEngine {
 
     private static final List<Action> PLAY = List.of(Action.PLAY_BOW, Action.SPIN, Action.BACKFLIP);
 
-    /** Probability of lingering in the current cycle step instead of advancing —
-     *  this is what makes sits and stands chain to variable lengths. */
     private static final double LINGER = 0.3;
 
     private final boolean idleCycleEnabled;
@@ -59,14 +51,6 @@ public class RuleBasedDecisionEngine implements DecisionEngine {
         return decision(state, Action.IDLE_CALM, "content, idling");
     }
 
-    /**
-     * Optional (behavior.idle-cycle) stationary idle cycle —
-     * sit → look around (low) → stand → stand a moment →
-     * look around (slow) → sit again. The step is derived from
-     * (posture, lastAction) so the cycle needs no stored state and self-heals
-     * from any entry point; {@link #LINGER} lets sits, stands and looks chain
-     * to variable lengths.
-     */
     private Decision idleCycle(PersonalityState state) {
         var last = state.lastAction();
         var linger = ThreadLocalRandom.current().nextDouble() < LINGER;
@@ -99,16 +83,11 @@ public class RuleBasedDecisionEngine implements DecisionEngine {
                 }
                 yield decision(state, Action.SIT_DOWN, "idle cycle: sitting back down");
             }
-            // Lying but rested: rejoin the cycle on its feet.
             case LYING, SLEEPING -> decision(state, Action.STAND_UP,
                     "idle cycle: rested, getting up");
         };
     }
 
-    /**
-     * Returns the target if it is currently valid, otherwise the transition
-     * action (stand up / lie down) that moves the posture toward it.
-     */
     private Decision toward(PersonalityState state, Action target, String reasoning) {
         if (target.validFor(state.posture(), state.energy())) {
             return decision(state, target, reasoning);

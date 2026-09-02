@@ -2,12 +2,6 @@ package com.bittle.orchestrator.domain.behavior;
 
 import java.time.Instant;
 
-/**
- * Mutable personality state of one robot. All personality dimensions are in
- * [0.0, 1.0]; {@link #clip()} is applied after every mutation by the
- * {@link PersonalityStateManager}. Not thread-safe on its own — the owning
- * behavior loop is the only writer.
- */
 public class PersonalityState {
 
     private double energy = 0.6;
@@ -120,7 +114,6 @@ public class PersonalityState {
                 lastActionAt, lastInteractionAt, totalActionsThisSession);
     }
 
-    /** Immutable view served over REST and STOMP. */
     public record Snapshot(String robotId, double energy, double happiness,
                            double boredom, double curiosity, double hunger,
                            double contentment, Posture posture, String lastAction,

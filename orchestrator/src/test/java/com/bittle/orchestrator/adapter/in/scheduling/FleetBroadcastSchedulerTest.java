@@ -5,48 +5,53 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import com.bittle.orchestrator.application.port.in.FleetBroadcastUseCase;
+import com.bittle.orchestrator.application.usecase.BroadcastActivityUseCase;
+import com.bittle.orchestrator.application.usecase.BroadcastFleetStatusUseCase;
+import com.bittle.orchestrator.application.usecase.BroadcastPersonalityAndDisplayUseCase;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 class FleetBroadcastSchedulerTest {
 
-    private final FleetBroadcastUseCase broadcast = mock(FleetBroadcastUseCase.class);
-    private final FleetBroadcastScheduler scheduler = new FleetBroadcastScheduler(broadcast);
+    private final BroadcastFleetStatusUseCase broadcastStatus = mock(BroadcastFleetStatusUseCase.class);
+    private final BroadcastPersonalityAndDisplayUseCase broadcastPersonalityAndDisplay =
+            mock(BroadcastPersonalityAndDisplayUseCase.class);
+    private final BroadcastActivityUseCase broadcastActivity = mock(BroadcastActivityUseCase.class);
+    private final FleetBroadcastScheduler scheduler = new FleetBroadcastScheduler(
+            broadcastStatus, broadcastPersonalityAndDisplay, broadcastActivity);
 
     @Test
-    void givenNoConnectedClients_whenAnySweepFires_thenNothingIsBroadcast() {
+    void givenNoConnectedClients_whenAnySweepFires_thenNoUseCaseRuns() {
         scheduler.broadcastStatus();
         scheduler.broadcastPersonalityAndDisplay();
         scheduler.broadcastActivity();
 
-        verifyNoInteractions(broadcast);
+        verifyNoInteractions(broadcastStatus, broadcastPersonalityAndDisplay, broadcastActivity);
     }
 
     @Test
-    void givenConnectedClient_whenSweepsFire_thenEachBroadcastRuns() {
+    void givenConnectedClient_whenSweepsFire_thenEachUseCaseRuns() {
         scheduler.onSessionConnect(mock(SessionConnectEvent.class));
 
         scheduler.broadcastStatus();
         scheduler.broadcastPersonalityAndDisplay();
         scheduler.broadcastActivity();
 
-        verify(broadcast).broadcastStatus();
-        verify(broadcast).broadcastPersonalityAndDisplay();
-        verify(broadcast).broadcastActivity();
+        verify(broadcastStatus).execute();
+        verify(broadcastPersonalityAndDisplay).execute();
+        verify(broadcastActivity).execute();
     }
 
     @Test
-    void givenLastClientDisconnected_whenStatusSweepFires_thenNothingIsBroadcast() {
+    void givenMoreDisconnectsThanConnects_whenStatusSweepFires_thenCountStaysAtZeroAndNothingRuns() {
         scheduler.onSessionConnect(mock(SessionConnectEvent.class));
         scheduler.onSessionDisconnect(mock(SessionDisconnectEvent.class));
-        // An unmatched disconnect must not push the count below zero.
         scheduler.onSessionDisconnect(mock(SessionDisconnectEvent.class));
 
         scheduler.broadcastStatus();
 
         assertThat(scheduler.connectedClients()).isZero();
-        verifyNoInteractions(broadcast);
+        verifyNoInteractions(broadcastStatus);
     }
 }

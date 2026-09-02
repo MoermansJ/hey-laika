@@ -1,6 +1,12 @@
 package com.bittle.orchestrator.adapter.in.web;
 
-import com.bittle.orchestrator.application.port.in.BehaviorUseCase;
+import com.bittle.orchestrator.application.usecase.ApplyBehaviorEventUseCase;
+import com.bittle.orchestrator.application.usecase.GetBehaviorHistoryUseCase;
+import com.bittle.orchestrator.application.usecase.GetBehaviorPersonalityUseCase;
+import com.bittle.orchestrator.application.usecase.GetBehaviorStatusUseCase;
+import com.bittle.orchestrator.application.usecase.StartBehaviorLoopUseCase;
+import com.bittle.orchestrator.application.usecase.StopBehaviorLoopUseCase;
+import com.bittle.orchestrator.application.usecase.SubmitManualActionUseCase;
 import com.bittle.orchestrator.domain.behavior.Action;
 import com.bittle.orchestrator.domain.behavior.BehaviorDecision;
 import com.bittle.orchestrator.domain.behavior.BehaviorEvent;
@@ -15,56 +21,69 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Orchestrator-owned behavior/personality API. This replaces the deprecated
- * adapter-proxied personality/behavior/autonomous endpoints (see
- * docs/design/PERSONALITY_SYSTEM_DESIGN.md §2.3).
- */
 @RestController
 @RequestMapping("/api/robots/{robotId}/behavior")
 public class BehaviorController {
 
-    private final BehaviorUseCase behavior;
+    private final GetBehaviorPersonalityUseCase getPersonality;
+    private final GetBehaviorStatusUseCase getStatus;
+    private final GetBehaviorHistoryUseCase getHistory;
+    private final StartBehaviorLoopUseCase startLoop;
+    private final StopBehaviorLoopUseCase stopLoop;
+    private final ApplyBehaviorEventUseCase applyEvent;
+    private final SubmitManualActionUseCase submitManualAction;
 
-    public BehaviorController(BehaviorUseCase behavior) {
-        this.behavior = behavior;
+    public BehaviorController(GetBehaviorPersonalityUseCase getPersonality,
+                              GetBehaviorStatusUseCase getStatus,
+                              GetBehaviorHistoryUseCase getHistory,
+                              StartBehaviorLoopUseCase startLoop,
+                              StopBehaviorLoopUseCase stopLoop,
+                              ApplyBehaviorEventUseCase applyEvent,
+                              SubmitManualActionUseCase submitManualAction) {
+        this.getPersonality = getPersonality;
+        this.getStatus = getStatus;
+        this.getHistory = getHistory;
+        this.startLoop = startLoop;
+        this.stopLoop = stopLoop;
+        this.applyEvent = applyEvent;
+        this.submitManualAction = submitManualAction;
     }
 
     @GetMapping("/personality")
     public PersonalityState.Snapshot personality(@PathVariable String robotId) {
-        return behavior.personality(robotId);
+        return getPersonality.execute(robotId);
     }
 
     @GetMapping("/status")
     public BehaviorStatus status(@PathVariable String robotId) {
-        return behavior.status(robotId);
+        return getStatus.execute(robotId);
     }
 
     @GetMapping("/history")
     public List<BehaviorDecision> history(@PathVariable String robotId,
                                           @RequestParam(defaultValue = "50") int limit) {
-        return behavior.history(robotId, limit);
+        return getHistory.execute(robotId, limit);
     }
 
     @PostMapping("/start")
     public BehaviorStatus start(@PathVariable String robotId) {
-        return behavior.start(robotId);
+        return startLoop.execute(robotId);
     }
 
     @PostMapping("/stop")
     public BehaviorStatus stop(@PathVariable String robotId) {
-        return behavior.stop(robotId);
+        return stopLoop.execute(robotId);
     }
 
     @PostMapping("/event/{type}")
     public PersonalityState.Snapshot event(@PathVariable String robotId,
                                            @PathVariable String type) {
-        return behavior.applyEvent(robotId, BehaviorEvent.fromName(type));
+        return applyEvent.execute(robotId, BehaviorEvent.fromName(type));
     }
 
     @PostMapping("/action/{action}")
     public ActionResult manualAction(@PathVariable String robotId,
                                      @PathVariable String action) {
-        return behavior.submitManualAction(robotId, Action.fromActionId(action));
+        return submitManualAction.execute(robotId, Action.fromActionId(action));
     }
 }

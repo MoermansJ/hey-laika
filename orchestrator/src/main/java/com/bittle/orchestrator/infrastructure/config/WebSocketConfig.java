@@ -6,11 +6,6 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-/**
- * STOMP over WebSocket for pushing fleet/robot updates to the browser.
- * Push-only: all actions stay on the REST API. The UI is served same-origin,
- * so no CORS/allowed-origins configuration is needed.
- */
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {

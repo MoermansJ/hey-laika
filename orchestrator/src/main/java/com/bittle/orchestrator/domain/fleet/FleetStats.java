@@ -3,7 +3,6 @@ package com.bittle.orchestrator.domain.fleet;
 import com.bittle.orchestrator.domain.robot.RobotStatus;
 import java.util.Collection;
 
-/** Fleet-wide counts derived from one status sweep. */
 public record FleetStats(int totalRobots, long connectedRobots, long autonomousRobots,
                          long timestamp) {
 

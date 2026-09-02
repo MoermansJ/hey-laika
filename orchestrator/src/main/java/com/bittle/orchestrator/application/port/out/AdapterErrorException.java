@@ -1,6 +1,5 @@
 package com.bittle.orchestrator.application.port.out;
 
-/** The Python adapter service answered with an error status; forwarded as-is. */
 public class AdapterErrorException extends RuntimeException {
 
     private final int status;

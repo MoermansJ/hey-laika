@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
-/** Stores rollup snapshots as JSON text; parses them back on read. */
 @Component
 public class MetricsRollupRepositoryAdapter implements MetricsRollupRepositoryPort {
 
@@ -48,7 +47,6 @@ public class MetricsRollupRepositoryAdapter implements MetricsRollupRepositoryPo
                 .toList();
     }
 
-    /** Falls back to the raw text when a stored snapshot cannot be parsed. */
     private Object parse(String json) {
         try {
             return objectMapper.readValue(json, Map.class);

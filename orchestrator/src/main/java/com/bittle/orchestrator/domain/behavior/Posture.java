@@ -1,6 +1,5 @@
 package com.bittle.orchestrator.domain.behavior;
 
-/** Physical posture of the robot, tracked alongside personality state. */
 public enum Posture {
     STANDING,
     SITTING,

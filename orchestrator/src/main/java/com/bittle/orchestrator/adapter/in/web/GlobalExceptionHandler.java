@@ -42,13 +42,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_GATEWAY, "adapter_unavailable", e.getMessage());
     }
 
-    /** Unknown action/event names on the behavior API. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> badRequest(IllegalArgumentException e) {
         return error(HttpStatus.BAD_REQUEST, "bad_request", e.getMessage());
     }
 
-    /** Forward the adapter's own error responses (404 unknown animation, 503 missing key, ...). */
     @ExceptionHandler(AdapterErrorException.class)
     public ResponseEntity<String> adapterError(AdapterErrorException e) {
         return ResponseEntity.status(e.getStatus())

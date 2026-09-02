@@ -12,8 +12,6 @@ public class RestClientConfig {
     public RestClient pythonRestClient() {
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(3_000);
-        // Choreography with real hardware sleeps through frame durations, so
-        // reads can legitimately take a while.
         factory.setReadTimeout(30_000);
         return RestClient.builder().requestFactory(factory).build();
     }
