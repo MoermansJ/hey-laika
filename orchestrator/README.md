@@ -88,3 +88,21 @@ additional robots, and add a matching Python service to `docker-compose.yml`).
 
 Adapter error responses (unknown animation, missing API key, ...) are
 forwarded verbatim; an unreachable adapter yields `502 adapter_unavailable`.
+
+## Architecture
+
+The Java code follows clean architecture. Dependencies point inward only
+(`infrastructure -> adapter -> application -> domain`), enforced by
+`ArchitectureTest` (ArchUnit), which fails the build on a violation.
+
+| Layer | Package | Contents |
+|---|---|---|
+| Domain | `domain.behavior`, `domain.fleet`, `domain.robot` | Personality model, action catalog, decision engine, robot identity and the adapter wire records. Plain Java, no framework imports. |
+| Application | `application.port.in`, `application.port.out`, `application.service` | Use-case interfaces (inbound ports), driven-port interfaces, and the services implementing them (behavior loops, fleet registry, metrics, broadcasting). No Spring annotations. |
+| Adapters | `adapter.in.web`, `adapter.in.scheduling`, `adapter.in.startup`, `adapter.out.http`, `adapter.out.persistence`, `adapter.out.messaging`, `adapter.out.metrics` | REST controllers and schedulers driving the use cases; HTTP client, JPA, STOMP and Micrometer implementing the outbound ports. Adapters never depend on each other. |
+| Infrastructure | `infrastructure.config` | Spring `@Configuration` and `@ConfigurationProperties`; `ApplicationConfig` wires the core objects as beans. |
+
+To add a feature: put the rules in `domain`, expose it through a port in
+`application.port.in`, implement it in `application.service`, and reach the
+outside world only through an interface in `application.port.out` that an
+adapter implements.
