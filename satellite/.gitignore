@@ -1,0 +1,3 @@
+# Per-device WiFi credentials — copy secrets.h.example to secrets.h
+xiao_sense/secrets.h
+build/

@@ -48,6 +48,8 @@ services:
       # fall in a Windows excluded port range (netsh interface ipv4 show
       # excludedportrange), hence 15001.
       - "15001:5000"
+      # Ears: the XIAO satellite streams PCM to this UDP port (ears.py).
+      - "5005:5005/udp"
     environment:
       - ROBOT_ID=bittle-1
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}

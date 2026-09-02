@@ -76,6 +76,21 @@ class Config:
     # robot comes online. Firmware is silent; personality lives here.
     GREETING_ENABLED = _bool("GREETING_ENABLED", True)
 
+    # Ears: PCM from the XIAO satellite over UDP -> whisper -> voice.phrase.
+    EARS_ENABLED = _bool("EARS_ENABLED", True)
+    EARS_UDP_PORT = int(os.getenv("EARS_UDP_PORT", "5005"))
+    EARS_SAMPLE_RATE = int(os.getenv("EARS_SAMPLE_RATE", "16000"))
+    EARS_ENERGY_FLOOR = int(os.getenv("EARS_ENERGY_FLOOR", "600"))
+    WAKE_PHRASE = os.getenv("WAKE_PHRASE", "hey laika")
+    WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+    WHISPER_CACHE = os.getenv("WHISPER_CACHE", "")
+
+    # Ultrasonic ranger on the UART socket: which GPIO took the SIG wire
+    # (9 or 10) is only known once wired; None disables range reads.
+    ULTRASONIC_PIN = int(os.getenv("ULTRASONIC_PIN", "0")) or None
+    # Grove Speaker Plus on the other UART-socket pin (firmware PWM playback).
+    SPEAKER_PIN = int(os.getenv("SPEAKER_PIN", "0")) or None
+
     # Idle ladder: stationary > sit threshold -> sit; > rest threshold -> lie.
     IDLE_ENABLED = _bool("IDLE_ENABLED", True)
     IDLE_SIT_S = float(os.getenv("IDLE_SIT_S", "60"))

@@ -9,3 +9,5 @@ anthropic==1.1.0
 pyserial==3.5
 websocket-client==1.9.1
 SQLAlchemy==2.0.52
+# Ears: faster-whisper (CTranslate2, CPU int8) for the voice relay.
+faster-whisper==1.2.1

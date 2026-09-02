@@ -10,7 +10,8 @@ interaction, and dead-reckoning navigation experiments.
 | Directory | What |
 |---|---|
 | [`orchestrator/`](orchestrator/) | Java Spring Boot fleet orchestrator + web GUI (dashboard, control panel, sequence builder) and the project docs (`orchestrator/docs/`) |
-| [`dog/`](dog/) | Python Flask adapter for one robot: hardware transports (WiFi WebSocket / USB serial / mock), personality engine, voice MVP, gait learning |
+| [`dog/`](dog/) | Python Flask adapter for one robot: hardware transports (WiFi WebSocket / USB serial / mock), behavior framework, ears (whisper) and mouth (speaker), gait learning |
+| [`satellite/`](satellite/) | XIAO ESP32S3 Sense sketch: Laika's microphone and camera, streaming to the adapter over its own WiFi |
 
 Two sibling directories are gitignored on purpose: `petoi/` and
 `opencat-esp32/` are third-party reference clones (Petoi desktop app and the

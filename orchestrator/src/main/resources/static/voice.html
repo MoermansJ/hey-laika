@@ -87,6 +87,21 @@
   </section>
 
   <section class="card" style="margin-top:0.9rem">
+    <h2>Ears <span id="ears-chip" class="chip">…</span></h2>
+    <div class="hint" id="ears-detail">Microphone stream from the XIAO satellite → whisper → voice.phrase events.</div>
+    <table class="data-table" id="ears-transcripts" style="margin-top:0.5rem;width:100%"></table>
+  </section>
+
+  <section class="card" style="margin-top:0.9rem">
+    <h2>Mouth <span id="mouth-chip" class="chip">…</span></h2>
+    <div class="voice-row" style="margin-bottom:0">
+      <input type="text" id="mouth-input" placeholder="Say it on the dog (Grove Speaker Plus)" autocomplete="off">
+      <button id="mouth-say">Speak</button>
+    </div>
+    <div class="hint" id="mouth-detail"></div>
+  </section>
+
+  <section class="card" style="margin-top:0.9rem">
     <h2>Sounds <span class="chip">host speakers (robot has buzzer only)</span></h2>
     <div class="voice-row" style="margin-bottom:0">
       <button data-sound="positive_bark">Positive bark</button>
@@ -181,6 +196,55 @@
       }
     }
 
+    async function refreshEars() {
+      const chip = $("#ears-chip");
+      try {
+        const [ears, log] = await Promise.all([api("/ears"), api("/ears/transcripts?limit=8")]);
+        chip.textContent = ears.streaming ? `streaming · ${ears.packets} pkts` :
+            (ears.enabled === false ? "disabled" : "no stream");
+        chip.className = "chip " + (ears.streaming ? "on" : "warn");
+        chip.title = ears.lastError ? `last error: ${ears.lastError}` : "";
+        $("#ears-detail").textContent =
+            `wake "${ears.wakePhrase}" · model ${ears.model ?? "—"}${ears.modelLoaded ? "" : " (loads on first utterance)"}` +
+            ` · ${ears.utterances} utterances, ${ears.wakes} wakes, ${ears.dropped} dropped packets`;
+        const rows = (log.transcripts || []).map((t) =>
+            `<tr><td class="muted">${new Date(t.at).toLocaleTimeString()}</td>` +
+            `<td>${esc(t.text)}</td><td>${t.wake ? "wake" : ""}</td>` +
+            `<td>${esc(t.intent ?? "")}</td><td class="muted">${t.latencyS}s</td></tr>`).join("");
+        $("#ears-transcripts").innerHTML = rows
+            ? "<tr><th>When</th><th>Heard</th><th></th><th>Intent</th><th>Latency</th></tr>" + rows : "";
+      } catch (err) {
+        chip.textContent = "ears unavailable";
+        chip.className = "chip warn";
+      }
+    }
+
+    async function refreshMouth() {
+      const chip = $("#mouth-chip");
+      try {
+        const m = await api("/mouth");
+        chip.textContent = m.enabled ? `pin ${m.pin} · ${m.ttsEngine}` : "SPEAKER_PIN not set";
+        chip.className = "chip " + (m.enabled ? "on" : "warn");
+        $("#mouth-detail").textContent = m.text
+            ? `last: "${m.text}" (${m.seconds}s, ${m.chunks} chunks)` : "";
+        $("#mouth-say").disabled = !m.enabled;
+      } catch { chip.textContent = "mouth unavailable"; chip.className = "chip warn"; }
+    }
+
+    $("#mouth-say").onclick = async () => {
+      const text = $("#mouth-input").value.trim();
+      if (!text) return;
+      $("#mouth-say").disabled = true;
+      try {
+        await api("/mouth/say", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }) });
+        $("#mouth-input").value = "";
+      } catch (err) {
+        $("#mouth-detail").textContent = `failed: ${err.message}`;
+      } finally { $("#mouth-say").disabled = false; refreshMouth(); }
+    };
+
     async function boot() {
       let robots;
       try {
@@ -203,6 +267,8 @@
         if (e.key === "Enter") sendVoiceInput();
       });
       hlPoll(refreshVoiceHealth, 15000);
+      hlPoll(refreshEars, 3000);
+      hlPoll(refreshMouth, 15000);
     }
     boot();
   </script>

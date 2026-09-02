@@ -46,6 +46,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -332,6 +333,39 @@ public class RobotController {
     @PostMapping("/abort")
     public Map<String, Object> abort(@PathVariable String robotId) {
         return relayPost.execute(robotId, "/abort");
+    }
+
+    @GetMapping("/senses/range")
+    public Map<String, Object> sensesRange(@PathVariable String robotId,
+                                           @RequestParam(required = false) Integer pin) {
+        return relayGet.execute(robotId, pin == null ? "/senses/range" : "/senses/range?pin=" + pin);
+    }
+
+    @GetMapping("/ears")
+    public Map<String, Object> ears(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/ears");
+    }
+
+    @GetMapping("/ears/transcripts")
+    public Map<String, Object> earsTranscripts(@PathVariable String robotId,
+                                               @RequestParam(defaultValue = "20") int limit) {
+        return relayGet.execute(robotId, "/ears/transcripts?limit=" + Math.max(1, Math.min(limit, 200)));
+    }
+
+    @GetMapping("/mouth")
+    public Map<String, Object> mouth(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/mouth");
+    }
+
+    @PostMapping("/mouth/say")
+    public Map<String, Object> mouthSay(@PathVariable String robotId,
+                                        @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/mouth/say", body);
+    }
+
+    @PostMapping("/mouth/stop")
+    public Map<String, Object> mouthStop(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/mouth/stop");
     }
 
     @GetMapping("/arbiter/status")

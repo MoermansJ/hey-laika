@@ -1,0 +1,109 @@
+# Arrival-day runbook — XIAO Sense, Speaker Plus, ultrasonic ranger
+
+**Date written:** 2026-09-02 (hardware due 2026-09-03) · **Owner:** Jonathan
+**Prepared software (all committed, tested without the hardware):**
+satellite sketch (`satellite/xiao_sense`), adapter ears (`dog/app/ears.py`),
+mouth (`dog/app/mouth.py`), ultrasonic read (`/senses/range`), firmware speaker
+playback (`opencat-esp32/src/speaker.h`, needs one more flash of Laika).
+
+The order below follows the briefs: the ultrasonic pin is validated first
+because it decides which UART-socket wire the speaker gets.
+
+## 0. Before opening the box (10 min)
+
+- [ ] Router: reserve a DHCP address for the XIAO (like Laika's 192.168.0.246).
+- [ ] `satellite/xiao_sense/secrets.h`: SSID, password, `ADAPTER_HOST` = this PC's
+      LAN address (the compose file publishes `5005/udp` from the adapter).
+- [ ] Flash Laika with the speaker-enabled fork (same ritual as 2026-09-02:
+      hold BOOT, tap Reset, release; `esptool --before no_reset`; recipe in
+      `reports/AUDIT_2026-09-02.md` §10). Banner must still read `hey-laika-A2`.
+- [ ] Stack up: `docker compose up -d --build` (adapter image now carries
+      faster-whisper and espeak-ng). `GET /api/health` → healthy.
+- [ ] Multimeter ready. Tape ready.
+
+## 1. Ultrasonic ranger — decides the UART-socket pins (15 min)
+
+Wiring per NAVIGATION_MAPPING_BRIEF §4: UART socket female conversion cable,
+**yellow→ranger SIG**, red+black→ranger power. Note whether yellow is GPIO 9 or 10
+on this cable (BiBoard V1 UART socket: RX 9, TX 10).
+
+1. Dog on, resting. `Xs` is not needed: all firmware modules are off since
+   2026-09-02, so nothing else drives those pins.
+2. Hand in front of the ranger, then:
+   ```
+   curl "http://localhost:15001/api/robots/bittle-1/senses/range?pin=9"
+   curl "http://localhost:15001/api/robots/bittle-1/senses/range?pin=10"
+   ```
+   The pin that answers `"ok": true` with a sane `distanceCm` is the ranger.
+   Move the hand: the number must follow.
+3. Put that pin in `orchestrator/.env` as `ULTRASONIC_PIN=`; the other one is
+   `SPEAKER_PIN=`. `docker compose up -d python-bittle-1` to apply.
+
+## 2. Speaker Plus — the dog's mouth (15 min)
+
+Wiring: **white→speaker SIG** on the UART socket (the pin left over from
+step 1), red+black→speaker power from the I2C socket (power tap only).
+Volume pot on the Speaker Plus at a quarter turn to start.
+
+1. `GET /api/robots/bittle-1/mouth` → `enabled: true`, `pin` correct.
+2. Playback path without any TTS engine:
+   ```
+   curl -F "file=@dog/tests/fixtures/hey_laika_sit.wav" http://localhost:15001/api/robots/bittle-1/mouth/wav
+   ```
+   Expect intelligible walkie-talkie speech. If it buzzes at a constant tone:
+   wrong pin (the firmware answered `XWp` but the wire goes elsewhere). If
+   silent: check the speaker's power tap and pot.
+3. TTS: Voice tab → Mouth → "Speak". Inside Docker espeak-ng answers; with
+   `ELEVENLABS_API_KEY` set the Eleven Labs voice is used instead.
+4. Firmware serial log during playback should stay quiet; the ISR runs at
+   8 kHz. If a gait stutters while speaking, note it — pacing knobs are
+   `CHUNK_BYTES` in `mouth.py` and the ring size in `speaker.h`.
+
+## 3. XIAO Sense on the bench (20 min)
+
+1. USB-C to the PC. Flash:
+   ```
+   arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 --board-options "PSRAM=opi,PartitionScheme=default_8MB" satellite/xiao_sense
+   arduino-cli upload  --fqbn esp32:esp32:XIAO_ESP32S3 --port COMx satellite/xiao_sense
+   ```
+   (Sketch already compiles: 22 % flash.)
+2. Serial 115200: `WiFi: <ip>`, `Mic: PDM @16 kHz`, `Camera: OV2640 ready`.
+3. `GET http://<xiao-ip>/` → status JSON; `http://<xiao-ip>/stream` in a browser.
+4. Adapter: `GET /api/robots/bittle-1/ears` → `streaming: true`, `packets`
+   climbing, `dropped` ≈ 0. Voice tab → Ears card shows the same.
+5. Say "Hey Laika, sit down" at arm's length. First utterance loads whisper
+   (~15 s once), then transcripts appear within ~2 s. Expect `wake: true,
+   intent: sit` and Laika sits (binding `voice.phrase` → `idle_sit`).
+   - Nothing heard: raise `MIC_GAIN_SHIFT` in the sketch or lower
+     `EARS_ENERGY_FLOOR` in `.env`.
+   - Heard but no wake: read the transcript text; add the spelling whisper
+     used to `WAKE_VARIANTS` in `ears.py`.
+6. Say "Hey Laika, lie down" and "Hey Laika, hello" to exercise `rest` and
+   `greet`.
+
+## 4. XIAO on the dog (20 min)
+
+Wiring per the brief: analog socket A female cable, **red+black→XIAO 5V/GND**.
+No data wires.
+
+1. Multimeter on the socket: expect ~5 V under load.
+2. Mount the XIAO on the head (camera forward; the sketch flips the image,
+   change `set_vflip`/`set_hmirror` if it is mounted the other way).
+3. Stream for five minutes: `/stream` open in a browser, ears `streaming: true`,
+   and the dog's `GET /api/health` staying healthy. Watch the Power panel's
+   battery reading; a sag of more than a few percent in five minutes means
+   the rail is marginal — LiPo on the XIAO's battery pads is the fallback.
+4. Walk test: `kwkF` for ten seconds while streaming; both streams must
+   survive the servo load.
+
+## 5. Record the outcome
+
+Add a dated addendum to `VOICE_RELAY_BRIEF.md` and `NAVIGATION_MAPPING_BRIEF.md`
+with: the ranger pin, the speaker pin, mic gain, whether the rail held, first
+transcript latency. Commit `.env`-free config changes (`.env` stays local).
+
+## Not prepared (next sessions)
+
+- Host-side YOLO consumer for `/stream` → `vision.person` events, follow-me.
+- End-of-utterance VAD (energy gate is the v1).
+- openWakeWord as a cheaper first gate in front of whisper.

@@ -106,6 +106,19 @@ def _parse_voltage(lines: list[str]) -> float | None:
     return float(match.group(1)) if match else None
 
 
+_RANGE_RE = re.compile(r"=\s*\r?\n?\s*(-?\d+(?:\.\d+)?)")
+
+
+def _parse_range(lines: list[str]) -> float | None:
+    """'=' then the centimetre reading on the next line (or same line);
+    the firmware prints -1 / 0 for no echo."""
+    match = _RANGE_RE.search("\n".join(lines))
+    if not match:
+        return None
+    value = float(match.group(1))
+    return value if value > 0 else None
+
+
 def _echo_token(command: str) -> str:
     """The token the firmware echoes for an ASCII command line."""
     if not command:
@@ -143,6 +156,11 @@ class BaseBittleController(ABC):
         """Drop queued firmware work and rest immediately. Only the WiFi
         transport (hey-laika firmware) supports it; others return False."""
         return False
+
+    def read_range_cm(self, pin: int) -> float | None:
+        """One-shot ultrasonic read on a one-pin Grove ranger (firmware 'XU'
+        with trigger == echo pin). None when unsupported or no echo."""
+        return None
 
     def query(self, command: str) -> list[str] | None:
         """Send a command and return the firmware's output lines.
@@ -228,6 +246,16 @@ class MockBittleController(BaseBittleController):
     def abort(self) -> bool:
         logger.info("[mock] abort")
         return True
+
+    def read_range_cm(self, pin: int) -> float | None:
+        import random
+
+        return round(random.uniform(18.0, 160.0), 1)
+
+    def query_binary(self, payload: bytes) -> list[str] | None:
+        self.send_command(payload[:3].decode("ascii", errors="replace")
+                          + f"<{len(payload) - 3} bytes>")
+        return ["=", "8192"]
 
     def send_command(self, command: str) -> bool:
         if not self.connected:
@@ -861,6 +889,24 @@ class WiFiBittleController(BaseBittleController):
         timeout = _TIMEOUT_SKILL_WS if command.startswith(("k", "K", "X")) \
             else _TIMEOUT_DEFAULT
         return self._send(command, timeout)
+
+    def query_binary(self, payload: bytes) -> list[str] | None:
+        """Send token + raw argument bytes through the firmware's b64 path
+        (binary-safe: the firmware copies cmdLen bytes, no strlen)."""
+        import base64
+
+        if len(payload) > 2400:
+            raise ValueError("binary command exceeds the firmware buffer")
+        return self._send("b64:" + base64.b64encode(payload).decode("ascii"),
+                          _TIMEOUT_DEFAULT)
+
+    def read_range_cm(self, pin: int) -> float | None:
+        """Firmware reaction.h: 'X' token, newCmd "U<trigger><echo>" with the
+        pins as raw int8 bytes (cmdLen 3), replies '=' then the distance."""
+        results = self.query_binary(b"XU" + struct.pack("bb", int(pin), int(pin)))
+        if not results:
+            return None
+        return _parse_range(results)
 
     def get_telemetry(self) -> dict:
         if time.time() - self._telemetry_at < self.telemetry_ttl():

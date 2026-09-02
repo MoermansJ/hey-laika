@@ -1,6 +1,6 @@
 # Planning Brief — Voice Relay (talk to Laika, Laika talks to the LLM)
 
-**Date:** 2026-09-01 · **Status:** hardware ordered, ready to build on arrival
+**Date:** 2026-09-01 · **Status:** hardware ordered; software prepared 2026-09-02 (satellite sketch, adapter ears/mouth, firmware speaker) — see `ARRIVAL_DAY_RUNBOOK.md`
 **Goal:** speak a free-form sentence to the dog; it is captured on-robot,
 transcribed host-side, and handed to the decision layer as a prompt — the dog
 becomes an LLM prompting relay.

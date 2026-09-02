@@ -12,6 +12,7 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
+from wave import Error as wave_error
 from functools import wraps
 
 from flask import Flask, g, jsonify, request
@@ -25,7 +26,9 @@ from app.choreography import ChoreographyLibrary
 from app.arbiter import Arbiter
 from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
                                 PRIORITY_MANUAL, BehaviorStore)
+from app.ears import EarsService, build_transcriber
 from app.event_binder import EventBinder
+from app.mouth import MouthService
 from app.gait_learner import GaitLearner
 from app.leash import LeashService
 from app.metrics import instrument_controller, metrics
@@ -80,6 +83,16 @@ senses.init()
 # and runtime prediction.
 power = PowerTracker(bittle)
 power.init()
+# Ears: the XIAO satellite's microphone stream -> transcripts -> voice.phrase.
+ears = EarsService(event_binder, transcriber=build_transcriber(),
+                   sample_rate=Config.EARS_SAMPLE_RATE,
+                   udp_port=Config.EARS_UDP_PORT,
+                   wake_phrase=Config.WAKE_PHRASE,
+                   energy_floor=Config.EARS_ENERGY_FLOOR)
+if Config.EARS_ENABLED:
+    ears.init()
+# Mouth: host TTS -> 8 kHz PCM -> firmware PWM on the Grove Speaker Plus.
+mouth = MouthService(bittle, Config.SPEAKER_PIN)
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -689,6 +702,109 @@ def bindings_upsert(robot_id: str):
 @robot_scoped
 def senses_status(robot_id: str):
     return jsonify({"robotId": robot_id, **senses.status()})
+
+
+@app.get("/api/robots/<robot_id>/senses/range")
+@robot_scoped
+def senses_range(robot_id: str):
+    """One-shot ultrasonic read. The pin defaults to ULTRASONIC_PIN (set once
+    the UART-socket wiring is known); ?pin=9|10 overrides for validation."""
+    pin = _num_param(request.args, "pin", Config.ULTRASONIC_PIN, lo=0, hi=48)
+    if not pin:
+        return jsonify({"error": "not_configured",
+                        "message": "ULTRASONIC_PIN is not set"}), 409
+    distance = bittle.read_range_cm(pin)
+    return jsonify({"robotId": robot_id, "pin": pin, "distanceCm": distance,
+                    "ok": distance is not None})
+
+
+# ---- Mouth (host TTS -> firmware PWM -> Grove Speaker Plus) ----
+
+@app.get("/api/robots/<robot_id>/mouth")
+@robot_scoped
+def mouth_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **mouth.status()})
+
+
+@app.post("/api/robots/<robot_id>/mouth/say")
+@robot_scoped
+def mouth_say(robot_id: str):
+    text = str((request.get_json(silent=True) or {}).get("text", "")).strip()
+    if not text or len(text) > 400:
+        return jsonify({"error": "bad_request",
+                        "message": "'text' required (max 400 chars)"}), 400
+    try:
+        result = mouth.say(text)
+    except RuntimeError as exc:
+        return jsonify({"error": "not_configured", "message": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"error": "tts_failed", "message": str(exc)}), 502
+    log_activity("voice", f"Said: {text}")
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.post("/api/robots/<robot_id>/mouth/wav")
+@robot_scoped
+def mouth_wav(robot_id: str):
+    """Play an uploaded PCM WAV (multipart field 'file'); arrival-day check
+    of the speaker wiring without any TTS engine."""
+    upload = request.files.get("file")
+    if upload is None:
+        return jsonify({"error": "bad_request", "message": "upload 'file'"}), 400
+    try:
+        result = mouth.play_wav(upload.read(), label=upload.filename or "wav")
+    except RuntimeError as exc:
+        return jsonify({"error": "not_configured", "message": str(exc)}), 409
+    except (wave_error, EOFError, ValueError) as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.post("/api/robots/<robot_id>/mouth/stop")
+@robot_scoped
+def mouth_stop(robot_id: str):
+    return jsonify({"robotId": robot_id, "stopped": mouth.stop()})
+
+
+# ---- Ears (XIAO satellite microphone -> whisper -> voice.phrase) ----
+
+@app.get("/api/robots/<robot_id>/ears")
+@robot_scoped
+def ears_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **ears.status()})
+
+
+@app.get("/api/robots/<robot_id>/ears/transcripts")
+@robot_scoped
+def ears_transcripts(robot_id: str):
+    limit = _num_param(request.args, "limit", 20, lo=1, hi=200)
+    return jsonify({"robotId": robot_id, "transcripts": ears.transcripts(limit)})
+
+
+@app.post("/api/robots/<robot_id>/ears/clip")
+@robot_scoped
+def ears_clip(robot_id: str):
+    """Bench test without the satellite: upload a 16-bit mono WAV (multipart
+    field 'file') or pass {"path": "<server-side wav>"}; runs the whole
+    pipeline synchronously and returns the transcript row."""
+    import tempfile
+
+    upload = request.files.get("file")
+    if upload is not None:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            upload.save(tmp.name)
+            path = tmp.name
+    else:
+        path = (request.get_json(silent=True) or {}).get("path")
+        if not path:
+            return jsonify({"error": "bad_request",
+                            "message": "upload 'file' or pass 'path'"}), 400
+    try:
+        row = ears.feed_wav(path)
+    except (ValueError, OSError, wave_error) as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    log_activity("voice", f"Ears clip: {row['text'] if row else 'silence'}")
+    return jsonify({"robotId": robot_id, "transcript": row})
 
 
 @app.get("/api/robots/<robot_id>/senses/samples")

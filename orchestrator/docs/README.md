@@ -27,6 +27,7 @@ Java orchestrator's structure.
 - [NAVIGATION_MAPPING_BRIEF.md](design/NAVIGATION_MAPPING_BRIEF.md) — 2026-09-01 brief: perceptual mapping from WiFi fingerprints + sonar, rooms, `goto_room`
 - [OBSERVABILITY_MIND_BRIEF.md](design/OBSERVABILITY_MIND_BRIEF.md) — 2026-09-01 brief: request metrics page and the per-robot Mind tab
 - [VOICE_RELAY_BRIEF.md](design/VOICE_RELAY_BRIEF.md) — 2026-09-01 brief: XIAO ESP32S3 Sense mic → host transcription → decision layer; Grove Speaker Plus output
+- [ARRIVAL_DAY_RUNBOOK.md](design/ARRIVAL_DAY_RUNBOOK.md) — 2026-09-03 checklist for the XIAO Sense, Speaker Plus and ultrasonic ranger: pin validation order, bench tests, power check
 
 ## `reports/` — point-in-time status reports and reviews
 

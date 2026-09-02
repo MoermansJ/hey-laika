@@ -145,6 +145,9 @@ adapter without a typed DTO.
 | `/senses` | GET | *relay* — senses layer status (WiFi sniffer, dead-reckoned pose) |
 | `/senses/samples` | GET | *relay* — recent sense samples |
 | `/senses/sniff` | POST | *relay* — trigger one WiFi scan now |
+| `/senses/range` | GET | *relay* — one-shot ultrasonic read (`?pin=`) |
+| `/ears`, `/ears/transcripts` | GET | *relay* — satellite microphone status and recent transcripts |
+| `/mouth`, `/mouth/say`, `/mouth/stop` | GET/POST | *relay* — speaker status, speak text on the dog, stop playback |
 | `/leash` | GET | *relay* — proximity-leash state (RSSI, zone, dead-man) |
 | `/leash/config` | POST | *relay* — leash thresholds / enable |
 | `/leash/mark` | POST | *relay* — record a labelled RSSI mark |

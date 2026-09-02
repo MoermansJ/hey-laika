@@ -113,6 +113,14 @@ proxies and scheduled for removal (audit fix #11).
 | `/leash/mark` | POST | Record a labelled RSSI mark |
 | `/senses` | GET | Senses layer status: WiFi sniffer, dead-reckoned pose |
 | `/senses/samples` | GET | Recent sense samples (`?limit=`) |
+| `/senses/range` | GET | One-shot ultrasonic read (`?pin=9|10` to validate wiring; default `ULTRASONIC_PIN`) |
+| `/ears` | GET | Ears status: satellite PCM stream, whisper model, wake/utterance counters |
+| `/ears/transcripts` | GET | Recent transcripts (`?limit=`), wake flag and detected intent |
+| `/ears/clip` | POST | Bench test: run an uploaded 16-bit mono WAV through the ears pipeline |
+| `/mouth` | GET | Mouth status: speaker pin, TTS engine, last utterance |
+| `/mouth/say` | POST | `{"text"}` → host TTS → 8 kHz PCM → firmware PWM on the Grove Speaker Plus |
+| `/mouth/wav` | POST | Play an uploaded PCM WAV on the speaker (wiring check without TTS) |
+| `/mouth/stop` | POST | Stop and flush speaker playback |
 | `/senses/sniff` | POST | One WiFi scan now (ignores the politeness clock; blocks ~2 s) |
 
 **Gait learner**

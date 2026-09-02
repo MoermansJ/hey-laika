@@ -174,6 +174,18 @@ SEED_BINDINGS = [
      "behavior": "leash_far", "priority": PRIORITY_LIFECYCLE, "enabled": True},
     {"event": "leash.lost", "filter": None,
      "behavior": "rest_now", "priority": PRIORITY_SAFETY, "enabled": True},
+    # Voice (ears.py): the wake phrase + a recognised intent. Unknown intents
+    # get an acknowledgment so the owner knows she heard.
+    {"event": "voice.phrase", "filter": {"intent": "sit"},
+     "behavior": "idle_sit", "priority": PRIORITY_MANUAL, "enabled": True},
+    {"event": "voice.phrase", "filter": {"intent": "rest"},
+     "behavior": "idle_rest", "priority": PRIORITY_MANUAL, "enabled": True},
+    {"event": "voice.phrase", "filter": {"intent": "stop"},
+     "behavior": "rest_now", "priority": PRIORITY_SAFETY, "enabled": True},
+    {"event": "voice.phrase", "filter": {"intent": "greet"},
+     "behavior": "startup_greeting", "priority": PRIORITY_MANUAL, "enabled": True},
+    {"event": "voice.phrase", "filter": {"intent": "unknown"},
+     "behavior": "acknowledgment", "priority": PRIORITY_MANUAL, "enabled": True},
 ]
 
 
@@ -199,7 +211,7 @@ class BehaviorStore:
                 # deliberately deleted them); NEW event families (leash.*)
                 # are added whenever their event has no binding at all.
                 if not fresh_db:
-                    is_new_family = seed["event"].startswith("leash.")
+                    is_new_family = seed["event"].startswith(("leash.", "voice."))
                     exists = session.query(Binding).filter_by(
                         event=seed["event"]).first() is not None
                     if not is_new_family or exists:
