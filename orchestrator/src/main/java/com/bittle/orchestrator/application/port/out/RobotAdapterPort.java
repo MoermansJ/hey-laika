@@ -6,6 +6,7 @@ import com.bittle.orchestrator.domain.robot.ActivityLog;
 import com.bittle.orchestrator.domain.robot.AnimationList;
 import com.bittle.orchestrator.domain.robot.AnimationResult;
 import com.bittle.orchestrator.domain.robot.AutonomousState;
+import com.bittle.orchestrator.domain.robot.BinaryContent;
 import com.bittle.orchestrator.domain.robot.CommandResult;
 import com.bittle.orchestrator.domain.robot.DisplayContent;
 import com.bittle.orchestrator.domain.robot.ExecuteActionRequest;
@@ -61,6 +62,8 @@ public interface RobotAdapterPort {
     Map<String, Object> sound(Robot robot, Map<String, Object> body);
 
     Map<String, Object> get(Robot robot, String path);
+
+    BinaryContent getBinary(Robot robot, String path);
 
     Map<String, Object> post(Robot robot, String path);
 

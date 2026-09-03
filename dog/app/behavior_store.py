@@ -186,6 +186,10 @@ SEED_BINDINGS = [
      "behavior": "startup_greeting", "priority": PRIORITY_MANUAL, "enabled": True},
     {"event": "voice.phrase", "filter": {"intent": "unknown"},
      "behavior": "acknowledgment", "priority": PRIORITY_MANUAL, "enabled": True},
+    # Vision (eyes.py): someone in the camera's view. The mood light reacts
+    # on its own; moving the dog on sight ships disabled until follow-me.
+    {"event": "vision.person", "filter": None,
+     "behavior": "acknowledgment", "priority": PRIORITY_LIFECYCLE, "enabled": False},
 ]
 
 
@@ -211,7 +215,7 @@ class BehaviorStore:
                 # deliberately deleted them); NEW event families (leash.*)
                 # are added whenever their event has no binding at all.
                 if not fresh_db:
-                    is_new_family = seed["event"].startswith(("leash.", "voice."))
+                    is_new_family = seed["event"].startswith(("leash.", "voice.", "vision."))
                     exists = session.query(Binding).filter_by(
                         event=seed["event"]).first() is not None
                     if not is_new_family or exists:

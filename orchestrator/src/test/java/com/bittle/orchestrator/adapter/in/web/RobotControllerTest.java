@@ -25,6 +25,7 @@ import com.bittle.orchestrator.application.usecase.InteractWithRobotUseCase;
 import com.bittle.orchestrator.application.usecase.ListAnimationsUseCase;
 import com.bittle.orchestrator.application.usecase.MoveServosUseCase;
 import com.bittle.orchestrator.application.usecase.PlaySoundUseCase;
+import com.bittle.orchestrator.application.usecase.RelayGetBinaryFromRobotUseCase;
 import com.bittle.orchestrator.application.usecase.RelayGetToRobotUseCase;
 import com.bittle.orchestrator.application.usecase.RelayPostToRobotUseCase;
 import com.bittle.orchestrator.application.usecase.RelayPostWithBodyToRobotUseCase;
@@ -34,6 +35,7 @@ import com.bittle.orchestrator.application.usecase.StartRobotAutonomousUseCase;
 import com.bittle.orchestrator.application.usecase.StopRobotAutonomousUseCase;
 import com.bittle.orchestrator.domain.fleet.RobotNotFoundException;
 import com.bittle.orchestrator.domain.robot.ActionResult;
+import com.bittle.orchestrator.domain.robot.BinaryContent;
 import com.bittle.orchestrator.domain.robot.RobotStatus;
 import com.bittle.orchestrator.domain.robot.ServoJoint;
 import com.bittle.orchestrator.domain.robot.ServoMoveResult;
@@ -59,7 +61,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
         RunVoiceDemoUseCase.class, GetVoiceHealthUseCase.class, PlaySoundUseCase.class,
         ExecuteRobotActionUseCase.class, RelayGetToRobotUseCase.class,
         RelayPostToRobotUseCase.class, RelayPostWithBodyToRobotUseCase.class,
-        OrchestratorMetricsPort.class})
+        RelayGetBinaryFromRobotUseCase.class, OrchestratorMetricsPort.class})
 class RobotControllerTest {
 
     private static final String SIT_DOWN_REQUEST =
@@ -88,6 +90,12 @@ class RobotControllerTest {
 
     @Autowired
     private RelayPostToRobotUseCase relayPost;
+
+    @Autowired
+    private RelayPostWithBodyToRobotUseCase relayPostWithBody;
+
+    @Autowired
+    private RelayGetBinaryFromRobotUseCase relayGetBinary;
 
     @Autowired
     private OrchestratorMetricsPort metrics;
@@ -186,6 +194,40 @@ class RobotControllerTest {
     }
 
     @Test
+    void givenMapFilters_whenSamplesRequested_thenOnlyKnownFiltersAreRelayed() {
+        when(relayGet.execute("bittle-1", "/senses/samples?since=1700000000&limit=50"))
+                .thenReturn(Map.of("matched", 3));
+
+        var result = mvc.get()
+                .uri("/api/robots/bittle-1/senses/samples?since=1700000000&limit=50&bogus=1&every=")
+                .exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.matched").isEqualTo(3);
+    }
+
+    @Test
+    void givenNoFilters_whenSamplesRequested_thenBarePathIsRelayed() {
+        when(relayGet.execute("bittle-1", "/senses/samples")).thenReturn(Map.of("total", 0));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/senses/samples").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.total").isEqualTo(0);
+    }
+
+    @Test
+    void givenPoseReset_whenPostedWithoutBody_thenEmptyBodyIsRelayed() {
+        when(relayPostWithBody.execute("bittle-1", "/senses/pose/reset", Map.of()))
+                .thenReturn(Map.of("pose", Map.of("x", 0)));
+
+        var result = mvc.post().uri("/api/robots/bittle-1/senses/pose/reset").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.pose.x").isEqualTo(0);
+    }
+
+    @Test
     void givenUnknownGreetingAction_whenPosted_thenBadRequestWithoutTouchingTheAdapter() {
         var result = mvc.post().uri("/api/robots/bittle-1/greeting/explode").exchange();
 
@@ -214,5 +256,46 @@ class RobotControllerTest {
         assertThat(result).hasStatus(HttpStatus.BAD_GATEWAY)
                 .bodyJson().extractingPath("$.error").isEqualTo("adapter_unavailable");
         verify(metrics).recordAdapterUnavailable();
+    }
+
+    @Test
+    void givenCachedFrame_whenSnapRequested_thenJpegBytesAreRelayedUncached() {
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, 1, 2, 3};
+        when(relayGetBinary.execute("bittle-1", "/eyes/snap"))
+                .thenReturn(new BinaryContent(jpeg, "image/jpeg"));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/eyes/snap").exchange();
+
+        assertThat(result).hasStatusOk()
+                .hasContentType(MediaType.IMAGE_JPEG)
+                .hasHeader("Cache-Control", "no-store");
+        assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(jpeg);
+    }
+
+    @Test
+    void givenFreshFlag_whenSnapRequested_thenAdapterIsAskedForANewFrame() {
+        when(relayGetBinary.execute("bittle-1", "/eyes/snap?fresh=1"))
+                .thenReturn(new BinaryContent(new byte[] {1}, "image/jpeg"));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/eyes/snap?fresh=1").exchange();
+
+        assertThat(result).hasStatusOk();
+        verify(relayGetBinary).execute("bittle-1", "/eyes/snap?fresh=1");
+    }
+
+    @Test
+    void givenMoodPosted_whenRelayed_thenBodyReachesTheAdapterUnchanged() {
+        when(relayPostWithBody.execute(eq("bittle-1"), eq("/mood"), any()))
+                .thenReturn(Map.of("mood", "happy"));
+
+        var result = mvc.post().uri("/api/robots/bittle-1/mood")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mood\":\"happy\",\"seconds\":3}")
+                .exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.mood").isEqualTo("happy");
+        verify(relayPostWithBody).execute("bittle-1", "/mood",
+                Map.of("mood", "happy", "seconds", 3));
     }
 }

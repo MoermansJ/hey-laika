@@ -9,6 +9,7 @@ import com.bittle.orchestrator.domain.robot.ActivityLog;
 import com.bittle.orchestrator.domain.robot.AnimationList;
 import com.bittle.orchestrator.domain.robot.AnimationResult;
 import com.bittle.orchestrator.domain.robot.AutonomousState;
+import com.bittle.orchestrator.domain.robot.BinaryContent;
 import com.bittle.orchestrator.domain.robot.CommandRequest;
 import com.bittle.orchestrator.domain.robot.CommandResult;
 import com.bittle.orchestrator.domain.robot.DisplayContent;
@@ -23,6 +24,8 @@ import com.bittle.orchestrator.domain.robot.ServoState;
 import java.util.Map;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -165,6 +168,19 @@ public class PythonAdapterHttpClient implements RobotAdapterPort {
     public Map<String, Object> get(Robot robot, String path) {
         return exchange(() -> http.get().uri(robotUri(robot, path))
                 .retrieve().body(Map.class));
+    }
+
+    @Override
+    public BinaryContent getBinary(Robot robot, String path) {
+        return exchange(() -> {
+            ResponseEntity<byte[]> entity = http.get().uri(robotUri(robot, path))
+                    .accept(MediaType.IMAGE_JPEG, MediaType.APPLICATION_OCTET_STREAM,
+                            MediaType.APPLICATION_JSON)
+                    .retrieve().toEntity(byte[].class);
+            MediaType type = entity.getHeaders().getContentType();
+            return new BinaryContent(entity.getBody(),
+                    type == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : type.toString());
+        });
     }
 
     @Override

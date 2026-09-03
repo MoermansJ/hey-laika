@@ -113,9 +113,11 @@ fails the build on any violation. Rules enforced:
   added for hypothetical extra robots (see `OBSERVABILITY_MIND_BRIEF.md` §D).
 - `RobotAdapterPort` is the whole Python adapter surface. Typed calls map to `domain.robot`
   records. The untyped `get`/`post` relay carries host-side features (greeting, idle, power,
-  polling, senses, leash, arbiter, behaviors, bindings) and the capability schema, so new
-  adapter features need no orchestrator release. Controllers whitelist the greeting and idle
-  actions before relaying.
+  polling, senses, leash, arbiter, behaviors, bindings, ears, mouth, eyes, mood) and the
+  capability schema, so new adapter features need no orchestrator release. `getBinary`
+  (`BinaryContent`) is the one non-JSON relay: the satellite camera frame at `/eyes/snap`,
+  passed through with its content type and `Cache-Control: no-store`. Controllers whitelist
+  the greeting and idle actions before relaying.
 - `execute_action` is refused with HTTP 409 `behavior_loop_running` while the loop drives the
   robot. The loop check happens first (and resolves the robot), so 404 and 409 take
   precedence over adapter errors.

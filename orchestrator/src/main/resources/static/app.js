@@ -268,7 +268,7 @@ function route() {
   $("#sidebar").classList.remove("open");
 }
 
-const FRAME_TABS = ["control", "behavior", "voice", "mind", "leash", "metrics"];
+const FRAME_TABS = ["control", "behavior", "voice", "mind", "leash", "map", "metrics"];
 
 function clearFrames() {
   // Dropping src stops every poll loop inside the embedded pages.
@@ -594,7 +594,8 @@ document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
     selectTab(tab.dataset.tab);
     const frames = {
       control: "control.html", behavior: "behavior.html", voice: "voice.html",
-      mind: "mind.html", leash: "leash.html", metrics: "metrics.html",
+      eyes: "eyes.html", mind: "mind.html", leash: "leash.html", map: "map.html",
+      metrics: "metrics.html",
     };
     const src = frames[tab.dataset.tab];
     if (src) {

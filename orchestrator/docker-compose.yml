@@ -65,6 +65,12 @@ services:
       - OLLAMA_URL=http://ollama:11434
       - ENVIRONMENT=development
       - SQLITE_DB_PATH=/data/bittle.db
+      # Grove UART socket wiring, validated per ARRIVAL_DAY_RUNBOOK.md:
+      # 0 = not wired. Set in .env (ULTRASONIC_PIN=9 on Laika).
+      - ULTRASONIC_PIN=${ULTRASONIC_PIN:-0}
+      - SPEAKER_PIN=${SPEAKER_PIN:-0}
+      # XIAO satellite (camera + mood light); empty = none.
+      - SATELLITE_HOST=${SATELLITE_HOST:-}
     volumes:
       - bittle-1-data:/data
     depends_on:

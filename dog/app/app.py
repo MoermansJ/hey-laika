@@ -28,7 +28,11 @@ from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
                                 PRIORITY_MANUAL, BehaviorStore)
 from app.ears import EarsService, build_transcriber
 from app.event_binder import EventBinder
+from app.eyes import EyesService, build_detector
+from app.mood import MoodService
 from app.mouth import MouthService
+from app.ranger import RangerService
+from app.satellite import SatelliteClient, SatelliteError
 from app.gait_learner import GaitLearner
 from app.leash import LeashService
 from app.metrics import instrument_controller, metrics
@@ -93,6 +97,18 @@ if Config.EARS_ENABLED:
     ears.init()
 # Mouth: host TTS -> 8 kHz PCM -> firmware PWM on the Grove Speaker Plus.
 mouth = MouthService(bittle, Config.SPEAKER_PIN)
+# Ultrasonic ranger on the UART socket: throttled one-shot reads.
+ranger = RangerService(bittle, Config.ULTRASONIC_PIN)
+# Satellite (camera + mood light) over HTTP; eyes and mood are inert
+# without SATELLITE_HOST.
+satellite = SatelliteClient(Config.SATELLITE_HOST, Config.SATELLITE_TIMEOUT_S)
+eyes = EyesService(satellite, event_binder,
+                   detector=build_detector(Config.EYES_MODEL, Config.EYES_CONFIDENCE),
+                   fps=Config.EYES_FPS, enabled=Config.EYES_ENABLED)
+eyes.init()
+mood = MoodService(satellite, enabled=Config.MOOD_ENABLED)
+mood.init()
+event_binder.listeners.append(mood.on_event)
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -713,9 +729,9 @@ def senses_range(robot_id: str):
     if not pin:
         return jsonify({"error": "not_configured",
                         "message": "ULTRASONIC_PIN is not set"}), 409
-    distance = bittle.read_range_cm(pin)
-    return jsonify({"robotId": robot_id, "pin": pin, "distanceCm": distance,
-                    "ok": distance is not None})
+    reading = ranger.read(pin)
+    return jsonify({"robotId": robot_id, **reading,
+                    "recent": ranger.status()["recent"], **ranger.stats})
 
 
 # ---- Mouth (host TTS -> firmware PWM -> Grove Speaker Plus) ----
@@ -739,6 +755,8 @@ def mouth_say(robot_id: str):
         return jsonify({"error": "not_configured", "message": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": "tts_failed", "message": str(exc)}), 502
+    if mood.enabled and result.get("seconds"):
+        mood.flash("speaking", float(result["seconds"]))
     log_activity("voice", f"Said: {text}")
     return jsonify({"robotId": robot_id, **result})
 
@@ -807,18 +825,150 @@ def ears_clip(robot_id: str):
     return jsonify({"robotId": robot_id, "transcript": row})
 
 
+# ---- Satellite: eyes (camera -> YOLO -> vision.*) and mood light ----
+
+@app.get("/api/robots/<robot_id>/satellite")
+@robot_scoped
+def satellite_status(robot_id: str):
+    """The XIAO's own status JSON (mic, camera, packets, rssi, led)."""
+    if not satellite.enabled:
+        return jsonify({"error": "not_configured",
+                        "message": "SATELLITE_HOST is not set"}), 409
+    try:
+        return jsonify({"robotId": robot_id, **satellite.info(),
+                        "device": satellite.status()})
+    except SatelliteError as exc:
+        return jsonify({"error": "satellite_unreachable", "message": str(exc),
+                        **satellite.info()}), 502
+
+
+@app.get("/api/robots/<robot_id>/eyes")
+@robot_scoped
+def eyes_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **eyes.status()})
+
+
+@app.get("/api/robots/<robot_id>/eyes/snap")
+@robot_scoped
+def eyes_snap(robot_id: str):
+    """The latest cached frame as image/jpeg (?fresh=1 fetches a new one)."""
+    if request.args.get("fresh") == "1":
+        try:
+            eyes.capture()
+        except SatelliteError as exc:
+            return jsonify({"error": "satellite_unreachable", "message": str(exc)}), 502
+    jpeg, at = eyes.frame()
+    if jpeg is None:
+        return jsonify({"error": "no_frame",
+                        "message": "no frame received from the satellite yet"}), 404
+    return app.response_class(jpeg, mimetype="image/jpeg", headers={
+        "Cache-Control": "no-store", "X-Frame-At": str(at)})
+
+
+@app.post("/api/robots/<robot_id>/eyes/config")
+@robot_scoped
+def eyes_config(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    if "enabled" in data:
+        try:
+            eyes.set_enabled(bool(data["enabled"]))
+        except RuntimeError as exc:
+            return jsonify({"error": "not_configured", "message": str(exc)}), 409
+        log_activity("eyes", f"Eyes {'enabled' if eyes.enabled else 'paused'}")
+    return jsonify({"robotId": robot_id, **eyes.status()})
+
+
+@app.post("/api/robots/<robot_id>/eyes/detect")
+@robot_scoped
+def eyes_detect(robot_id: str):
+    """Bench test without the satellite: upload a JPEG (multipart field
+    'file'); runs the detector synchronously, events included."""
+    upload = request.files.get("file")
+    if upload is None:
+        return jsonify({"error": "bad_request", "message": "upload 'file'"}), 400
+    jpeg = upload.read()
+    if not jpeg.startswith(b"\xff\xd8"):
+        return jsonify({"error": "bad_request", "message": "not a JPEG"}), 400
+    try:
+        persons = eyes.process(jpeg)
+    except FileNotFoundError as exc:
+        return jsonify({"error": "not_configured", "message": str(exc)}), 409
+    return jsonify({"robotId": robot_id, "persons": persons,
+                    "inferenceMs": eyes.stats["inferenceMs"]})
+
+
+@app.get("/api/robots/<robot_id>/mood")
+@robot_scoped
+def mood_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **mood.status()})
+
+
+@app.post("/api/robots/<robot_id>/mood")
+@robot_scoped
+def mood_set(robot_id: str):
+    """{"mood": "happy"} pins a named mood; {"mood": "happy", "seconds": 3}
+    flashes it; {"r","g","b","effect","periodMs","brightness"} pins a
+    custom colour."""
+    if not mood.enabled:
+        return jsonify({"error": "not_configured",
+                        "message": "SATELLITE_HOST is not set (or MOOD_ENABLED=false)"}), 409
+    data = request.get_json(silent=True) or {}
+    try:
+        if data.get("mood"):
+            seconds = _num_param(data, "seconds", None, lo=0.1, hi=600, kind=float)
+            name = str(data["mood"])
+            result = mood.flash(name, seconds) if seconds else mood.set(name)
+            log_activity("mood", f"Mood {name}" + (f" for {seconds}s" if seconds else ""))
+        else:
+            result = mood.set_color(
+                _num_param(data, "r", 0, lo=0, hi=255), _num_param(data, "g", 0, lo=0, hi=255),
+                _num_param(data, "b", 0, lo=0, hi=255), str(data.get("effect", "solid")),
+                _num_param(data, "periodMs", 1500, lo=100, hi=60000),
+                _num_param(data, "brightness", 255, lo=0, hi=255))
+            log_activity("mood", "Mood custom colour")
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    if result.get("lastError"):
+        return jsonify({"robotId": robot_id, **result}), 502
+    return jsonify({"robotId": robot_id, **result})
+
+
 @app.get("/api/robots/<robot_id>/senses/samples")
 @robot_scoped
 def senses_samples(robot_id: str):
-    limit = min(int(request.args.get("limit", 100)), 1000)
-    return jsonify({"robotId": robot_id, "samples": senses.samples(limit)})
+    """Filtered slice of the fingerprint store for the map page.
+    ?since= / ?until= are epoch seconds; ?every=N thins to one row in N;
+    ?minAps= drops sparse scans; ?source=auto|manual."""
+    args = request.args
+    source = args.get("source") or None
+    if source not in (None, "auto", "manual"):
+        return jsonify({"error": "bad_request",
+                        "message": "'source' must be auto or manual"}), 400
+    result = senses.samples(
+        limit=_num_param(args, "limit", 200, lo=1, hi=2000),
+        since=_num_param(args, "since", None, lo=0, kind=float),
+        until=_num_param(args, "until", None, lo=0, kind=float),
+        source=source,
+        min_aps=_num_param(args, "minAps", 0, lo=0, hi=100),
+        every=_num_param(args, "every", 1, lo=1, hi=1000))
+    return jsonify({"robotId": robot_id, "pose": senses.pose(), **result})
+
+
+@app.post("/api/robots/<robot_id>/senses/pose/reset")
+@robot_scoped
+def senses_pose_reset(robot_id: str):
+    """Re-anchor the dead-reckoned origin (dog placed at its home spot)."""
+    data = request.get_json(silent=True) or {}
+    heading = _num_param(data, "heading", 0.0, lo=-180, hi=180, kind=float)
+    log_activity("senses", "Pose reset to origin")
+    return jsonify({"robotId": robot_id, "pose": senses.reset_pose(heading)})
 
 
 @app.post("/api/robots/<robot_id>/senses/sniff")
 @robot_scoped
 def senses_sniff(robot_id: str):
     """Manual sniff (ignores the politeness clock; still one blocking scan)."""
-    sample = senses.sniff()
+    sample = senses.sniff(source="manual")
     if sample is None:
         return jsonify({"error": "scan_failed",
                         "message": "no scan data (transport can't capture "

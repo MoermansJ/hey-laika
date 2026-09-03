@@ -112,8 +112,9 @@ proxies and scheduled for removal (audit fix #11).
 | `/leash/config` | POST | Enable/disable and thresholds |
 | `/leash/mark` | POST | Record a labelled RSSI mark |
 | `/senses` | GET | Senses layer status: WiFi sniffer, dead-reckoned pose |
-| `/senses/samples` | GET | Recent sense samples (`?limit=`) |
-| `/senses/range` | GET | One-shot ultrasonic read (`?pin=9|10` to validate wiring; default `ULTRASONIC_PIN`) |
+| `/senses/samples` | GET | Fingerprint samples, newest first, with the live pose and `matched`/`total` counts. Filters: `?since=`/`?until=` (epoch s), `?source=auto|manual`, `?minAps=`, `?every=N` (keep one in N), `?limit=` (≤2000) |
+| `/senses/pose/reset` | POST | Re-anchor the dead-reckoned origin at the dog's current spot (`{"heading"}` optional) |
+| `/senses/range` | GET | Ultrasonic read (`?pin=9|10` to validate wiring; default `ULTRASONIC_PIN`), throttled to one firmware read per 150 ms, with `readMs`, `reads`/`misses` counters and the last 60 readings (`recent`, `null` = no echo) for the Eyes tab's live card |
 | `/ears` | GET | Ears status: satellite PCM stream, whisper model, wake/utterance counters |
 | `/ears/transcripts` | GET | Recent transcripts (`?limit=`), wake flag and detected intent |
 | `/ears/clip` | POST | Bench test: run an uploaded 16-bit mono WAV through the ears pipeline |
@@ -121,6 +122,17 @@ proxies and scheduled for removal (audit fix #11).
 | `/mouth/say` | POST | `{"text"}` → host TTS → 8 kHz PCM → firmware PWM on the Grove Speaker Plus |
 | `/mouth/wav` | POST | Play an uploaded PCM WAV on the speaker (wiring check without TTS) |
 | `/mouth/stop` | POST | Stop and flush speaker playback |
+| `/satellite` | GET | The XIAO satellite's own status JSON (mic, camera, packets, rssi, led); 409 without `SATELLITE_HOST` |
+| `/eyes` | GET | Eyes status: frame rate, cached-frame age, detector (model, loaded, confidence), persons in view, event counters |
+| `/eyes/snap` | GET | Latest cached camera frame as `image/jpeg` (`?fresh=1` fetches a new one first) |
+| `/eyes/config` | POST | `{"enabled"}` pauses/resumes frame grabbing |
+| `/eyes/detect` | POST | Bench test: run an uploaded JPEG through the detector (events included) |
+| `/mood` | GET | Mood light state: current/base mood, running flash, colour, satellite reachability |
+| `/mood` | POST | `{"mood"}` pins a named mood; `{"mood","seconds"}` flashes it; `{"r","g","b","effect","periodMs","brightness"}` pins a custom colour |
+
+The eyes need `models/yolov8n.onnx`; export it once with `tools/export_yolo.py`
+(ultralytics + torch on the PC only, never in the image — onnxruntime is
+already there for whisper's VAD).
 | `/senses/sniff` | POST | One WiFi scan now (ignores the politeness clock; blocks ~2 s) |
 
 **Gait learner**

@@ -91,6 +91,21 @@ class Config:
     # Grove Speaker Plus on the other UART-socket pin (firmware PWM playback).
     SPEAKER_PIN = int(os.getenv("SPEAKER_PIN", "0")) or None
 
+    # XIAO satellite (camera + mood light) reached over HTTP on its own WiFi
+    # address; empty = no satellite (eyes and mood report disabled).
+    SATELLITE_HOST = os.getenv("SATELLITE_HOST", "").strip()
+    SATELLITE_TIMEOUT_S = float(os.getenv("SATELLITE_TIMEOUT_S", "2.5"))
+
+    # Eyes: satellite JPEG frames -> YOLOv8n (onnxruntime) -> vision.person.
+    EYES_ENABLED = _bool("EYES_ENABLED", True)
+    EYES_FPS = float(os.getenv("EYES_FPS", "4"))
+    EYES_MODEL = os.getenv("EYES_MODEL",
+                           str(PROJECT_ROOT / "models" / "yolov8n.onnx"))
+    EYES_CONFIDENCE = float(os.getenv("EYES_CONFIDENCE", "0.45"))
+
+    # Mood light: the chainable RGB LED on the satellite (mood.py).
+    MOOD_ENABLED = _bool("MOOD_ENABLED", True)
+
     # Idle ladder: stationary > sit threshold -> sit; > rest threshold -> lie.
     IDLE_ENABLED = _bool("IDLE_ENABLED", True)
     IDLE_SIT_S = float(os.getenv("IDLE_SIT_S", "60"))

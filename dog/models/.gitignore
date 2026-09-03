@@ -1,0 +1,3 @@
+# Exported ONNX weights (dog/tools/export_yolo.py); regenerate, don't commit.
+*.onnx
+*.pt

@@ -1,6 +1,6 @@
 # Bittle X Hardware Reference
 
-**Updated:** 2026-09-02 (firmware row) · Facts validated live unless noted.
+**Updated:** 2026-09-03 (sensor suite installed: ranger, satellite, mood light, speaker) · Facts validated live unless noted.
 
 ## The robot
 
@@ -12,7 +12,8 @@
 | Battery | 2S LiPo 7.4 V nominal, 1000 mAh (JST-XH). Full ≈ 8.35 V, firmware low-power floor ≈ 6.8 V, cutoff behavior: rest + melody every 10 s. Long-press the battery's own button to power servos |
 | USB | CH343 USB-UART, enumerates as **COM3** on the dev machine, 115200 8N1. Opening the port does **not** reboot the board |
 | Voice module | Onboard (Bittle X): mic + "Hey Bittle"-style hotword on a separate MCU wired to Serial1; emits unsolicited `X…` lines |
-| Speaker | Buzzer only (melody/tone capable). No MP3/DAC hardware |
+| Speaker | Onboard buzzer (melody/tone). Plus, since 2026-09-03, a **Grove Speaker Plus** (2 W amp + speaker, volume pot) on **GPIO 10** (UART socket white wire), power tapped from the I2C socket; firmware sigma-delta PWM playback (`XWp/XWa/XWq`), walkie-talkie speech from host TTS. `SPEAKER_PIN=10` |
+| Sensor suite | Ultrasonic ranger, satellite camera + microphone + mood light, IMU, battery, WiFi RSSI and fingerprints, pose. What each yields: `SENSOR_DATA.md` |
 | Not present on this board | IR receiver, NeoPixel, OLED, MP3 module |
 
 ## Servo map
@@ -42,6 +43,8 @@ installed (unverified on this unit). Firmware interpolates moves at
 | IP | **192.168.0.246** (DHCP — keep a router reservation) |
 | Command endpoint | WebSocket `ws://192.168.0.246:81` (see `NETWORK_API.md`) |
 | Other transports | USB serial, BLE UART (`<ID>_BLE`), classic BT SPP (`<ID>_SSP`), Grove UART on pins 9/10 |
+| Ultrasonic ranger | Grove one-pin ranger, SIG on **GPIO 9** (UART socket), powered from the same socket. Validated 2026-09-03: one-shot `XU` reads, 0 misses in 120 reads on a stationary target, ~2 m window, `-1` = no echo. `ULTRASONIC_PIN=9` |
+| Satellite | XIAO ESP32S3 Sense on the head, own WiFi at **192.168.0.189** (flashed 2026-09-03, MAC 68:ee:8f:50:ec:5c; `SATELLITE_HOST`, reserve its DHCP address), powered from analog socket A. OV2640 camera (QVGA JPEG, `/snap` + `/stream` on port 80), PDM mic (PCM over UDP to the adapter), Grove Chainable RGB LED (P9813) on **D2 = clock (yellow), D3 = data (white)**, power from analog socket B, driven through `/led`. Sketch: `satellite/xiao_sense` |
 | Reset WiFi | Hold the boot button (GPIO0) through its 10-count at startup |
 
 ## Care and feeding

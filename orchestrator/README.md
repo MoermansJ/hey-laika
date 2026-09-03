@@ -148,6 +148,10 @@ adapter without a typed DTO.
 | `/senses/range` | GET | *relay* — one-shot ultrasonic read (`?pin=`) |
 | `/ears`, `/ears/transcripts` | GET | *relay* — satellite microphone status and recent transcripts |
 | `/mouth`, `/mouth/say`, `/mouth/stop` | GET/POST | *relay* — speaker status, speak text on the dog, stop playback |
+| `/satellite` | GET | *relay* — the XIAO's own status JSON (mic, camera, rssi, led) |
+| `/eyes`, `/eyes/config` | GET/POST | *relay* — camera/person-detection status; pause or resume frame grabbing |
+| `/eyes/snap` | GET | *binary relay* — latest cached camera frame as `image/jpeg` (`?fresh=1` grabs a new one) |
+| `/mood` | GET / POST | *relay* — mood light state; `{"mood"}` pins a named mood, `{"mood","seconds"}` flashes it, `{"r","g","b","effect",…}` a custom colour |
 | `/leash` | GET | *relay* — proximity-leash state (RSSI, zone, dead-man) |
 | `/leash/config` | POST | *relay* — leash thresholds / enable |
 | `/leash/mark` | POST | *relay* — record a labelled RSSI mark |

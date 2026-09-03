@@ -23,6 +23,8 @@ because it decides which UART-socket wire the speaker gets.
 
 ## 1. Ultrasonic ranger — decides the UART-socket pins (15 min)
 
+**Done 2026-09-03:** ranger answers on **GPIO 9** (pin 10 silent); 0 misses in 120 stationary reads. `ULTRASONIC_PIN=9`, so the speaker wire is GPIO 10. Detail in `NAVIGATION_MAPPING_BRIEF.md` addendum.
+
 Wiring per NAVIGATION_MAPPING_BRIEF §4: UART socket female conversion cable,
 **yellow→ranger SIG**, red+black→ranger power. Note whether yellow is GPIO 9 or 10
 on this cable (BiBoard V1 UART socket: RX 9, TX 10).
@@ -95,6 +97,48 @@ No data wires.
    the rail is marginal — LiPo on the XIAO's battery pads is the fallback.
 4. Walk test: `kwkF` for ten seconds while streaming; both streams must
    survive the servo load.
+
+## 4b. Mood light and eyes (added 2026-09-03, LED and camera wired)
+
+Software: satellite `/led` (P9813 driver, D2 clock / D3 data), adapter
+`mood.py` + `eyes.py` (YOLOv8n through onnxruntime), orchestrator relays,
+the **Eyes** tab. One-time on the PC: `dog/tools/export_yolo.py` (already
+run; `dog/models/yolov8n.onnx` is gitignored, re-run after a fresh clone).
+
+**Done 2026-09-03 (evening):** flashed over the XIAO's own USB-C on COM4 with
+the no-stub esptool recipe (`satellite/README.md`; `arduino-cli upload`
+dies at the stub handover). XIAO is **192.168.0.189**. Camera and mic only
+worked together after the mic moved to ESP-IDF `driver/i2s.h`. Pillow was
+missing from the image (added). `SATELLITE_HOST` set, adapter and
+orchestrator containers rebuilt. LED and the on-dog stream not yet seen:
+the dog was off (LED power comes from analog socket B).
+
+1. `.env`: `SATELLITE_HOST=<xiao-ip>` (both `orchestrator/.env` for compose
+   and `dog/.env` for a native run). `docker compose up -d --build
+   python-bittle-1 orchestrator` (new Python modules, new Java relays).
+2. Flash the updated sketch (same build line as §3). Boot: the LED blinks
+   **blue while joining WiFi**, then goes dark (the adapter owns it now).
+   Serial prints `LED: P9813 on D2/D3` and `HTTP: / /snap /stream /led`.
+   - Never lights: swap the yellow/white wires (clock and data crossed), then
+     check the 5 V tap on analog socket B.
+   - Wrong colours: `GET http://<xiao-ip>/led?r=255&g=0&b=0` must be red;
+     if it is blue the P9813 byte order is off (report it, don't guess).
+3. `GET /api/robots/bittle-1/mood` → `enabled: true`, `sets` ≥ 1 within
+   30 s (the resync loop paints the base mood). Eyes tab → Mood light card:
+   click **happy** (green), **lost** (red blink); the colour picker pins any
+   colour. Say "Hey Laika, sit" → the LED pulses blue for 2.5 s (`heard`),
+   then returns. Speak from the Mouth card → teal pulse while it talks.
+4. `GET /api/robots/bittle-1/eyes` → `streaming: true`, `fps` ≈ 4,
+   `detector.loaded: true` after the first frame (first inference ~1 s).
+   Eyes tab → Camera card shows the picture at ~3 fps with green boxes on
+   people; the chip says `1 in view · left/centre/right`.
+   - `detector.available: false`: run `dog/tools/export_yolo.py`.
+   - `lastError` mentions `/snap`: the satellite is up but the camera is not
+     (`camera: false` in `/satellite`) — reseat the camera ribbon.
+5. Walk in front of the dog: `vision.person` events appear in the Behavior
+   Lab run log only if you enable the seeded (disabled) binding; the mood
+   light shows cyan (`person`) on its own. Step out of view: `vision.clear`
+   after 2 s and the LED returns to the base mood.
 
 ## 5. Record the outcome
 

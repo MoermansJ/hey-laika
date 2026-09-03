@@ -288,3 +288,97 @@ ladder, reserved `goto` step type), `docs/design/PROXIMITY_LEASH_BRIEF.md`
 (phone anchoring paths, home/away modes, firmware list),
 `docs/robot/HARDWARE.md` (head-pan servo joint 0, Grove UART),
 `docs/robot/FIRMWARE_CAPABILITIES.md` (`XU` ultrasonic read, voice `XAc` codes).
+
+---
+
+## Addendum 2026-09-03 — Phase B slice shipped: sample store + Map tab
+
+Delivered ahead of the ultrasonic module, on the stock sniffer:
+
+- **Sample store enriched.** Every sniff row now also carries the cached
+  battery reading, the measured IMU yaw (`gp`, when the transport can read
+  it) and a `source` (`auto` sniffer / `manual` button). Columns are added
+  in place on start-up, so an existing `wifi_samples` table keeps its rows.
+- **Pose continuity.** The dead-reckoned pose is restored from the newest
+  sample on adapter start (plus a 0.5 m restart penalty on the drift), and
+  `POST /senses/pose/reset` re-anchors the origin when the dog is put back
+  at its home spot. Samples keep the coordinates they were recorded with.
+- **Filtered reads.** `GET /senses/samples` takes `since`/`until`, `source`,
+  `minAps`, `every` (one row in N) and `limit`, and returns `matched`/`total`
+  so the GUI can say how much a filter hid. The orchestrator relays the
+  same query string.
+- **Map tab** (`map.html`, per-robot tab next to Leash): overhead SVG with a
+  metre grid, chronological trail, sample dots coloured by age or by one
+  network's RSSI, hover tooltip (timestamp, pose, heading, IMU yaw, battery,
+  every AP heard), click to pin a sample in the side card, the last known
+  position as an arrow with a dashed uncertainty ring, a per-network summary
+  table (times heard, best/worst RSSI) that doubles as the colour picker,
+  and the filter bar above. Live refresh every 10 s while the tab is
+  visible. Sniff-now and Reset-origin buttons.
+
+Still open from §2/§3: fingerprint clustering, room naming, loop closure,
+and IMU feedback inside the odometry shadow (yaw is recorded, not yet fused).
+
+---
+
+## Addendum 2026-09-03 — ultrasonic ranger validated on GPIO 9
+
+Arrival-day runbook step 1, done over the dog's WebSocket with the adapter's
+exact `XU` framing (Docker was down, so a stand-alone probe script was used;
+the adapter path is byte-identical).
+
+- **Pin:** the ranger's SIG wire is on **GPIO 9** (UART socket RX). GPIO 10
+  never echoes. Config: `ULTRASONIC_PIN=9`; when the Speaker Plus is wired
+  to the other UART wire it gets `SPEAKER_PIN=10`.
+- **Reliability with a stationary target:** 0 misses in 120 reads at 250,
+  100 and 50 ms spacing. Round trip over WiFi ~50–90 ms per read, so ~10 Hz
+  polling is realistic for collision avoidance.
+- **Misses are the target, not the sensor.** With a hand or body as the
+  target, misses came in bursts (11 in a row, then none for 70 reads) and
+  vanished the moment the target stood still. The firmware returns `-1`
+  when no echo returns within the 2 m window; the adapter maps that to
+  `null`. No retry logic is needed.
+- **Beam width matters.** Aimed at a wall at ~47 cm the sensor mostly
+  reported 15 cm with occasional 46 cm: a nearer reflector inside the beam
+  (the dog's own leg, a cable, or the floor when the head tilts down) wins.
+  Mount so nothing of the dog sits within the cone, and treat readings as
+  "nearest thing ahead", which is what obstacle avoidance wants anyway.
+- Module status (`X?`) reports no modules active, as intended since the
+  2026-09-02 reset; the one-shot `XU` read does not touch module state.
+
+---
+
+## Addendum 2026-09-03 — eyes and mood light shipped (LED and camera wired)
+
+The §Vision satellite integration work, minus follow-me:
+
+- **Satellite sketch:** P9813 chainable-LED driver bit-banged on D2 (clock,
+  Grove yellow) / D3 (data, Grove white); `/led` sets colour, effect
+  (`off|solid|pulse|blink`), period and brightness, the status JSON carries
+  the LED state. Blue blink while joining WiFi, dark once the adapter owns
+  it. 23 % flash.
+- **Adapter `satellite.py`:** one short-timeout HTTP client for `/`, `/snap`
+  and `/led`; `SATELLITE_HOST` empty = everything reports disabled.
+- **Adapter `eyes.py`:** polls `/snap` at `EYES_FPS` (4), runs **YOLOv8-nano
+  as ONNX through onnxruntime** — the runtime was already in the image for
+  whisper's VAD, so the only new artefact is `dog/models/yolov8n.onnx` from
+  `dog/tools/export_yolo.py` (ultralytics + torch on the PC, once; 320 px
+  input, ~4x faster than 640 on CPU; matches ultralytics' own boxes within
+  1 % on its bus.jpg sample). Emits `vision.person` (largest box, `offset`
+  −1..+1 = the follow-me steering signal, `area`, `count`) at most once per
+  second while someone is in view and `vision.clear` once after 2 s without.
+  A seeded `vision.person → acknowledgment` binding ships **disabled**.
+- **Adapter `mood.py`:** base mood + timed flash layers, mapped from
+  framework events through a new `EventBinder.listeners` hook (the mood
+  light reacts even to events with no behavior bound): wake phrase heard →
+  blue pulse, person in view → cyan, speaking → teal pulse, leash zones →
+  warm / orange blink / red blink, low battery → red pulse, online → green.
+  A 30 s resync repaints a rebooted satellite.
+- **Orchestrator:** JSON relays for `/satellite`, `/eyes`, `/eyes/config`,
+  `/mood`; a first binary relay (`RobotAdapterPort.getBinary` →
+  `BinaryContent`) for `/eyes/snap`. **Eyes tab** in the GUI: live picture
+  (~3 fps through the adapter cache), person boxes, detector/event
+  counters, pause/resume, mood buttons and a colour picker.
+- **Not yet:** follow-me itself (a `follow_person` behavior steering on
+  `offset` through the arbiter), and a cheaper wake gate for the ears.
+

@@ -31,6 +31,9 @@ class EventBinder:
         self._fired_idle: set[float] = set()
         self._fired_battery: set[float] = set()
         self._stop = threading.Event()
+        # Side listeners (mood light, ...): called with (event, payload) for
+        # every event before bindings are looked up; they never move the dog.
+        self.listeners: list = []
 
     def start(self) -> None:
         threading.Thread(target=self._idle_loop, daemon=True).start()
@@ -54,6 +57,7 @@ class EventBinder:
 
     def trigger(self, event: str, data: dict | None = None) -> list[dict]:
         """Look up enabled bindings for the event; submit matches."""
+        self._notify_listeners(event, data)
         results = []
         for binding in self.store.bindings(event=event, enabled_only=True):
             if not self._filter_matches(binding.get("filter"), data):
@@ -64,6 +68,13 @@ class EventBinder:
                 cause=self._cause(event, data, binding))
             results.append({"behavior": binding["behavior"], **result})
         return results
+
+    def _notify_listeners(self, event: str, data: dict | None) -> None:
+        for listener in list(self.listeners):
+            try:
+                listener(event, data or {})
+            except Exception:
+                logger.exception("Event listener failed on %s", event)
 
     @staticmethod
     def _filter_matches(filter_spec, data) -> bool:
@@ -109,6 +120,7 @@ class EventBinder:
             if threshold and idle_s >= threshold and \
                     threshold not in self._fired_idle:
                 self._fired_idle.add(threshold)
+                self._notify_listeners("idle.timeout", {"seconds": threshold})
                 self.arbiter.submit(
                     binding["behavior"], source="event.idle.timeout",
                     priority=binding["priority"],
@@ -150,6 +162,8 @@ class EventBinder:
                         continue
                     if battery <= pct and pct not in self._fired_battery:
                         self._fired_battery.add(pct)
+                        self._notify_listeners("battery.low",
+                                               {"battery": battery, "pct": pct})
                         self.arbiter.submit(
                             binding["behavior"], source="event.battery.low",
                             priority=binding["priority"],

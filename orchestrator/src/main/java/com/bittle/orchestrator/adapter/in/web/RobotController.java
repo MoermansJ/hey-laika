@@ -15,6 +15,7 @@ import com.bittle.orchestrator.application.usecase.InteractWithRobotUseCase;
 import com.bittle.orchestrator.application.usecase.ListAnimationsUseCase;
 import com.bittle.orchestrator.application.usecase.MoveServosUseCase;
 import com.bittle.orchestrator.application.usecase.PlaySoundUseCase;
+import com.bittle.orchestrator.application.usecase.RelayGetBinaryFromRobotUseCase;
 import com.bittle.orchestrator.application.usecase.RelayGetToRobotUseCase;
 import com.bittle.orchestrator.application.usecase.RelayPostToRobotUseCase;
 import com.bittle.orchestrator.application.usecase.RelayPostWithBodyToRobotUseCase;
@@ -27,6 +28,7 @@ import com.bittle.orchestrator.domain.robot.ActivityLog;
 import com.bittle.orchestrator.domain.robot.AnimationList;
 import com.bittle.orchestrator.domain.robot.AnimationResult;
 import com.bittle.orchestrator.domain.robot.AutonomousState;
+import com.bittle.orchestrator.domain.robot.BinaryContent;
 import com.bittle.orchestrator.domain.robot.CommandRequest;
 import com.bittle.orchestrator.domain.robot.CommandResult;
 import com.bittle.orchestrator.domain.robot.DisplayContent;
@@ -38,8 +40,13 @@ import com.bittle.orchestrator.domain.robot.RobotStatus;
 import com.bittle.orchestrator.domain.robot.ServoMoveRequest;
 import com.bittle.orchestrator.domain.robot.ServoMoveResult;
 import com.bittle.orchestrator.domain.robot.ServoState;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -78,6 +85,7 @@ public class RobotController {
     private final RelayGetToRobotUseCase relayGet;
     private final RelayPostToRobotUseCase relayPost;
     private final RelayPostWithBodyToRobotUseCase relayPostWithBody;
+    private final RelayGetBinaryFromRobotUseCase relayGetBinary;
 
     public RobotController(GetRobotStatusUseCase getStatus,
                            GetRobotPersonalityUseCase getPersonality,
@@ -100,7 +108,8 @@ public class RobotController {
                            ExecuteRobotActionUseCase executeAction,
                            RelayGetToRobotUseCase relayGet,
                            RelayPostToRobotUseCase relayPost,
-                           RelayPostWithBodyToRobotUseCase relayPostWithBody) {
+                           RelayPostWithBodyToRobotUseCase relayPostWithBody,
+                           RelayGetBinaryFromRobotUseCase relayGetBinary) {
         this.getStatus = getStatus;
         this.getPersonality = getPersonality;
         this.getNextBehavior = getNextBehavior;
@@ -123,6 +132,7 @@ public class RobotController {
         this.relayGet = relayGet;
         this.relayPost = relayPost;
         this.relayPostWithBody = relayPostWithBody;
+        this.relayGetBinary = relayGetBinary;
     }
 
     @GetMapping("/status")
@@ -276,8 +286,16 @@ public class RobotController {
     }
 
     @GetMapping("/senses/samples")
-    public Map<String, Object> sensesSamples(@PathVariable String robotId) {
-        return relayGet.execute(robotId, "/senses/samples");
+    public Map<String, Object> sensesSamples(@PathVariable String robotId,
+                                             @RequestParam Map<String, String> filters) {
+        return relayGet.execute(robotId, "/senses/samples" + sampleQuery(filters));
+    }
+
+    @PostMapping("/senses/pose/reset")
+    public Map<String, Object> sensesPoseReset(@PathVariable String robotId,
+                                               @RequestBody(required = false) Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/senses/pose/reset",
+                body == null ? Map.of() : body);
     }
 
     @PostMapping("/senses/sniff")
@@ -368,6 +386,44 @@ public class RobotController {
         return relayPost.execute(robotId, "/mouth/stop");
     }
 
+    @GetMapping("/satellite")
+    public Map<String, Object> satellite(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/satellite");
+    }
+
+    @GetMapping("/eyes")
+    public Map<String, Object> eyes(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/eyes");
+    }
+
+    @GetMapping("/eyes/snap")
+    public ResponseEntity<byte[]> eyesSnap(@PathVariable String robotId,
+                                           @RequestParam(required = false) String fresh) {
+        BinaryContent frame = relayGetBinary.execute(robotId,
+                "1".equals(fresh) ? "/eyes/snap?fresh=1" : "/eyes/snap");
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(frame.contentType()))
+                .cacheControl(CacheControl.noStore())
+                .body(frame.body());
+    }
+
+    @PostMapping("/eyes/config")
+    public Map<String, Object> eyesConfig(@PathVariable String robotId,
+                                          @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/eyes/config", body);
+    }
+
+    @GetMapping("/mood")
+    public Map<String, Object> mood(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/mood");
+    }
+
+    @PostMapping("/mood")
+    public Map<String, Object> moodSet(@PathVariable String robotId,
+                                       @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/mood", body);
+    }
+
     @GetMapping("/arbiter/status")
     public Map<String, Object> arbiterStatus(@PathVariable String robotId) {
         return relayGet.execute(robotId, "/arbiter/status");
@@ -387,5 +443,16 @@ public class RobotController {
     private static ResponseEntity<Map<String, String>> unknownAction(String action) {
         return ResponseEntity.badRequest()
                 .body(Map.of("error", "unknown_action", "action", action));
+    }
+
+    private static final Set<String> SAMPLE_FILTERS =
+            Set.of("limit", "since", "until", "source", "minAps", "every");
+
+    private static String sampleQuery(Map<String, String> filters) {
+        String query = filters.entrySet().stream()
+                .filter(e -> SAMPLE_FILTERS.contains(e.getKey()) && !e.getValue().isBlank())
+                .map(e -> e.getKey() + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8))
+                .collect(Collectors.joining("&"));
+        return query.isEmpty() ? "" : "?" + query;
     }
 }

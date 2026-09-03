@@ -11,3 +11,6 @@ websocket-client==1.9.1
 SQLAlchemy==2.0.52
 # Ears: faster-whisper (CTranslate2, CPU int8) for the voice relay.
 faster-whisper==1.2.1
+# Eyes: JPEG decode + letterbox for the YOLO ONNX detector (onnxruntime and
+# numpy already arrive with faster-whisper).
+Pillow==12.3.0
