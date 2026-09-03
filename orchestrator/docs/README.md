@@ -10,6 +10,7 @@ These are living reference docs — update them when facts change.
 - [HARDWARE.md](robot/HARDWARE.md) — board, battery, servo map, transports, care notes; firmware row states what is actually flashed (hey-laika fork, base B10_251121)
 - [FIRMWARE_CAPABILITIES.md](robot/FIRMWARE_CAPABILITIES.md) — full catalog of what the stock firmware can do
 - [NETWORK_API.md](robot/NETWORK_API.md) — the board's live network surface (WebSocket protocol, ports)
+- [SENSOR_DATA.md](robot/SENSOR_DATA.md) — 2026-09-03 catalogue of every sense on Laika: fields, rates, events, what is stored, and what the hardware produces that nothing reads yet
 - [VALIDATION_RESULTS.md](robot/VALIDATION_RESULTS.md) — raw live captures that validated the serial protocol
 - [calibration_backup_2026-09-01.txt](robot/calibration_backup_2026-09-01.txt) — raw `?`/`c` dump of Laika's servo calibration and board banner, taken before the fork was flashed
 

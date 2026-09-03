@@ -41,12 +41,13 @@ const BASE_SPECS = {
   },
 };
 
-// Sensor upgrade package (ordered 2026-09-01). Values are per-robot below.
+// Sensor package (ordered 2026-09-01, installed on Laika 2026-09-03). Values
+// are per-robot below; docs/robot/SENSOR_DATA.md lists every field each one yields.
 const PACKAGE_SPECS = {
-  "Depth": "Grove Ultrasonic Ranger, 3-350 cm, one-pin mode (UART socket)",
-  "Speech": "Grove Speaker Plus, PWM sigma-delta voice (UART socket)",
-  "Vision satellite": "XIAO ESP32S3 Sense: OV2640 camera + PDM mic, own WiFi, powered from a Grove socket",
-  "Mood light": "Chainable RGB LED on the satellite (D2/D3)",
+  "Depth": "Grove Ultrasonic Ranger on GPIO 9 (UART socket), one-shot XU reads ~50-90 ms, 2 m window, live card on the Eyes tab",
+  "Speech": "Grove Speaker Plus on GPIO 10 (UART socket, power from the I2C socket), firmware PWM playback of host TTS",
+  "Vision satellite": "XIAO ESP32S3 Sense at 192.168.0.189: OV2640 QVGA at 4 fps to the adapter, YOLOv8n person boxes on the host, PDM mic as 16 kHz PCM over UDP to whisper",
+  "Mood light": "Chainable RGB LED (P9813) on the satellite, D2 clock / D3 data, powered from analog socket B; event-driven moods via mood.py",
   "IR receiver": "None (not present on this board)",
 };
 
@@ -59,7 +60,7 @@ const ROBOT_SPECS = {
         "Hardware": "Real Bittle X V2 at 192.168.0.246 (DHCP reservation advised)",
         "Adapter": "python-bittle-1 (WiFi transport)",
       },
-      "Sensor package (ordered)": { ...PACKAGE_SPECS },
+      "Sensor package (installed 2026-09-03)": { ...PACKAGE_SPECS },
     },
   },
   "bittle-2": {
