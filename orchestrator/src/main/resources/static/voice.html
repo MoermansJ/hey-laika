@@ -98,6 +98,7 @@
       <input type="text" id="mouth-input" placeholder="Say it on the dog (Grove Speaker Plus)" autocomplete="off">
       <button id="mouth-say">Speak</button>
     </div>
+    <div class="voice-row" id="mouth-sounds" style="margin:0.5rem 0 0; flex-wrap:wrap"></div>
     <div class="hint" id="mouth-detail"></div>
   </section>
 
@@ -228,7 +229,28 @@
         $("#mouth-detail").textContent = m.text
             ? `last: "${m.text}" (${m.seconds}s, ${m.chunks} chunks)` : "";
         $("#mouth-say").disabled = !m.enabled;
+        renderMouthSounds(m.sounds || [], m.enabled);
       } catch { chip.textContent = "mouth unavailable"; chip.className = "chip warn"; }
+    }
+
+    function renderMouthSounds(sounds, enabled) {
+      const host = $("#mouth-sounds");
+      if (host.dataset.rendered !== sounds.join(",")) {
+        host.dataset.rendered = sounds.join(",");
+        host.innerHTML = sounds.length
+            ? `<span class="hint" style="margin:auto 0">on the dog:</span>` + sounds.map((s) =>
+                `<button data-dog-sound="${esc(s)}">${esc(s.replace(/_/g, " "))}</button>`).join("")
+            : "";
+        host.querySelectorAll("[data-dog-sound]").forEach((btn) => btn.onclick = async () => {
+          btn.disabled = true;
+          try {
+            await api("/mouth/play", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sound: btn.dataset.dogSound }) });
+          } catch (err) { $("#mouth-detail").textContent = `failed: ${err.message}`; }
+          finally { btn.disabled = false; refreshMouth(); }
+        });
+      }
+      host.querySelectorAll("[data-dog-sound]").forEach((btn) => btn.disabled = !enabled);
     }
 
     $("#mouth-say").onclick = async () => {

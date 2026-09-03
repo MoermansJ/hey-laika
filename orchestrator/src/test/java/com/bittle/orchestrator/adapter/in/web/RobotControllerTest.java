@@ -284,6 +284,21 @@ class RobotControllerTest {
     }
 
     @Test
+    void givenSoundPosted_whenRelayed_thenPlayPathAndBodyReachTheAdapter() {
+        when(relayPostWithBody.execute(eq("bittle-1"), eq("/mouth/play"), any()))
+                .thenReturn(Map.of("text", "sound:positive_bark"));
+
+        var result = mvc.post().uri("/api/robots/bittle-1/mouth/play")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"sound\":\"positive_bark\"}")
+                .exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.text").isEqualTo("sound:positive_bark");
+        verify(relayPostWithBody).execute("bittle-1", "/mouth/play", Map.of("sound", "positive_bark"));
+    }
+
+    @Test
     void givenMoodPosted_whenRelayed_thenBodyReachesTheAdapterUnchanged() {
         when(relayPostWithBody.execute(eq("bittle-1"), eq("/mood"), any()))
                 .thenReturn(Map.of("mood", "happy"));

@@ -251,6 +251,82 @@ function renderMeta() {
       ? "Adapter is in mock mode — no hardware will move" : "";
 }
 
+// ---- peripherals: speaker clips and the mood light (satellite LED) ----
+
+const LED_PREVIEW = {
+  off: "#000", idle: "#ff8c28", heard: "#0078ff", thinking: "#a000ff", speaking: "#00ffaa",
+  happy: "#00ff28", person: "#00d2ff", alert: "#ffa000", warn: "#ff5a00", lost: "#ff0000",
+  low_battery: "#ff0000",
+};
+
+async function refreshSpeaker() {
+  const chip = $("#speaker-chip");
+  try {
+    const m = await api("/mouth");
+    chip.textContent = m.enabled ? `pin ${m.pin}` : "SPEAKER_PIN not set";
+    chip.className = "chip " + (m.enabled ? "on" : "warn");
+    const host = $("#speaker-sounds");
+    const key = (m.sounds || []).join(",");
+    if (host.dataset.rendered !== key) {
+      host.dataset.rendered = key;
+      host.innerHTML = (m.sounds || []).map((s) =>
+          `<button data-dog-sound="${esc(s)}">${esc(s.replace(/_/g, " "))}</button>`).join("")
+          || `<span class="hint">no clips in dog/sounds</span>`;
+      host.querySelectorAll("[data-dog-sound]").forEach((btn) => btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          await api("/mouth/play", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sound: btn.dataset.dogSound }) });
+          toast(`Playing ${btn.dataset.dogSound.replace(/_/g, " ")}`);
+        } catch (err) { toast(err.message, true); }
+        finally { btn.disabled = !m.enabled; }
+      });
+    }
+    host.querySelectorAll("[data-dog-sound]").forEach((btn) => btn.disabled = !m.enabled);
+  } catch { chip.textContent = "unavailable"; chip.className = "chip warn"; }
+}
+
+async function setLed(body) {
+  try {
+    await api("/mood", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) });
+  } catch (err) { toast(err.message, true); }
+  refreshLed();
+}
+
+async function refreshLed() {
+  const chip = $("#led-chip");
+  try {
+    const m = await api("/mood");
+    const enabled = m.enabled;
+    chip.textContent = !enabled ? "no satellite" : m.lastError ? "satellite not answering"
+        : `${m.mood.replace("_", " ")}${m.flash ? ` (flash, then ${m.base})` : ""}`;
+    chip.className = "chip " + (!enabled ? "warn" : m.lastError ? "off" : "on");
+    const host = $("#led-moods");
+    const key = (m.moods || []).join(",");
+    if (host.dataset.rendered !== key) {
+      host.dataset.rendered = key;
+      host.innerHTML = (m.moods || []).map((name) =>
+          `<button data-mood="${esc(name)}"><span style="display:inline-block;width:0.65rem;height:0.65rem;border-radius:50%;margin-right:0.35rem;border:1px solid rgba(0,0,0,0.15);background:${LED_PREVIEW[name] || "#888"}"></span>${esc(name.replace("_", " "))}</button>`).join("");
+      host.querySelectorAll("[data-mood]").forEach((btn) => btn.onclick = () => setLed({ mood: btn.dataset.mood }));
+    }
+    host.querySelectorAll("[data-mood]").forEach((btn) => {
+      btn.disabled = !enabled;
+      btn.classList.toggle("active", btn.dataset.mood === m.base);
+    });
+    ["#led-apply", "#led-off", "#led-color", "#led-effect"].forEach((sel) => $(sel).disabled = !enabled);
+  } catch { chip.textContent = "unavailable"; chip.className = "chip warn"; }
+}
+
+function bindLedControls() {
+  $("#led-apply").onclick = () => {
+    const hex = $("#led-color").value;
+    setLed({ r: parseInt(hex.slice(1, 3), 16), g: parseInt(hex.slice(3, 5), 16),
+             b: parseInt(hex.slice(5, 7), 16), effect: $("#led-effect").value });
+  };
+  $("#led-off").onclick = () => setLed({ mood: "off" });
+}
+
 async function refreshBattery() {
   const chip = $("#battery-chip");
   try {
@@ -316,6 +392,8 @@ async function startRobot() {
   // Matches the adapter's telemetry cache TTL — polling faster returns
   // the same cached reading anyway.
   pollers.push(hlPoll(refreshBattery, 20000, { immediate: false }));
+  pollers.push(hlPoll(refreshSpeaker, 15000));
+  pollers.push(hlPoll(refreshLed, 3000));
 }
 
 async function boot() {
@@ -336,6 +414,7 @@ async function boot() {
       ? wanted : robots[0]?.robotId;
   if (!state.robotId) return;
   $("#robot-select").value = state.robotId;
+  bindLedControls();
   bindTopbar();
   await startRobot();
 }

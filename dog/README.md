@@ -122,6 +122,8 @@ proxies and scheduled for removal (audit fix #11).
 | `/mouth/say` | POST | `{"text"}` → host TTS → 8 kHz PCM → firmware PWM on the Grove Speaker Plus |
 | `/mouth/wav` | POST | Play an uploaded PCM WAV on the speaker (wiring check without TTS) |
 | `/mouth/stop` | POST | Stop and flush speaker playback |
+| `/mouth/sounds` | GET | Clip library: every WAV/MP3 in `dog/sounds` by name |
+| `/mouth/play` | POST | `{"sound": "positive_bark"}` → the clip on the speaker (decoded once, cached) |
 | `/satellite` | GET | The XIAO satellite's own status JSON (mic, camera, packets, rssi, led); 409 without `SATELLITE_HOST` |
 | `/eyes` | GET | Eyes status: frame rate, cached-frame age, detector (model, loaded, confidence), persons in view, event counters |
 | `/eyes/snap` | GET | Latest cached camera frame as `image/jpeg` (`?fresh=1` fetches a new one first) |

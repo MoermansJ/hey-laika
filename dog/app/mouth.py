@@ -30,13 +30,44 @@ RING_BYTES = 8192           # mirrors the firmware ring; pacing waits when fulle
 _FREE_RE = re.compile(r"=\s*\r?\n?\s*(\d+)")
 
 
+SOUNDS_DIR = Path(__file__).resolve().parent.parent / "sounds"
+
+
+class SoundLibrary:
+    """Named clips (WAV or MP3 files in dog/sounds) decoded once to WAV."""
+
+    def __init__(self, directory: str | Path = SOUNDS_DIR):
+        self.directory = Path(directory)
+        self._cache: dict[str, bytes] = {}
+
+    def names(self) -> list[str]:
+        if not self.directory.is_dir():
+            return []
+        return sorted(p.stem for p in self.directory.iterdir()
+                      if p.suffix.lower() in (".wav", ".mp3"))
+
+    def wav(self, name: str) -> bytes:
+        if name in self._cache:
+            return self._cache[name]
+        for suffix in (".wav", ".mp3"):
+            path = self.directory / f"{name}{suffix}"
+            if path.is_file():
+                data = path.read_bytes()
+                wav = mp3_to_wav(data) if suffix == ".mp3" else data
+                self._cache[name] = wav
+                return wav
+        raise KeyError(f"unknown sound '{name}' (one of {', '.join(self.names())})")
+
+
 class MouthService:
-    def __init__(self, controller, pin: int | None, tts=None, sleep=time.sleep):
+    def __init__(self, controller, pin: int | None, tts=None, sleep=time.sleep,
+                 sounds: SoundLibrary | None = None):
         self.controller = controller
         self.pin = pin
         self.tts = tts or default_tts
         self._sleep = sleep
         self._attached = False
+        self.sounds = sounds or SoundLibrary()
         self.last = {"text": None, "at": None, "seconds": None, "chunks": 0,
                      "error": None}
 
@@ -47,7 +78,8 @@ class MouthService:
     def status(self) -> dict:
         return {"enabled": self.enabled, "pin": self.pin,
                 "attached": self._attached, "sampleRate": RATE,
-                "ttsEngine": getattr(self.tts, "__name__", "custom"), **self.last}
+                "ttsEngine": getattr(self.tts, "__name__", "custom"),
+                "sounds": self.sounds.names(), **self.last}
 
     # -- public --
 
@@ -56,6 +88,12 @@ class MouthService:
             raise RuntimeError("SPEAKER_PIN is not set")
         wav = self.tts(text)
         return self.play_wav(wav, label=text)
+
+    def play_sound(self, name: str) -> dict:
+        """A clip from the library (positive_bark, ...) on the speaker."""
+        if not self.enabled:
+            raise RuntimeError("SPEAKER_PIN is not set")
+        return self.play_wav(self.sounds.wav(name), label=f"sound:{name}")
 
     def play_wav(self, wav_bytes: bytes, label: str = "") -> dict:
         if not self.enabled:

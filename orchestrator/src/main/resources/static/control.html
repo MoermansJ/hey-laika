@@ -88,6 +88,7 @@
 
     .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
     .actions .cat { width: 100%; font-size: 0.7rem; color: var(--muted); margin-top: 0.35rem; }
+    .actions button.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
     .actions button .dur { font-size: 0.68rem; color: var(--muted); margin-left: 0.3rem; }
     .actions button .unverified { color: var(--warn); }
 
@@ -146,6 +147,25 @@
         <h2>Sensors</h2>
         <div id="sensors" class="sensors"></div>
         <div class="hint">Greyed sensors are not wired into telemetry yet</div>
+      </section>
+
+      <section class="card" style="margin-top:0.9rem">
+        <h2>Speaker <span id="speaker-chip" class="chip" style="font-weight:400">…</span></h2>
+        <div id="speaker-sounds" class="actions"></div>
+        <div class="hint">Clips on the Grove Speaker Plus. Buzzer beeps and text-to-speech live on the Voice tab.</div>
+      </section>
+
+      <section class="card" style="margin-top:0.9rem">
+        <h2>Mood light <span id="led-chip" class="chip" style="font-weight:400">…</span></h2>
+        <div id="led-moods" class="actions"></div>
+        <div class="actions" style="margin-top:0.5rem; align-items:center">
+          <input type="color" id="led-color" value="#3498db" title="Custom colour"
+                 style="width:2.4rem;height:2rem;padding:0;border:1px solid var(--ring);border-radius:6px;background:var(--surface)">
+          <select id="led-effect"><option value="solid">solid</option><option value="pulse">pulse</option><option value="blink">blink</option></select>
+          <button id="led-apply">Set colour</button>
+          <button id="led-off">Off</button>
+        </div>
+        <div class="hint">The RGB LED on the satellite. Events (wake phrase, someone in view, leash, battery) recolour it on their own; the Eyes tab shows the full state.</div>
       </section>
     </div>
   </div>

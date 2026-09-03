@@ -148,6 +148,7 @@ adapter without a typed DTO.
 | `/senses/range` | GET | *relay* — one-shot ultrasonic read (`?pin=`) |
 | `/ears`, `/ears/transcripts` | GET | *relay* — satellite microphone status and recent transcripts |
 | `/mouth`, `/mouth/say`, `/mouth/stop` | GET/POST | *relay* — speaker status, speak text on the dog, stop playback |
+| `/mouth/sounds`, `/mouth/play` | GET/POST | *relay* — clip library on the dog's speaker; `{"sound"}` plays one (Control tab Speaker card, Voice tab Mouth card) |
 | `/satellite` | GET | *relay* — the XIAO's own status JSON (mic, camera, rssi, led) |
 | `/eyes`, `/eyes/config` | GET/POST | *relay* — camera/person-detection status; pause or resume frame grabbing |
 | `/eyes/snap` | GET | *binary relay* — latest cached camera frame as `image/jpeg` (`?fresh=1` grabs a new one) |

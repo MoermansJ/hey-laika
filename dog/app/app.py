@@ -778,6 +778,34 @@ def mouth_wav(robot_id: str):
     return jsonify({"robotId": robot_id, **result})
 
 
+@app.get("/api/robots/<robot_id>/mouth/sounds")
+@robot_scoped
+def mouth_sounds(robot_id: str):
+    return jsonify({"robotId": robot_id, "sounds": mouth.sounds.names(),
+                    "enabled": mouth.enabled})
+
+
+@app.post("/api/robots/<robot_id>/mouth/play")
+@robot_scoped
+def mouth_play(robot_id: str):
+    """{"sound": "positive_bark"}: a library clip on the dog's speaker."""
+    name = str((request.get_json(silent=True) or {}).get("sound", "")).strip()
+    if not name:
+        return jsonify({"error": "bad_request", "message": "'sound' required"}), 400
+    try:
+        result = mouth.play_sound(name)
+    except KeyError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc.args[0])}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": "not_configured", "message": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"error": "playback_failed", "message": str(exc)}), 502
+    if mood.enabled and result.get("seconds"):
+        mood.flash("speaking", float(result["seconds"]))
+    log_activity("voice", f"Played sound: {name}")
+    return jsonify({"robotId": robot_id, **result})
+
+
 @app.post("/api/robots/<robot_id>/mouth/stop")
 @robot_scoped
 def mouth_stop(robot_id: str):

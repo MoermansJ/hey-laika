@@ -50,6 +50,42 @@ def test_tone_fallback_is_valid_wav():
     assert len(pcm) > RATE // 4
 
 
+def test_sound_library_lists_and_decodes_clips(tmp_path):
+    from app.mouth import SoundLibrary
+
+    (tmp_path / "chirp.wav").write_bytes(make_wav(seconds=0.2))
+    (tmp_path / "notes.txt").write_text("ignored")
+    library = SoundLibrary(tmp_path)
+    assert library.names() == ["chirp"]
+    assert library.wav("chirp") == make_wav(seconds=0.2)
+    assert library.wav("chirp") is library.wav("chirp")       # cached
+    with pytest.raises(KeyError):
+        library.wav("bark")
+    assert SoundLibrary(tmp_path / "missing").names() == []
+
+
+def test_play_sound_goes_through_the_speaker(tmp_path):
+    from app.mouth import SoundLibrary
+
+    (tmp_path / "bark.wav").write_bytes(make_wav(seconds=0.5))
+    ctrl = ScriptedController()
+    mouth = MouthService(ctrl, pin=10, sleep=lambda s: None, sounds=SoundLibrary(tmp_path))
+    result = mouth.play_sound("bark")
+    assert result["text"] == "sound:bark" and result["seconds"] == 0.5
+    assert ctrl.commands == ["XWp10"] and ctrl.binary
+    assert mouth.status()["sounds"] == ["bark"]
+    with pytest.raises(RuntimeError):
+        MouthService(ctrl, pin=None, sounds=SoundLibrary(tmp_path)).play_sound("bark")
+
+
+def test_shipped_bark_clips_decode():
+    from app.mouth import SoundLibrary
+
+    library = SoundLibrary()
+    assert {"positive_bark", "positive_bark2", "negative_bark"} <= set(library.names())
+    assert len(to_pcm8(library.wav("positive_bark"))) > RATE // 4    # > 0.25 s of audio
+
+
 def test_play_wav_attaches_once_and_chunks():
     ctrl = ScriptedController()
     mouth = MouthService(ctrl, pin=10, sleep=lambda s: None)
