@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #ecf0f1; --surface: #ffffff; --ink: #2c3e50; --ink-2: #46627f;
+      --muted: #7f8c8d; --ring: #d5dbdb; --good: #27ae60; --critical: #e74c3c;
+      --warn: #f39c12; --seq: #3498db;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem; }
+    h1 { font-size: 1.15rem; margin: 0; }
+    h2 { font-size: 0.95rem; margin: 0 0 0.5rem; color: var(--ink-2); }
+    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+    .topbar .spacer { flex: 1; }
+    button, input, select {
+      font: inherit; color: var(--ink); background: var(--surface);
+      border: 1px solid var(--ring); border-radius: 6px; padding: 0.35rem 0.6rem;
+    }
+    button { cursor: pointer; }
+    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
+    button.danger { border-color: var(--critical); color: var(--critical); }
+    input[type=number] { width: 5.2rem; }
+    input[type=datetime-local] { width: 12.5rem; }
+    .card { background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.9rem; }
+    .filters { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: end; }
+    .filters label { display: flex; flex-direction: column; gap: 0.2rem;
+      font-size: 0.78rem; color: var(--ink-2); }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0.9rem; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    .mapwrap { position: relative; }
+    svg#map { width: 100%; height: min(70vh, 640px); display: block;
+      background: #f7f9fa; border: 1px solid var(--ring); border-radius: 8px; }
+    .tip { position: absolute; pointer-events: none; z-index: 5; display: none;
+      background: rgba(44, 62, 80, 0.96); color: #fff; font-size: 0.76rem;
+      padding: 0.5rem 0.65rem; border-radius: 8px; max-width: 300px; line-height: 1.35;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
+    .tip b { color: #ffd479; }
+    .tip .aps { margin-top: 0.3rem; border-top: 1px solid rgba(255,255,255,0.25); padding-top: 0.3rem; }
+    .legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--ink-2);
+      margin-top: 0.5rem; align-items: center; }
+    .legend .swatch { display: inline-block; width: 60px; height: 8px; border-radius: 4px;
+      vertical-align: middle; margin: 0 0.3rem; }
+    .stat { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.82rem;
+      padding: 0.2rem 0; border-bottom: 1px dashed var(--ring); }
+    .stat span:last-child { color: var(--ink-2); text-align: right; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    th, td { text-align: left; padding: 0.25rem 0.35rem; border-bottom: 1px solid var(--ring); white-space: nowrap; }
+    tr.pick { cursor: pointer; }
+    tr.pick:hover, tr.active { background: rgba(52, 152, 219, 0.1); }
+    .muted { color: var(--muted); font-size: 0.78rem; }
+    .empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
+    .scroll { max-height: 260px; overflow: auto; }
+    #detail dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; font-size: 0.8rem; }
+    #detail dt { color: var(--ink-2); }
+    #detail dd { margin: 0; }
+    .state { font-size: 0.78rem; color: var(--muted); min-height: 1em; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>Map</h1>
+    <span class="state" id="state"></span>
+    <div class="spacer"></div>
+    <label class="muted"><input type="checkbox" id="live" checked> live (10 s)</label>
+    <button id="refresh">Refresh</button>
+    <button id="sniff" class="primary" title="One WiFi scan now (blocks the dog ~2 s)">Sniff now</button>
+    <button id="reset" class="danger" title="Re-anchor the origin: the dog is at its home spot">Reset origin</button>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <label>Window
+        <select id="window">
+          <option value="3600">last hour</option>
+          <option value="21600">last 6 h</option>
+          <option value="86400" selected>last 24 h</option>
+          <option value="604800">last 7 days</option>
+          <option value="">all time</option>
+          <option value="custom">custom…</option>
+        </select>
+      </label>
+      <label>From <input type="datetime-local" id="since" disabled></label>
+      <label>To <input type="datetime-local" id="until" disabled></label>
+      <label>Source
+        <select id="source">
+          <option value="">auto + manual</option>
+          <option value="auto">auto (sniffer)</option>
+          <option value="manual">manual</option>
+        </select>
+      </label>
+      <label>Min APs <input type="number" id="minAps" min="0" value="0"></label>
+      <label>Every Nth <input type="number" id="every" min="1" value="1" title="Thin the trail: keep one sample in N"></label>
+      <label>Max points <input type="number" id="limit" min="1" max="2000" value="500"></label>
+      <label>Colour by
+        <select id="colorBy"><option value="age">sample age</option></select>
+      </label>
+      <label>Layers
+        <span>
+          <label style="display:inline"><input type="checkbox" id="layerTrail" checked> trail</label>
+          <label style="display:inline"><input type="checkbox" id="layerGrid" checked> grid</label>
+        </span>
+      </label>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="mapwrap">
+        <svg id="map" viewBox="0 0 800 600"></svg>
+        <div class="tip" id="tip"></div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Laika</h2>
+        <div id="where" class="empty">…</div>
+      </div>
+      <div class="card">
+        <h2>Selected sample</h2>
+        <div id="detail" class="empty">Hover a point for a quick look, click to pin it here.</div>
+      </div>
+      <div class="card">
+        <h2>Collected</h2>
+        <div id="summary"></div>
+        <div class="scroll" style="margin-top:0.5rem">
+          <table id="aps"><thead><tr><th>Network</th><th>Heard</th><th>Best</th><th>Worst</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="muted" style="margin-top:0.4rem">Click a network to colour the map by its signal.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="nav.js" defer></script>
+  <script>
+    const ROBOT = hlRobotParam("bittle-1");
+    const BASE = `/api/robots/${ROBOT}`;
+    document.querySelector("h1").textContent = `Map — ${ROBOT}`;
+
+    const $ = (id) => document.getElementById(id);
+    const W = 800, H = 600, PAD = 40;
+    let samples = [];          // newest first, as served
+    let pose = null;
+    let status = null;
+    let pinned = null;         // sample id pinned in the detail card
+    let colorBy = "age";       // "age" or a BSSID
+    let view = null;           // world <-> screen mapping
+
+    // ---- filters ---------------------------------------------------------
+
+    function toLocalInput(epochS) {
+      const d = new Date(epochS * 1000);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function filterQuery() {
+      const q = new URLSearchParams();
+      const win = $("window").value;
+      const now = Date.now() / 1000;
+      if (win === "custom") {
+        if ($("since").value) q.set("since", Date.parse($("since").value) / 1000);
+        if ($("until").value) q.set("until", Date.parse($("until").value) / 1000);
+      } else if (win) {
+        q.set("since", Math.floor(now - Number(win)));
+      }
+      if ($("source").value) q.set("source", $("source").value);
+      const minAps = parseInt($("minAps").value, 10);
+      if (minAps > 0) q.set("minAps", minAps);
+      const every = parseInt($("every").value, 10);
+      if (every > 1) q.set("every", every);
+      q.set("limit", Math.min(2000, Math.max(1, parseInt($("limit").value, 10) || 500)));
+      return `?${q.toString()}`;
+    }
+
+    $("window").addEventListener("change", () => {
+      const custom = $("window").value === "custom";
+      $("since").disabled = $("until").disabled = !custom;
+      if (custom && !$("since").value) {
+        $("since").value = toLocalInput(Date.now() / 1000 - 86400);
+        $("until").value = toLocalInput(Date.now() / 1000);
+      }
+      refresh();
+    });
+    ["since", "until", "source", "minAps", "every", "limit"].forEach((id) =>
+      $(id).addEventListener("change", refresh));
+    ["layerTrail", "layerGrid"].forEach((id) => $(id).addEventListener("change", draw));
+    $("colorBy").addEventListener("change", () => { colorBy = $("colorBy").value; draw(); });
+
+    // ---- colour scales ---------------------------------------------------
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function mix(c1, c2, t) {
+      return `rgb(${Math.round(lerp(c1[0], c2[0], t))},${Math.round(lerp(c1[1], c2[1], t))},${Math.round(lerp(c1[2], c2[2], t))})`;
+    }
+    const FRESH = [52, 152, 219], STALE = [189, 195, 199];
+    const STRONG = [39, 174, 96], WEAK = [231, 76, 60];
+
+    function ageColor(s, tMin, tMax) {
+      const span = Math.max(1, tMax - tMin);
+      return mix(STALE, FRESH, (s.t - tMin) / span);
+    }
+
+    function rssiColor(dbm) {
+      const t = Math.max(0, Math.min(1, (dbm + 90) / 50));   // -90 .. -40
+      return mix(WEAK, STRONG, t);
+    }
+
+    function apRssi(s, bssid) {
+      const ap = s.aps.find((a) => a.bssid === bssid);
+      return ap ? ap.rssi : null;
+    }
+
+    // ---- geometry --------------------------------------------------------
+
+    function fitView() {
+      const xs = samples.map((s) => s.x), ys = samples.map((s) => s.y);
+      if (pose) { xs.push(pose.x); ys.push(pose.y); }
+      if (!xs.length) { xs.push(0); ys.push(0); }
+      let minX = Math.min(...xs), maxX = Math.max(...xs);
+      let minY = Math.min(...ys), maxY = Math.max(...ys);
+      const spanX = Math.max(2, maxX - minX), spanY = Math.max(2, maxY - minY);
+      const scale = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY);
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      // World: x east, y north (heading 0 = +x, left turn = +deg). Screen y is flipped.
+      view = {
+        scale,
+        sx: (x) => W / 2 + (x - cx) * scale,
+        sy: (y) => H / 2 - (y - cy) * scale,
+        minX: cx - (W / 2) / scale, maxX: cx + (W / 2) / scale,
+        minY: cy - (H / 2) / scale, maxY: cy + (H / 2) / scale,
+      };
+    }
+
+    function gridStep() {
+      const spanM = (view.maxX - view.minX);
+      if (spanM > 40) return 10;
+      if (spanM > 16) return 5;
+      if (spanM > 8) return 2;
+      if (spanM > 3) return 1;
+      return 0.5;
+    }
+
+    // ---- drawing ---------------------------------------------------------
+
+    function draw() {
+      fitView();
+      const svg = $("map");
+      let html = "";
+      if ($("layerGrid").checked) {
+        const step = gridStep();
+        for (let gx = Math.ceil(view.minX / step) * step; gx <= view.maxX; gx += step) {
+          const X = view.sx(gx).toFixed(1);
+          const major = Math.abs(gx) < 1e-9;
+          html += `<line x1="${X}" x2="${X}" y1="0" y2="${H}" stroke="${major ? "#95a5a6" : "#e3e8ea"}" stroke-width="${major ? 1.2 : 1}"/>`;
+          html += `<text x="${X}" y="${H - 6}" font-size="10" fill="#95a5a6" text-anchor="middle">${+gx.toFixed(1)} m</text>`;
+        }
+        for (let gy = Math.ceil(view.minY / step) * step; gy <= view.maxY; gy += step) {
+          const Y = view.sy(gy).toFixed(1);
+          const major = Math.abs(gy) < 1e-9;
+          html += `<line x1="0" x2="${W}" y1="${Y}" y2="${Y}" stroke="${major ? "#95a5a6" : "#e3e8ea"}" stroke-width="${major ? 1.2 : 1}"/>`;
+          html += `<text x="6" y="${(+Y - 3).toFixed(1)}" font-size="10" fill="#95a5a6">${+gy.toFixed(1)} m</text>`;
+        }
+      }
+      // Chronological order for the trail (server returns newest first).
+      const chrono = samples.slice().reverse();
+      if ($("layerTrail").checked && chrono.length > 1) {
+        const pts = chrono.map((s) => `${view.sx(s.x).toFixed(1)},${view.sy(s.y).toFixed(1)}`).join(" ");
+        html += `<polyline points="${pts}" fill="none" stroke="#7f8c8d" stroke-width="1.2" stroke-opacity="0.6" stroke-dasharray="3 3"/>`;
+      }
+      const tMin = chrono.length ? chrono[0].t : 0, tMax = chrono.length ? chrono[chrono.length - 1].t : 1;
+      chrono.forEach((s) => {
+        let fill, r = 5, extra = "";
+        if (colorBy === "age") {
+          fill = ageColor(s, tMin, tMax);
+        } else {
+          const dbm = apRssi(s, colorBy);
+          if (dbm == null) { fill = "#ffffff"; extra = ' stroke="#bdc3c7" stroke-width="1"'; r = 3.5; }
+          else fill = rssiColor(dbm);
+        }
+        const active = pinned === s.id;
+        html += `<circle class="pt" data-id="${s.id}" cx="${view.sx(s.x).toFixed(1)}" cy="${view.sy(s.y).toFixed(1)}" r="${active ? r + 3 : r}" fill="${fill}"${extra}${active ? ' stroke="#2c3e50" stroke-width="2"' : ""}/>`;
+      });
+      if (pose) {
+        // The marker never intercepts the pointer: the newest sample sits
+        // right under it and must stay hoverable.
+        const X = view.sx(pose.x), Y = view.sy(pose.y);
+        const radius = Math.max(8, Math.min(200, (pose.driftM || 0) * view.scale));
+        html += `<g pointer-events="none">`;
+        html += `<circle cx="${X.toFixed(1)}" cy="${Y.toFixed(1)}" r="${radius.toFixed(1)}" fill="rgba(231,76,60,0.08)" stroke="#e74c3c" stroke-dasharray="4 3" stroke-width="1"/>`;
+        // Screen rotation is clockwise; world heading is counter-clockwise.
+        html += `<g transform="translate(${X.toFixed(1)} ${Y.toFixed(1)}) rotate(${(-pose.heading).toFixed(1)})">` +
+          `<polygon points="14,0 -8,-8 -4,0 -8,8" fill="#e74c3c" stroke="#fff" stroke-width="1.5"/></g>`;
+        html += `<text x="${(X + 14).toFixed(1)}" y="${(Y - 12).toFixed(1)}" font-size="11" fill="#c0392b" font-weight="600">Laika</text>`;
+        html += `</g>`;
+      }
+      svg.innerHTML = html;
+      drawLegend(tMin, tMax);
+    }
+
+    function drawLegend(tMin, tMax) {
+      const el = $("legend");
+      if (colorBy === "age") {
+        el.innerHTML = samples.length
+          ? `<span>older <span class="swatch" style="background:linear-gradient(90deg, rgb(189,195,199), rgb(52,152,219))"></span> newer</span>` +
+            `<span>${new Date(tMin * 1000).toLocaleString()} → ${new Date(tMax * 1000).toLocaleString()}</span>` +
+            `<span>▲ last known position, dashed ring = dead-reckoning uncertainty</span>`
+          : "";
+      } else {
+        const name = apName(colorBy);
+        el.innerHTML = `<span>${esc(name)}: weak <span class="swatch" style="background:linear-gradient(90deg, rgb(231,76,60), rgb(39,174,96))"></span> strong (−90 … −40 dBm)</span>` +
+          `<span>hollow = not heard there</span>`;
+      }
+    }
+
+    // ---- hover / pin -----------------------------------------------------
+
+    const byId = () => new Map(samples.map((s) => [s.id, s]));
+
+    function sampleHtml(s, compact) {
+      const when = new Date(s.t * 1000);
+      const aps = s.aps.slice().sort((a, b) => b.rssi - a.rssi);
+      const shown = compact ? aps.slice(0, 6) : aps;
+      const rows = shown.map((a) =>
+        `${esc(a.ssid || "(hidden)")} <span style="opacity:.75">${esc(a.bssid)}</span> ${a.rssi} dBm` +
+        (a.channel != null ? ` ch${a.channel}` : "")).join("<br>");
+      const more = aps.length > shown.length ? `<br>… +${aps.length - shown.length} more` : "";
+      return `<b>#${s.id}</b> ${esc(when.toLocaleString())} <span style="opacity:.75">(${esc(s.source)})</span><br>` +
+        `pose (${s.x}, ${s.y}) m · heading ${s.heading}° · ±${s.driftM} m` +
+        (s.yaw != null ? ` · IMU yaw ${s.yaw}°` : "") +
+        (s.battery != null ? ` · battery ${s.battery}%` : "") +
+        `<div class="aps">${aps.length} network${aps.length === 1 ? "" : "s"}<br>${rows}${more}</div>`;
+    }
+
+    const tip = $("tip");
+    $("map").addEventListener("mousemove", (ev) => {
+      const target = ev.target.closest && ev.target.closest("circle.pt");
+      if (!target) { tip.style.display = "none"; return; }
+      const s = byId().get(Number(target.dataset.id));
+      if (!s) return;
+      tip.innerHTML = sampleHtml(s, true);
+      tip.style.display = "block";
+      const wrap = $("map").getBoundingClientRect();
+      let left = ev.clientX - wrap.left + 14, top = ev.clientY - wrap.top + 14;
+      if (left + 310 > wrap.width) left = ev.clientX - wrap.left - 314;
+      if (top + tip.offsetHeight > wrap.height) top = Math.max(0, ev.clientY - wrap.top - tip.offsetHeight - 10);
+      tip.style.left = `${left}px`; tip.style.top = `${top}px`;
+    });
+    $("map").addEventListener("mouseleave", () => { tip.style.display = "none"; });
+    $("map").addEventListener("click", (ev) => {
+      const target = ev.target.closest && ev.target.closest("circle.pt");
+      pinned = target ? Number(target.dataset.id) : null;
+      renderDetail();
+      draw();
+    });
+
+    function renderDetail() {
+      const el = $("detail");
+      const s = pinned != null ? byId().get(pinned) : null;
+      if (!s) {
+        el.className = "empty";
+        el.textContent = "Hover a point for a quick look, click to pin it here.";
+        return;
+      }
+      el.className = "";
+      const aps = s.aps.slice().sort((a, b) => b.rssi - a.rssi);
+      el.innerHTML = `<dl>` +
+        `<dt>Sample</dt><dd>#${s.id} (${esc(s.source)})</dd>` +
+        `<dt>Time</dt><dd>${esc(new Date(s.t * 1000).toLocaleString())}</dd>` +
+        `<dt>Position</dt><dd>${s.x}, ${s.y} m</dd>` +
+        `<dt>Heading</dt><dd>${s.heading}°${s.yaw != null ? ` (IMU yaw ${s.yaw}°)` : ""}</dd>` +
+        `<dt>Uncertainty</dt><dd>±${s.driftM} m</dd>` +
+        `<dt>Battery</dt><dd>${s.battery != null ? s.battery + "%" : "—"}</dd>` +
+        `</dl>` +
+        `<table style="margin-top:0.5rem"><thead><tr><th>Network</th><th>RSSI</th><th>Ch</th></tr></thead><tbody>` +
+        aps.map((a) => `<tr><td>${esc(a.ssid || "(hidden)")}<br><span class="muted">${esc(a.bssid)}</span></td>` +
+          `<td>${a.rssi} dBm</td><td>${a.channel ?? "—"}</td></tr>`).join("") +
+        `</tbody></table>`;
+    }
+
+    // ---- side cards ------------------------------------------------------
+
+    const apNames = new Map();
+    function apName(bssid) {
+      const n = apNames.get(bssid);
+      return n ? `${n} (${bssid})` : bssid;
+    }
+
+    function renderWhere() {
+      const el = $("where");
+      if (!pose) { el.className = "empty"; el.textContent = "no pose yet"; return; }
+      el.className = "";
+      const last = status && status.lastSample;
+      const age = status && status.lastSniffAgeS != null ? `${Math.round(status.lastSniffAgeS)} s ago` : "not yet this session";
+      el.innerHTML =
+        `<div class="stat"><span>Last known position</span><span>${pose.x}, ${pose.y} m</span></div>` +
+        `<div class="stat"><span>Heading</span><span>${pose.heading}°</span></div>` +
+        `<div class="stat"><span>Dead-reckoning uncertainty</span><span>±${pose.driftM} m</span></div>` +
+        `<div class="stat"><span>Last sniff</span><span>${esc(age)}</span></div>` +
+        `<div class="stat"><span>Last sample</span><span>${last ? esc(new Date(last.t * 1000).toLocaleString()) : "—"}</span></div>` +
+        `<div class="stat"><span>Sniffer</span><span>${status ? (status.away ? "suppressed (away)" : status.enabled ? "listening for motion gaps" : "off") : "—"}</span></div>` +
+        `<div class="stat"><span>Stored samples</span><span>${status ? status.sampleCount ?? 0 : "—"}</span></div>`;
+    }
+
+    function renderSummary(meta) {
+      const agg = new Map();
+      samples.forEach((s) => s.aps.forEach((a) => {
+        const e = agg.get(a.bssid) || { ssid: a.ssid, bssid: a.bssid, heard: 0, best: -999, worst: 0 };
+        e.heard += 1; e.best = Math.max(e.best, a.rssi); e.worst = Math.min(e.worst, a.rssi);
+        if (!e.ssid && a.ssid) e.ssid = a.ssid;
+        agg.set(a.bssid, e);
+      }));
+      apNames.clear();
+      agg.forEach((e) => apNames.set(e.bssid, e.ssid));
+      const list = [...agg.values()].sort((a, b) => b.heard - a.heard || b.best - a.best);
+
+      const tSpan = samples.length
+        ? `${new Date(samples[samples.length - 1].t * 1000).toLocaleString()} → ${new Date(samples[0].t * 1000).toLocaleString()}`
+        : "—";
+      $("summary").innerHTML =
+        `<div class="stat"><span>Shown / matched / stored</span><span>${meta.returned} / ${meta.matched} / ${meta.total}</span></div>` +
+        `<div class="stat"><span>Time span shown</span><span>${esc(tSpan)}</span></div>` +
+        `<div class="stat"><span>Distinct networks</span><span>${list.length}</span></div>` +
+        (meta.matched > meta.returned
+          ? `<div class="muted" style="margin-top:0.3rem">Thinned: raise “Max points” or use “Every Nth” to spread the window.</div>` : "");
+
+      const select = $("colorBy");
+      const keep = colorBy;
+      select.innerHTML = `<option value="age">sample age</option>` +
+        list.map((e) => `<option value="${esc(e.bssid)}">${esc(e.ssid || "(hidden)")} · ${esc(e.bssid)}</option>`).join("");
+      if ([...select.options].some((o) => o.value === keep)) select.value = keep; else { colorBy = "age"; select.value = "age"; }
+
+      const tbody = $("aps").querySelector("tbody");
+      tbody.innerHTML = list.map((e) =>
+        `<tr class="pick${colorBy === e.bssid ? " active" : ""}" data-bssid="${esc(e.bssid)}">` +
+        `<td>${esc(e.ssid || "(hidden)")}<br><span class="muted">${esc(e.bssid)}</span></td>` +
+        `<td>${e.heard}×</td><td>${e.best} dBm</td><td>${e.worst} dBm</td></tr>`).join("");
+      tbody.querySelectorAll("tr.pick").forEach((tr) => tr.addEventListener("click", () => {
+        colorBy = colorBy === tr.dataset.bssid ? "age" : tr.dataset.bssid;
+        select.value = colorBy;
+        tbody.querySelectorAll("tr.pick").forEach((row) => row.classList.toggle("active", row.dataset.bssid === colorBy));
+        draw();
+      }));
+    }
+
+    // ---- data ------------------------------------------------------------
+
+    function setState(text, isError) {
+      const el = $("state");
+      el.textContent = text || "";
+      el.style.color = isError ? "var(--critical)" : "var(--muted)";
+    }
+
+    async function refresh() {
+      try {
+        const [page, st] = await Promise.all([
+          hlApi(BASE, `/senses/samples${filterQuery()}`),
+          hlApi(BASE, "/senses"),
+        ]);
+        samples = page.samples || [];
+        pose = page.pose || st.pose || null;
+        status = st;
+        if (pinned != null && !samples.some((s) => s.id === pinned)) pinned = null;
+        renderWhere();
+        renderSummary(page);
+        renderDetail();
+        draw();
+        setState(`updated ${new Date().toLocaleTimeString()}`);
+      } catch (err) {
+        setState(`offline: ${err.message}`, true);
+      }
+    }
+
+    $("refresh").addEventListener("click", refresh);
+    $("sniff").addEventListener("click", async () => {
+      setState("sniffing…");
+      try {
+        const out = await hlApi(BASE, "/senses/sniff", { method: "POST" });
+        pinned = out.sample ? out.sample.id : pinned;
+        await refresh();
+      } catch (err) { setState(`sniff failed: ${err.message}`, true); }
+    });
+    $("reset").addEventListener("click", async () => {
+      if (!confirm("Reset the map origin to the dog's current spot? Existing samples keep their coordinates.")) return;
+      try {
+        await hlApi(BASE, "/senses/pose/reset", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" });
+        await refresh();
+      } catch (err) { setState(`reset failed: ${err.message}`, true); }
+    });
+
+    const poller = hlPoll(async () => { if ($("live").checked) await refresh(); }, 10000);
+    $("live").addEventListener("change", () => { if ($("live").checked) poller.tick(); });
+  </script>
+</body>
+</html>
