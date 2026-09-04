@@ -41,6 +41,8 @@ MOODS = {
 # the satellite sketch: no XIAO reflash needed, and 600 ms steps are a
 # handful of tiny requests per second. Firmware-native smoothing is queued
 # in FIRMWARE_QUEUE.md.
+MANUAL_HOLD_S = 60.0        # a GUI/API pin outranks camera and framework events this long
+
 RAINBOW = ((255, 0, 0), (255, 110, 0), (255, 220, 0), (0, 200, 0),
            (0, 90, 255), (60, 0, 200), (170, 0, 255))
 
@@ -71,6 +73,7 @@ class MoodService:
         self._base = dict(_mood_spec(base), name=base)
         self._flash: dict | None = None
         self._flash_timer: threading.Timer | None = None
+        self._manual_until = 0.0
         self._stop = threading.Event()
         self.stats = {"sets": 0, "failures": 0, "lastError": None,
                       "lastEvent": None, "lastSetAt": None}
@@ -95,12 +98,17 @@ class MoodService:
 
     # -- public --
 
-    def set(self, mood: str) -> dict:
-        """Pin a named mood as the base (clears any running flash)."""
+    def set(self, mood: str, manual: bool = True) -> dict:
+        """Pin a named mood as the base (clears any running flash). A pin from
+        the GUI or API holds off event-driven flashes for MANUAL_HOLD_S: with
+        someone in front of the camera, vision.person re-flashed cyan every
+        1.5 s and every click looked ignored (2026-09-04)."""
         spec = dict(_mood_spec(mood), name=mood)
         with self._lock:
             self._base = spec
             self._clear_flash_locked()
+            if manual:
+                self._manual_until = self._clock() + MANUAL_HOLD_S
         self._apply(spec)
         return self.status()
 
@@ -115,6 +123,7 @@ class MoodService:
         with self._lock:
             self._base = spec
             self._clear_flash_locked()
+            self._manual_until = self._clock() + MANUAL_HOLD_S
         self._apply(spec)
         return self.status()
 
@@ -136,12 +145,14 @@ class MoodService:
             return
         mood, seconds = EVENT_MOODS[event]
         self.stats["lastEvent"] = event
+        if self._clock() < self._manual_until:
+            return
         if mood is None:
             with self._lock:
                 self._clear_flash_locked()
             self._apply(self._base)
         elif seconds is None:
-            self.set(mood)
+            self.set(mood, manual=False)
         else:
             self.flash(mood, seconds)
 

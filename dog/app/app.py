@@ -752,13 +752,21 @@ def mouth_say(robot_id: str):
     try:
         result = mouth.say(text)
     except RuntimeError as exc:
-        return jsonify({"error": "not_configured", "message": str(exc)}), 409
+        return _speaker_error(exc)
     except Exception as exc:
         return jsonify({"error": "tts_failed", "message": str(exc)}), 502
     if mood.enabled and result.get("seconds"):
         mood.flash("speaking", float(result["seconds"]))
     log_activity("voice", f"Said: {text}")
     return jsonify({"robotId": robot_id, **result})
+
+
+def _speaker_error(exc: RuntimeError):
+    """SPEAKER_PIN unset is a configuration problem; a lost acknowledgement is
+    the WiFi link to the dog dropping mid-clip (2026-09-04), not config."""
+    if "not acknowledged" in str(exc) or "refused" in str(exc):
+        return jsonify({"error": "speaker_unreachable", "message": str(exc)}), 502
+    return jsonify({"error": "not_configured", "message": str(exc)}), 409
 
 
 @app.post("/api/robots/<robot_id>/mouth/wav")
@@ -772,7 +780,7 @@ def mouth_wav(robot_id: str):
     try:
         result = mouth.play_wav(upload.read(), label=upload.filename or "wav")
     except RuntimeError as exc:
-        return jsonify({"error": "not_configured", "message": str(exc)}), 409
+        return _speaker_error(exc)
     except (wave_error, EOFError, ValueError) as exc:
         return jsonify({"error": "bad_request", "message": str(exc)}), 400
     return jsonify({"robotId": robot_id, **result})
@@ -797,7 +805,7 @@ def mouth_play(robot_id: str):
     except KeyError as exc:
         return jsonify({"error": "bad_request", "message": str(exc.args[0])}), 400
     except RuntimeError as exc:
-        return jsonify({"error": "not_configured", "message": str(exc)}), 409
+        return _speaker_error(exc)
     except Exception as exc:
         return jsonify({"error": "playback_failed", "message": str(exc)}), 502
     if mood.enabled and result.get("seconds"):

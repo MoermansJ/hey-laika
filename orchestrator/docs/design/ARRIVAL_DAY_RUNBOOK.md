@@ -195,6 +195,26 @@ mood light was stuck pure white all evening. Both are explained:
   Verified without the dog's help by querying the satellite directly: it
   accepted red at brightness 40 and a blue pulse; the LED stayed white.
 
+Afternoon and evening, same day, how it actually ended:
+
+- The 3.3 V feed alone changed the LED from white to blue; it still accepted
+  nothing. The LED started working once its cable and the XIAO pins were
+  re-checked wire by wire (IN port, yellow D2, white D3, red 3V3, black to
+  a ground). Verify with the satellite's `/led` read-back *and* your eyes.
+- The speaker's yellow had been on the XIAO's **D2**, the LED clock line:
+  every LED frame was a 50 kHz burst into the amplifier. After moving it to
+  a BiBoard socket it was on an analog socket first (silence) and finally
+  on the UART socket's white lead (GPIO 10). The socket was identified by
+  moving the ranger's yellow onto the same cable's yellow lead and reading
+  a distance. Batch 2 (LEDC PWM) then produced tones, and batch 3 (4 KB
+  prebuffer, `XWf`) continuous speech. 1536-byte audio frames stall the
+  firmware's WebSocket layer until a reboot: keep 1024.
+- esptool's closing "hard reset via RTS" does nothing on this board; after
+  every flash tap Reset by hand or the dog stays in the flasher stub.
+- Describe wiring to the owner as *cable and colour to labelled pin*, one
+  complete picture at a time. Socket numbers and "third pin down" cost an
+  hour.
+
 ## 5. Record the outcome
 
 Add a dated addendum to `VOICE_RELAY_BRIEF.md` and `NAVIGATION_MAPPING_BRIEF.md`

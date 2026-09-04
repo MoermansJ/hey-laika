@@ -51,7 +51,7 @@ bisected 2026-09-03 with `-DSATELLITE_MIC=0`. Keep it that way.
 | Module | XIAO pins | Notes |
 |---|---|---|
 | Power | 5V / GND | From analog socket A on the BiBoard (red/black) |
-| Chainable RGB LED | **D2 = CI (clock, Grove yellow)**, **D3 = DI (data, Grove white)** | LED power: **red to the XIAO's 3V3 pin, black to its GND**. Not the 5 V socket: the P9813 wants inputs above 0.7 × VDD, which the XIAO's 3.3 V never reaches at 5 V, and the LED then sits pure white ignoring every frame (2026-09-04). The LED's OUT socket is free for a second LED |
+| Chainable RGB LED | **D2 = CI (clock, Grove yellow)**, **D3 = DI (data, Grove white)**, cable in the LED's **IN** port | LED power: **red to the XIAO's 3V3 pin, black to a ground** (the XIAO's GND or any BiBoard socket ground). Not the 5 V socket: the P9813 wants inputs above 0.7 × VDD, which the XIAO's 3.3 V never reaches at 5 V, and the LED then sits pure white ignoring every frame (2026-09-04). The LED's OUT socket is free for a second LED |
 | Camera, mic | on-board | Sense expansion board, camera ribbon seated |
 
 ## Bench validation (before it goes on the dog)

@@ -152,3 +152,15 @@ def test_disabled_without_satellite():
     mood.on_event("leash.lost", {})
     assert mood.status()["sets"] == 0
     assert mood.set("happy")["enabled"] is False
+
+
+def test_manual_pin_outranks_events_for_a_minute():
+    now = [100.0]
+    sat = FakeSatellite()
+    mood = MoodService(sat, clock=lambda: now[0])
+    mood.set_color(255, 0, 0)
+    mood.on_event("vision.person")
+    assert sat.shown["r"] == 255 and sat.shown["g"] == 0          # still red
+    now[0] += 61
+    mood.on_event("vision.person")
+    assert sat.shown["g"] == MOODS["person"][1]                    # cyan flash wins again

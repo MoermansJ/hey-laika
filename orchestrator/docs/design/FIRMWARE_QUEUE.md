@@ -14,8 +14,13 @@ in `../robot/HARDWARE.md` (firmware row) and the audit reports.
 
 ## BiBoard (hey-laika fork, `opencat-esp32/`)
 
-Flashed now: fork commit `6c013ca` (rows 1-5, batch 2, flashed 2026-09-04
-~14:00). Row 6 is built as `noncodefiles/fw-build/2026-09-04-batch3/`. Rows are moved out of the table once their bench check
+Flashed now: fork commit `fce29da` (rows 1-6, batch 3, flashed 2026-09-04
+18:00; `fce29da` also puts the ring accessors the ISR calls in IRAM). Bench
+result the same evening: speech, barks and test tones play continuously
+through the Speaker Plus, walkie-talkie quality, once the wiring matched
+`../robot/HARDWARE.md`. Rows 1-6 stay listed until their individual bench
+checks are ticked; the OOM guard (1), XW1 (2) and the crash path (4) are
+still unchecked. Rows are moved out of the table once their bench check
 has passed, not when flashed.
 
 | # | Change | Commit | Built? | Bench check after flashing |
