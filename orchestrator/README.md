@@ -18,10 +18,10 @@ In six lines:
 
 - `domain` is pure Java: personality model, action catalog, rule engine, fleet identity, and records mirroring the adapter's JSON by field name.
 - `application.usecase` holds one `<Verb>UseCase` class per operation with a single `execute`; that package is the core's whole inbound API.
-- `application.service` holds the stateful collaborators (`FleetRegistry`, `BehaviorLoops`/`RobotBehaviorLoop`, `ActionExecutor`); `application.port.out` holds the interfaces the core needs (`RobotAdapterPort`, repositories, `EventPublisherPort`, metrics).
+- `application.service` holds the shared collaborators (`BehaviorLoops`/`RobotBehaviorLoop`, `ActionExecutor`, `FleetSweep`); durable state lives behind `application.port.out` (`RobotAdapterPort`, personality state, decision history, leases, repositories, `EventPublisherPort`, metrics). The loop holds a database lease per robot, so a second instance cannot drive the same dog.
 - `adapter.in.*` are REST controllers, the STOMP broadcast/rollup schedulers and the startup fleet sync; `adapter.out.*` implement the ports over HTTP (Python adapter), JPA (Postgres), STOMP and Micrometer.
 - `infrastructure.config` wires it: `@ConfigurationProperties` records, the `RestClient` (3 s connect / 30 s read), WebSocket, and a component scan that registers every `*UseCase` without annotations.
-- Fleet of one by decision: `/api/robots/{id}` routing stays, but no genericity is added for a hypothetical second robot; `bittle-2` "Mocha" is a GUI fixture.
+- Fleet of one by decision: `domain.fleet.Fleet` is built once from configuration and `/api/robots/{id}` routing stays, but no genericity is added for a hypothetical second robot; `bittle-2` "Mocha" is a GUI fixture.
 
 ## Run the full stack
 
@@ -168,9 +168,9 @@ adapter without a typed DTO.
 | Endpoint | Method | Description |
 |---|---|---|
 | `/personality` | GET | Orchestrator personality snapshot (six dimensions, posture) |
-| `/status` | GET | Loop running / last decision |
+| `/status` | GET | Loop running, owning instance, personality, last decision |
 | `/history?limit=50` | GET | Recent decisions, newest first |
-| `/start` | POST | Start the behavior loop for this robot |
+| `/start` | POST | Start the behavior loop for this robot; `409 behavior_loop_held_elsewhere` while another instance holds its lease |
 | `/stop` | POST | Stop it |
 | `/event/{type}` | POST | Apply a personality event (`BehaviorEvent` name); unknown → 400 |
 | `/action/{action}` | POST | Queue a manual action through the loop (executes immediately when the loop is stopped) |

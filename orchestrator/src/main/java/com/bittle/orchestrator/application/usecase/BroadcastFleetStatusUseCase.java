@@ -1,24 +1,24 @@
 package com.bittle.orchestrator.application.usecase;
 
 import com.bittle.orchestrator.application.port.out.EventPublisherPort;
-import com.bittle.orchestrator.application.service.FleetRegistry;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import com.bittle.orchestrator.domain.fleet.FleetStats;
 
 public class BroadcastFleetStatusUseCase {
 
-    private final FleetRegistry registry;
+    private final Fleet fleet;
     private final GetFleetStatusUseCase fleetStatus;
     private final EventPublisherPort publisher;
 
-    public BroadcastFleetStatusUseCase(FleetRegistry registry, GetFleetStatusUseCase fleetStatus,
+    public BroadcastFleetStatusUseCase(Fleet fleet, GetFleetStatusUseCase fleetStatus,
                                        EventPublisherPort publisher) {
-        this.registry = registry;
+        this.fleet = fleet;
         this.fleetStatus = fleetStatus;
         this.publisher = publisher;
     }
 
     public void execute() {
-        if (registry.all().isEmpty()) {
+        if (fleet.all().isEmpty()) {
             return;
         }
         var statuses = fleetStatus.execute();

@@ -1,20 +1,20 @@
 package com.bittle.orchestrator.application.usecase;
 
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
-import com.bittle.orchestrator.application.service.FleetRegistry;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import java.util.Map;
 
 public class RelayPostToRobotUseCase {
 
-    private final FleetRegistry registry;
+    private final Fleet fleet;
     private final RobotAdapterPort adapter;
 
-    public RelayPostToRobotUseCase(FleetRegistry registry, RobotAdapterPort adapter) {
-        this.registry = registry;
+    public RelayPostToRobotUseCase(Fleet fleet, RobotAdapterPort adapter) {
+        this.fleet = fleet;
         this.adapter = adapter;
     }
 
     public Map<String, Object> execute(String robotId, String path) {
-        return adapter.post(registry.get(robotId), path);
+        return adapter.post(fleet.get(robotId), path);
     }
 }

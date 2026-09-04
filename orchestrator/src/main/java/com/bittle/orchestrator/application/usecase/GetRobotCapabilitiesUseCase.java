@@ -1,20 +1,20 @@
 package com.bittle.orchestrator.application.usecase;
 
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
-import com.bittle.orchestrator.application.service.FleetRegistry;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import java.util.Map;
 
 public class GetRobotCapabilitiesUseCase {
 
-    private final FleetRegistry registry;
+    private final Fleet fleet;
     private final RobotAdapterPort adapter;
 
-    public GetRobotCapabilitiesUseCase(FleetRegistry registry, RobotAdapterPort adapter) {
-        this.registry = registry;
+    public GetRobotCapabilitiesUseCase(Fleet fleet, RobotAdapterPort adapter) {
+        this.fleet = fleet;
         this.adapter = adapter;
     }
 
     public Map<String, Object> execute(String robotId) {
-        return adapter.capabilities(registry.get(robotId));
+        return adapter.capabilities(fleet.get(robotId));
     }
 }

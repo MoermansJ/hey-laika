@@ -1,21 +1,27 @@
 package com.bittle.orchestrator.infrastructure.config;
 
 import com.bittle.orchestrator.application.BehaviorSettings;
-import com.bittle.orchestrator.application.ConfiguredFleet;
+import com.bittle.orchestrator.application.InstanceIdentity;
 import com.bittle.orchestrator.application.MetricsSettings;
+import com.bittle.orchestrator.application.port.out.DecisionHistoryRepositoryPort;
 import com.bittle.orchestrator.application.port.out.EventPublisherPort;
+import com.bittle.orchestrator.application.port.out.LeasePort;
 import com.bittle.orchestrator.application.port.out.OrchestratorMetricsPort;
+import com.bittle.orchestrator.application.port.out.PersonalityStateRepositoryPort;
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
 import com.bittle.orchestrator.application.service.ActionExecutor;
 import com.bittle.orchestrator.application.service.BehaviorLoops;
-import com.bittle.orchestrator.application.service.FleetRegistry;
 import com.bittle.orchestrator.application.service.FleetSweep;
 import com.bittle.orchestrator.application.service.OrchestratorMetricsSnapshot;
 import com.bittle.orchestrator.domain.behavior.DecisionEngine;
 import com.bittle.orchestrator.domain.behavior.PersonalityStateManager;
 import com.bittle.orchestrator.domain.behavior.RuleBasedDecisionEngine;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import com.bittle.orchestrator.domain.fleet.Robot;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.ComponentScan.Filter;
@@ -29,13 +35,24 @@ import org.springframework.context.annotation.FilterType;
 public class ApplicationConfig {
 
     @Bean
-    ConfiguredFleet configuredFleet(RobotsProperties properties) {
+    Fleet fleet(RobotsProperties properties) {
         var definitions = properties.robots() == null
                 ? List.<RobotsProperties.RobotDefinition>of()
                 : properties.robots();
-        return new ConfiguredFleet(definitions.stream()
+        return new Fleet(definitions.stream()
                 .map(d -> new Robot(d.id(), d.name(), d.type(), d.serviceUrl()))
                 .toList());
+    }
+
+    @Bean
+    InstanceIdentity instanceIdentity() {
+        String host;
+        try {
+            host = InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            host = "orchestrator";
+        }
+        return new InstanceIdentity(host + "-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
     @Bean
@@ -59,13 +76,8 @@ public class ApplicationConfig {
     }
 
     @Bean
-    FleetRegistry fleetRegistry() {
-        return new FleetRegistry();
-    }
-
-    @Bean
-    FleetSweep fleetSweep(FleetRegistry registry) {
-        return new FleetSweep(registry);
+    FleetSweep fleetSweep(Fleet fleet) {
+        return new FleetSweep(fleet);
     }
 
     @Bean
@@ -74,11 +86,14 @@ public class ApplicationConfig {
     }
 
     @Bean(destroyMethod = "shutdown")
-    BehaviorLoops behaviorLoops(FleetRegistry registry, PersonalityStateManager stateManager,
+    BehaviorLoops behaviorLoops(Fleet fleet, PersonalityStateManager stateManager,
                                 DecisionEngine decisionEngine, ActionExecutor executor,
-                                EventPublisherPort publisher, BehaviorSettings settings) {
-        return new BehaviorLoops(registry, stateManager, decisionEngine, executor, publisher,
-                settings);
+                                EventPublisherPort publisher, BehaviorSettings settings,
+                                PersonalityStateRepositoryPort states,
+                                DecisionHistoryRepositoryPort decisions, LeasePort leases,
+                                InstanceIdentity identity) {
+        return new BehaviorLoops(fleet, stateManager, decisionEngine, executor, publisher,
+                settings, states, decisions, leases, identity);
     }
 
     @Bean

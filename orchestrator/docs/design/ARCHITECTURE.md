@@ -28,17 +28,17 @@ fails the build on any violation. Rules enforced:
 | Layer | Package | Contents |
 |---|---|---|
 | Domain | `domain.behavior` | Personality model, action catalog, decision engine, behavior records. |
-| | `domain.fleet` | `Robot` identity, `RobotInfo`, `FleetStats`, `RobotNotFoundException`. |
+| | `domain.fleet` | `Fleet` (the immutable configured set of robots), `Robot` identity, `RobotInfo`, `FleetStats`, `RobotNotFoundException`. |
 | | `domain.robot` | Records mirroring the Python adapter's JSON (`RobotStatus`, `ServoState`, ...). Field names match the adapter's camelCase exactly; Jackson maps them by name at both edges, so there are no mapper classes. |
 | Application | `application.usecase` | One class per use case, `execute` only. The inbound API of the core. |
-| | `application.service` | Stateful collaborators shared by use cases: `FleetRegistry`, `FleetSweep`, `BehaviorLoops`, `RobotBehaviorLoop`, `ActionExecutor`, `OrchestratorMetricsSnapshot`. |
-| | `application.port.out` | Interfaces the core needs implemented: `RobotAdapterPort`, `FleetRepositoryPort`, `EventPublisherPort`, `MetricsRollupRepositoryPort`, `OrchestratorMetricsPort`, plus the port exceptions `AdapterErrorException` and `AdapterUnavailableException`. |
-| | `application` (root) | `BehaviorSettings`, `MetricsSettings`, `ConfiguredFleet`, `BehaviorLoopRunningException`. |
+| | `application.service` | Collaborators shared by use cases: `FleetSweep`, `BehaviorLoops`, `RobotBehaviorLoop`, `ActionExecutor`, `OrchestratorMetricsSnapshot`. The only process-local state left here is the loop's worker thread, its manual-action queue and a bounded ring of recent decisions; everything durable goes through a port (§3, §7). |
+| | `application.port.out` | Interfaces the core needs implemented: `RobotAdapterPort`, `FleetRepositoryPort`, `PersonalityStateRepositoryPort`, `DecisionHistoryRepositoryPort`, `LeasePort`, `EventPublisherPort`, `MetricsRollupRepositoryPort`, `OrchestratorMetricsPort`, plus the port exceptions `AdapterErrorException` and `AdapterUnavailableException`. |
+| | `application` (root) | `BehaviorSettings`, `MetricsSettings`, `InstanceIdentity`, `BehaviorLoopRunningException`, `BehaviorLoopHeldElsewhereException`. |
 | Adapters, inbound | `adapter.in.web` | REST controllers and `GlobalExceptionHandler`. |
 | | `adapter.in.scheduling` | `FleetBroadcastScheduler`, `MetricsRollupScheduler`. |
 | | `adapter.in.startup` | `FleetInitializer` (`ApplicationRunner`). |
 | Adapters, outbound | `adapter.out.http` | `PythonAdapterHttpClient` implements `RobotAdapterPort`. |
-| | `adapter.out.persistence` | JPA entities, Spring Data repositories, `FleetRepositoryAdapter`, `MetricsRollupRepositoryAdapter`. |
+| | `adapter.out.persistence` | JPA entities, Spring Data repositories, `FleetRepositoryAdapter`, `PersonalityStateRepositoryAdapter`, `DecisionHistoryRepositoryAdapter`, `LeaseRepositoryAdapter`, `MetricsRollupRepositoryAdapter`. |
 | | `adapter.out.messaging` | `StompEventPublisher` implements `EventPublisherPort`. |
 | | `adapter.out.metrics` | `MicrometerMetricsAdapter` implements `OrchestratorMetricsPort`. |
 | Infrastructure | `infrastructure.config` | `@ConfigurationProperties` records, `RestClientConfig`, `WebSocketConfig`, `ApplicationConfig`. |
@@ -63,8 +63,24 @@ fails the build on any violation. Rules enforced:
 ## 3. Behavior loop (application.service)
 
 - `BehaviorLoops` holds one `RobotBehaviorLoop` per robot, created lazily on first access;
-  unknown robot ids raise `RobotNotFoundException` there. The personality state therefore
-  exists, and accepts events, while the loop is stopped.
+  unknown robot ids raise `RobotNotFoundException` there. The personality state
+  accepts events while the loop is stopped; it is then reloaded from the
+  `personality_states` row first, so the database stays the source of truth.
+- Ownership is a lease (`LeasePort`, key `behavior-loop:<robotId>`, owner
+  `InstanceIdentity`, TTL `behavior.lease-ttl-ms`, default 60 s). `start()` acquires it or
+  throws `BehaviorLoopHeldElsewhereException` (HTTP 409 `behavior_loop_held_elsewhere`);
+  every cycle renews it and a cycle that cannot renew stops the loop; `stop()` releases it.
+  Events, manual actions and `/execute_action` are refused while another live instance
+  holds the lease. With one instance the lease costs one small update per cycle.
+- State is single-writer, write-through: the lease holder loads the personality row and
+  the latest `history-size` decisions once at start, keeps them in memory, and writes the
+  row after every mutation. Readers on the holding instance are served from memory;
+  readers anywhere else (and on this instance while the loop is stopped) read the
+  database, which only happens on user requests, never on a schedule. Only decisions
+  that selected an action (including rejections) are persisted; rest ticks live in the
+  memory ring only, so the history endpoint shows rest ticks while the loop runs and
+  action decisions once it has stopped. Persistence failures are logged and never stop
+  the loop.
 - The loop runs decide → execute → update on its own daemon thread named
   `behavior-<robotId>`. Each cycle drains the manual-action queue first, so manual control and
   autonomy never race on the servos. With the loop stopped, a manual action executes
@@ -109,8 +125,10 @@ fails the build on any violation. Rules enforced:
 
 ## 5. Fleet, adapter and API notes
 
-- Fleet of one: `FleetRegistry` and `/api/robots/{id}` routing stay, but no genericity is
-  added for hypothetical extra robots (see `OBSERVABILITY_MIND_BRIEF.md` §D).
+- Fleet of one: `Fleet` and `/api/robots/{id}` routing stay, but no genericity is
+  added for hypothetical extra robots (see `OBSERVABILITY_MIND_BRIEF.md` §D). `Fleet` is
+  built once from `bittle.robots` configuration and never changes at runtime; it is
+  configuration, not a cache, so no request reads the `robots` table.
 - `RobotAdapterPort` is the whole Python adapter surface. Typed calls map to `domain.robot`
   records. The untyped `get`/`post` relay carries host-side features (greeting, idle, power,
   polling, senses, leash, arbiter, behaviors, bindings, ears, mouth, eyes, mood) and the
@@ -146,9 +164,23 @@ fails the build on any violation. Rules enforced:
 
 ## 7. Persistence and metrics
 
-- `robots` table: fleet metadata. On boot `SyncFleetUseCase` deactivates robots that are no
-  longer configured (kept for history) and upserts the configured ones as active. Each
-  repository call is its own transaction.
+- `robots` table: fleet metadata mirrored from configuration. On boot `SyncFleetUseCase`
+  deactivates robots that are no longer configured (kept for history) and upserts the
+  configured ones as active. Nothing reads it back. Each repository call is its own
+  transaction; read methods on every persistence adapter are `readOnly = true`.
+- `personality_states` table: one row per robot, the loop's write-through copy of
+  `PersonalityState` (§3). Upserted after every mutation, read on loop start, on idle
+  events and by non-holding instances.
+- `behavior_decisions` table: action decisions, newest by id. Every fiftieth append trims
+  the robot's rows to `history-size`, so the table stays a few hundred rows.
+- `leases` table: `lease_key`, `holder`, `expires_at`. `acquire` is a conditional update
+  (same holder, or expired) followed by an insert when the row is missing; a lost insert
+  race surfaces as a constraint violation and reads as "not acquired". The behavior loops
+  and the hourly metrics rollup (`metrics-rollup`, 50 min) use it, so two instances never
+  drive the same robot or write duplicate rollups.
+- Not multi-instance yet: STOMP uses Spring's simple broker, so a push only reaches the
+  browsers connected to the instance that produced it. A second instance needs a broker
+  relay before its clients see the holder's decisions.
 - `metrics_rollups` table: one snapshot per robot (plus `orchestrator`) per hour, kept
   permanently because hourly rows are tiny and the totals are accounting data
   (`OBSERVABILITY_MIND_BRIEF.md` §D.1). Snapshots are stored as JSON text; on read, an
@@ -165,6 +197,9 @@ fails the build on any violation. Rules enforced:
   use `MockMvcTester`; loops are replaced by streams and ranges where that reads better.
 - `RobotControllerTest` declares every use case the controller injects with a class-level
   `@MockitoBean(types = ...)` and autowires only the ones it stubs.
+- `LeaseRepositoryAdapterTest` is a `@DataJpaTest` slice on H2 with
+  `@Transactional(propagation = NOT_SUPPORTED)`, so each adapter call commits on its own
+  exactly as in production and the constraint-violation path is real.
 - `ArchitectureTest` uses plain JUnit Jupiter with `ArchRule.check` rather than the ArchUnit
   JUnit 5 engine. Under this project's Surefire 3.5 / JUnit Platform 1.12 combination the
   engine discovered zero tests and silently passed a deliberately failing rule, so it cannot

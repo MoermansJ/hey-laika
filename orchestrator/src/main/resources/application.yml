@@ -47,6 +47,10 @@ behavior:
   # idle-cycle: true lets a calm robot run the sit -> look -> stand cycle
   # instead of IDLE_CALM only (docs/design/ARCHITECTURE.md §4).
   idle-cycle: false
+  # Lease on the loop, renewed every cycle and shared through the leases
+  # table; a second orchestrator instance may take over once it lapses. It
+  # outlasts the longest action (30 s adapter read timeout) plus one interval.
+  lease-ttl-ms: 60000
 
 # AI cost valuation (metrics brief D.2): adapters measure exact token
 # counts; the orchestrator alone knows prices. USD per million tokens,

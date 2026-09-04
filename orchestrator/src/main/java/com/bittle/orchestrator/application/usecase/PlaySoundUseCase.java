@@ -1,20 +1,20 @@
 package com.bittle.orchestrator.application.usecase;
 
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
-import com.bittle.orchestrator.application.service.FleetRegistry;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import java.util.Map;
 
 public class PlaySoundUseCase {
 
-    private final FleetRegistry registry;
+    private final Fleet fleet;
     private final RobotAdapterPort adapter;
 
-    public PlaySoundUseCase(FleetRegistry registry, RobotAdapterPort adapter) {
-        this.registry = registry;
+    public PlaySoundUseCase(Fleet fleet, RobotAdapterPort adapter) {
+        this.fleet = fleet;
         this.adapter = adapter;
     }
 
     public Map<String, Object> execute(String robotId, Map<String, Object> body) {
-        return adapter.sound(registry.get(robotId), body);
+        return adapter.sound(fleet.get(robotId), body);
     }
 }

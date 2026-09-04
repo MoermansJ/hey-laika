@@ -1,5 +1,6 @@
 package com.bittle.orchestrator.adapter.in.web;
 
+import com.bittle.orchestrator.application.BehaviorLoopHeldElsewhereException;
 import com.bittle.orchestrator.application.BehaviorLoopRunningException;
 import com.bittle.orchestrator.application.port.out.AdapterErrorException;
 import com.bittle.orchestrator.application.port.out.AdapterUnavailableException;
@@ -33,6 +34,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BehaviorLoopRunningException.class)
     public ResponseEntity<Map<String, String>> loopRunning(BehaviorLoopRunningException e) {
         return error(HttpStatus.CONFLICT, "behavior_loop_running", e.getMessage());
+    }
+
+    @ExceptionHandler(BehaviorLoopHeldElsewhereException.class)
+    public ResponseEntity<Map<String, String>> loopHeldElsewhere(BehaviorLoopHeldElsewhereException e) {
+        return error(HttpStatus.CONFLICT, "behavior_loop_held_elsewhere", e.getMessage());
     }
 
     @ExceptionHandler(AdapterUnavailableException.class)

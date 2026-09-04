@@ -7,14 +7,18 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.bittle.orchestrator.application.BehaviorLoopRunningException;
+import com.bittle.orchestrator.application.port.out.LeasePort;
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
 import com.bittle.orchestrator.application.service.BehaviorLoops;
-import com.bittle.orchestrator.application.service.FleetRegistry;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import com.bittle.orchestrator.application.service.RobotBehaviorLoop;
 import com.bittle.orchestrator.domain.fleet.Robot;
 import com.bittle.orchestrator.domain.fleet.RobotNotFoundException;
 import com.bittle.orchestrator.domain.robot.ActionResult;
 import com.bittle.orchestrator.domain.robot.ExecuteActionRequest;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class ExecuteRobotActionUseCaseTest {
@@ -22,16 +26,15 @@ class ExecuteRobotActionUseCaseTest {
     private static final Robot LAIKA = new Robot("bittle-1", "Laika", "bittle_x_v2", "http://laika");
     private static final ExecuteActionRequest SIT = new ExecuteActionRequest("sit_down", 1500, 1);
 
-    private final FleetRegistry registry = new FleetRegistry();
+    private final Fleet fleet = new Fleet(List.of(LAIKA));
     private final RobotAdapterPort adapter = mock(RobotAdapterPort.class);
     private final BehaviorLoops loops = mock(BehaviorLoops.class);
     private final RobotBehaviorLoop loop = mock(RobotBehaviorLoop.class);
     private final ExecuteRobotActionUseCase useCase =
-            new ExecuteRobotActionUseCase(registry, adapter, loops);
+            new ExecuteRobotActionUseCase(fleet, adapter, loops);
 
     @Test
     void givenLoopStopped_whenExecuted_thenTheActionIsProxiedToTheAdapter() {
-        registry.register(LAIKA);
         when(loops.loop("bittle-1")).thenReturn(loop);
         when(loop.isRunning()).thenReturn(false);
         var executed = new ActionResult("bittle-1", "sit_down", true, 1500L, "executed");
@@ -44,9 +47,20 @@ class ExecuteRobotActionUseCaseTest {
 
     @Test
     void givenLoopRunning_whenExecuted_thenItIsRefusedBeforeReachingTheAdapter() {
-        registry.register(LAIKA);
         when(loops.loop("bittle-1")).thenReturn(loop);
         when(loop.isRunning()).thenReturn(true);
+
+        assertThatThrownBy(() -> useCase.execute("bittle-1", SIT))
+                .isInstanceOf(BehaviorLoopRunningException.class);
+        verifyNoInteractions(adapter);
+    }
+
+    @Test
+    void givenLoopHeldByAnotherInstance_whenExecuted_thenItIsRefusedBeforeReachingTheAdapter() {
+        when(loops.loop("bittle-1")).thenReturn(loop);
+        when(loop.isRunning()).thenReturn(false);
+        when(loop.remoteLease()).thenReturn(Optional.of(
+                new LeasePort.Lease("behavior-loop:bittle-1", "other-1", Instant.now().plusSeconds(60))));
 
         assertThatThrownBy(() -> useCase.execute("bittle-1", SIT))
                 .isInstanceOf(BehaviorLoopRunningException.class);

@@ -1,20 +1,20 @@
 package com.bittle.orchestrator.application.usecase;
 
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
-import com.bittle.orchestrator.application.service.FleetRegistry;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import com.bittle.orchestrator.domain.robot.RobotPersonality;
 
 public class GetRobotPersonalityUseCase {
 
-    private final FleetRegistry registry;
+    private final Fleet fleet;
     private final RobotAdapterPort adapter;
 
-    public GetRobotPersonalityUseCase(FleetRegistry registry, RobotAdapterPort adapter) {
-        this.registry = registry;
+    public GetRobotPersonalityUseCase(Fleet fleet, RobotAdapterPort adapter) {
+        this.fleet = fleet;
         this.adapter = adapter;
     }
 
     public RobotPersonality execute(String robotId) {
-        return adapter.personality(registry.get(robotId));
+        return adapter.personality(fleet.get(robotId));
     }
 }

@@ -12,10 +12,11 @@ public record BehaviorProperties(
         @DefaultValue("200") int historySize,
         @DefaultValue("false") boolean autoStart,
         @DefaultValue("false") boolean simulateActions,
-        @DefaultValue("false") boolean idleCycle) {
+        @DefaultValue("false") boolean idleCycle,
+        @DefaultValue("60000") long leaseTtlMs) {
 
     public BehaviorSettings toSettings() {
         return new BehaviorSettings(decisionIntervalMs, sleepDecisionIntervalMs, failureBackoffMs,
-                historySize, autoStart, simulateActions, idleCycle);
+                historySize, autoStart, simulateActions, idleCycle, leaseTtlMs);
     }
 }

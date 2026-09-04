@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 import com.bittle.orchestrator.application.port.out.AdapterUnavailableException;
 import com.bittle.orchestrator.application.port.out.EventPublisherPort;
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
-import com.bittle.orchestrator.application.service.FleetRegistry;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import com.bittle.orchestrator.domain.fleet.Robot;
 import com.bittle.orchestrator.domain.robot.ActivityLog;
 import java.util.List;
@@ -21,16 +21,14 @@ class BroadcastActivityUseCaseTest {
     private static final Robot ONE = new Robot("bittle-1", "One", "mock", "http://one");
     private static final Robot TWO = new Robot("bittle-2", "Two", "mock", "http://two");
 
-    private final FleetRegistry registry = new FleetRegistry();
+    private final Fleet fleet = new Fleet(List.of(ONE, TWO));
     private final RobotAdapterPort adapter = mock(RobotAdapterPort.class);
     private final EventPublisherPort publisher = mock(EventPublisherPort.class);
     private final BroadcastActivityUseCase useCase =
-            new BroadcastActivityUseCase(registry, adapter, publisher);
+            new BroadcastActivityUseCase(fleet, adapter, publisher);
 
     @Test
     void givenOneUnreachableRobot_whenExecuted_thenTheOtherRobotIsStillPublished() {
-        registry.register(ONE);
-        registry.register(TWO);
         when(adapter.activity(ONE)).thenReturn(new ActivityLog("bittle-1", List.of()));
         when(adapter.activity(TWO)).thenThrow(new AdapterUnavailableException("http://two", null));
 

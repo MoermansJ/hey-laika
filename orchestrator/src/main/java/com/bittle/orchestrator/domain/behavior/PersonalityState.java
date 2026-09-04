@@ -107,6 +107,34 @@ public class PersonalityState {
         return Math.max(0.0, Math.min(1.0, value));
     }
 
+    public static PersonalityState fromSnapshot(Snapshot snapshot) {
+        var state = new PersonalityState();
+        state.energy = snapshot.energy();
+        state.happiness = snapshot.happiness();
+        state.boredom = snapshot.boredom();
+        state.curiosity = snapshot.curiosity();
+        state.hunger = snapshot.hunger();
+        state.contentment = snapshot.contentment();
+        state.posture = snapshot.posture() == null ? Posture.STANDING : snapshot.posture();
+        state.lastAction = actionOrNull(snapshot.lastAction());
+        state.lastActionAt = snapshot.lastActionAt();
+        state.lastInteractionAt = snapshot.lastInteractionAt();
+        state.totalActionsThisSession = snapshot.totalActionsThisSession();
+        state.clip();
+        return state;
+    }
+
+    private static Action actionOrNull(String actionId) {
+        if (actionId == null) {
+            return null;
+        }
+        try {
+            return Action.fromActionId(actionId);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     public Snapshot snapshot(String robotId) {
         return new Snapshot(robotId, energy, happiness, boredom, curiosity, hunger,
                 contentment, posture,

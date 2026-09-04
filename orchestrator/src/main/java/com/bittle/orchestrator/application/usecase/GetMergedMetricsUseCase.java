@@ -2,7 +2,7 @@ package com.bittle.orchestrator.application.usecase;
 
 import com.bittle.orchestrator.application.MetricsSettings;
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
-import com.bittle.orchestrator.application.service.FleetRegistry;
+import com.bittle.orchestrator.domain.fleet.Fleet;
 import com.bittle.orchestrator.application.service.OrchestratorMetricsSnapshot;
 import com.bittle.orchestrator.domain.fleet.Robot;
 import com.bittle.orchestrator.domain.robot.DecisionModel;
@@ -15,17 +15,17 @@ public class GetMergedMetricsUseCase {
     private static final double TOKENS_PER_MILLION = 1_000_000.0;
     private static final long MODEL_CACHE_MS = 5 * 60_000;
 
-    private final FleetRegistry registry;
+    private final Fleet fleet;
     private final RobotAdapterPort adapter;
     private final OrchestratorMetricsSnapshot orchestrator;
     private final MetricsSettings settings;
     private final Map<String, DecisionModel> models = new ConcurrentHashMap<>();
     private final Map<String, Long> modelsAt = new ConcurrentHashMap<>();
 
-    public GetMergedMetricsUseCase(FleetRegistry registry, RobotAdapterPort adapter,
+    public GetMergedMetricsUseCase(Fleet fleet, RobotAdapterPort adapter,
                                    OrchestratorMetricsSnapshot orchestrator,
                                    MetricsSettings settings) {
-        this.registry = registry;
+        this.fleet = fleet;
         this.adapter = adapter;
         this.orchestrator = orchestrator;
         this.settings = settings;
@@ -35,7 +35,7 @@ public class GetMergedMetricsUseCase {
         Map<String, Object> merged = new LinkedHashMap<>();
         merged.put(OrchestratorMetricsSnapshot.ORCHESTRATOR_ID, orchestrator.snapshot());
         Map<String, Object> robots = new LinkedHashMap<>();
-        registry.all().forEach(robot -> {
+        fleet.all().forEach(robot -> {
             try {
                 robots.put(robot.id(), priced(robot, adapter.metrics(robot)));
             } catch (RuntimeException e) {
