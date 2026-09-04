@@ -14,10 +14,8 @@ in `../robot/HARDWARE.md` (firmware row) and the audit reports.
 
 ## BiBoard (hey-laika fork, `opencat-esp32/`)
 
-Flashed now: fork commit `807e7a5` (rows 1-4, the 2026-09-04 batch, flashed
-13:40; the LED went blue at boot and the dog rejoined the router). Row 5 is
-built as `noncodefiles/fw-build/2026-09-04-batch2/` and waits for the next
-Reset-in-hand moment. Rows are moved out of the table once their bench check
+Flashed now: fork commit `6c013ca` (rows 1-5, batch 2, flashed 2026-09-04
+~14:00). Row 6 is built as `noncodefiles/fw-build/2026-09-04-batch3/`. Rows are moved out of the table once their bench check
 has passed, not when flashed.
 
 | # | Change | Commit | Built? | Bench check after flashing |
@@ -27,8 +25,15 @@ has passed, not when flashed.
 | 3 | Grove serial module off in the BiBoard V1.0 default table, and `XWp` ends `Serial2` and clears the module flag. GPIO 10 is TX2: with the module on, every `printToAllPorts` line went into the Speaker Plus as a loud tick (the 2026-09-04 "bark" was six ticks, one per acknowledged frame), and the ranger's echoes on GPIO 9 (RX2) were read as commands that abort gaits | `807e7a5` | yes, 89 % flash, all four rows in one image: `noncodefiles/fw-build/2026-09-04-batch/` (`flash.cmd` has the esptool line) | Banner shows `Grove_Serial` 0 in the module list; `?` over the Control tab produces no tick from the speaker; `POST /mouth/play {"sound":"positive_bark"}` is a bark |
 | 4 | Speaker ISR writes `GPIO_SIGMADELTA0_REG` directly instead of the flash-resident `sigmaDeltaWrite`, and the `spkPin` NVS write moves ahead of `timerAlarmEnable`: an IRAM timer ISR that runs during an NVS write (cache disabled) crashes the board | `807e7a5` | yes (same image) | With the speaker attached, `XW2%ssid%pass` (an NVS write) over serial must not reboot the dog; play a clip straight after |
 | 5 | Speaker output is 8-bit LEDC PWM at 62.5 kHz on channel 7 (high-speed timer 3, which the 12 servos leave free) instead of the sigma-delta modulator. With rows 3-4 flashed, a 2 s 440 Hz tone (`batch2/tone_440hz_2s.wav` through `POST /mouth/wav`) came out as crackle with no note: the amplifier never averaged the 12 ns sigma-delta edges. The Speaker Plus is specified for PWM input | `6c013ca` | yes, 89 % flash, rows 1-5 in one image: `noncodefiles/fw-build/2026-09-04-batch2/` (`flash.cmd` now ends with `--after no_reset`: tap Reset yourself) | The 440 Hz tone is a clear note; `positive_bark` is a bark; mood-light changes while the speaker is idle do not crackle (if they still do, the amplifier's supply shares the satellite's rail and the fix is the speaker's red wire, not firmware) |
+| 6 | Prebuffer: the ISR outputs silence until 4 KB (0.5 s) are queued or the host sends `XWf` after the last frame; a dry ring re-arms it. With rows 1-5 flashed and the wiring finally right (speaker yellow on the UART socket's white lead, GPIO 10), a 440 Hz tone, a 100 Hz square and a step pattern all came through and boosted speech was voice-like but cut out: 1 KB frames per ~100 ms round trip barely outpace the 8 kHz drain, so the ring ran dry on every WiFi hiccup. 1536-byte frames are not an option: they stall the firmware's WebSocket layer with no reply until a reboot (17:46) | `91cfbdc` | yes, 89 % flash, rows 1-6 in one image | `hey_laika_sit.wav` through `POST /mouth/wav` is continuous speech; `positive_bark` is a bark; a clip shorter than 0.5 s still plays (XWf) |
 
 Wanted next (not started):
+
+- The senses layer's automatic WiFi sniff (`XWs`, once a minute when the dog
+  is quiet) blocks the loop ~2 s and drops the WebSocket every time (adapter
+  log: "link lost during 'XWs'", all afternoon 2026-09-04). Either scan
+  asynchronously in the firmware or stop auto-sniffing unless navigation
+  is actually in use.
 
 - The loop's BOOT check (reaction.h ~line 219) fires on the PC's DTR line
   and clears the WiFi primary after 2 s. Debounce it to a real button press

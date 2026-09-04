@@ -72,7 +72,7 @@ def test_play_sound_goes_through_the_speaker(tmp_path):
     mouth = MouthService(ctrl, pin=10, sleep=lambda s: None, sounds=SoundLibrary(tmp_path))
     result = mouth.play_sound("bark")
     assert result["text"] == "sound:bark" and result["seconds"] == 0.5
-    assert ctrl.commands == ["XWp10"] and ctrl.binary
+    assert ctrl.commands == ["XWp10", "XWf"] and ctrl.binary
     assert mouth.status()["sounds"] == ["bark"]
     with pytest.raises(RuntimeError):
         MouthService(ctrl, pin=None, sounds=SoundLibrary(tmp_path)).play_sound("bark")
@@ -90,7 +90,8 @@ def test_play_wav_attaches_once_and_chunks():
     ctrl = ScriptedController()
     mouth = MouthService(ctrl, pin=10, sleep=lambda s: None)
     result = mouth.play_wav(make_wav(seconds=1.0))
-    assert ctrl.commands == ["XWp10"]                # attach exactly once
+    assert ctrl.commands.count("XWp10") == 1         # attach exactly once
+    assert ctrl.commands[-1] == "XWf"                 # every clip ends with clip-complete
     assert result["chunks"] == -(-RATE // CHUNK_BYTES)  # ceil(8000 / chunk)
     assert all(p.startswith(b"XWa") for p in ctrl.binary)
     assert all(len(p) - 3 <= CHUNK_BYTES for p in ctrl.binary)
@@ -103,7 +104,7 @@ def test_pacing_sleeps_when_ring_is_nearly_full():
     ctrl = ScriptedController(free_sequence=[100, 8000, 8000, 8000, 8000])
     mouth = MouthService(ctrl, pin=9, sleep=slept.append)
     mouth.play_wav(make_wav(seconds=1.0))
-    assert len(slept) == 1 and slept[0] == pytest.approx(CHUNK_BYTES / RATE)
+    assert len(slept) == 1 and slept[0] == pytest.approx((CHUNK_BYTES - 100) / RATE + 0.02)
 
 
 def test_say_requires_pin():

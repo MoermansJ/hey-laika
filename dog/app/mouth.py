@@ -25,13 +25,17 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 RATE = 8000
-# 1024 samples = 128 ms per frame (~1.4 KB of base64 on the wire). 1800 fit
-# the firmware's command buffer but not its heap: the WebSocket layer copies
-# each frame into several Strings and a 2.4 KB frame failed allocation on
-# the live board (LoadProhibited panic, 2026-09-04). 1024 keeps ~14 KB/s of
-# throughput at a 70 ms round trip, above the 8 KB/s the audio needs.
+# 1536 samples = 192 ms per frame (~2 KB of base64 on the wire). The
+# firmware's command buffer takes 2.5 KB; its heap once failed on a 2.4 KB
+# frame (LoadProhibited, 2026-09-04) and fork a51fd08 now drops such frames
+# instead of crashing, but a 1536-byte frame (2 KB of base64) stalled the
+# WebSocket layer with no reply at all (2026-09-04 17:46). 1024 is the
+# largest frame that works. At the measured ~100 ms round trip it fills the
+# ring only slightly faster than the 8 KB/s drain, so the firmware holds
+# playback until SPEAKER_START_BYTES are buffered or XWf ends the clip.
 CHUNK_BYTES = 1024
 RING_BYTES = 8192           # mirrors the firmware ring; pacing waits when fuller
+RMS_TARGET = 8200           # ~0.25 full scale after normalisation
 _FREE_RE = re.compile(r"=\s*\r?\n?\s*(\d+)")
 
 
@@ -113,8 +117,9 @@ class MouthService:
             sent += len(chunk)
             chunks += 1
             if free is not None and free < CHUNK_BYTES:
-                # Ring nearly full: wait for roughly one chunk to drain.
-                self._sleep(CHUNK_BYTES / RATE)
+                # Ring nearly full: wait just until the next chunk fits.
+                self._sleep((CHUNK_BYTES - free) / RATE + 0.02)
+        self.controller.send_command("XWf")   # clip complete: start even if under the prebuffer
         seconds = len(pcm) / RATE
         self.last = {"text": label, "at": time.time(), "seconds": round(seconds, 2),
                      "chunks": chunks, "error": None}
@@ -160,6 +165,12 @@ def to_pcm8(wav_bytes: bytes) -> bytes:
         frames, _ = audioop.ratecv(frames, 2, 1, rate, RATE, None)
     peak = audioop.max(frames, 2) or 1
     frames = audioop.mul(frames, 2, min(4.0, 28000 / peak))   # normalise, cap gain
+    # Speech sits ~10 dB under its peaks and vanished on the 2 W speaker while
+    # tones and barks were loud (2026-09-04): lift to a loudness target and let
+    # audioop.mul clip the peaks, walkie-talkie style.
+    rms = audioop.rms(frames, 2) or 1
+    if rms < RMS_TARGET:
+        frames = audioop.mul(frames, 2, min(4.0, RMS_TARGET / rms))
     pcm8 = audioop.lin2lin(frames, 2, 1)
     return audioop.bias(pcm8, 1, 128)                          # signed -> unsigned
 
