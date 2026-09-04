@@ -14,9 +14,11 @@ in `../robot/HARDWARE.md` (firmware row) and the audit reports.
 
 ## BiBoard (hey-laika fork, `opencat-esp32/`)
 
-Flashed now: fork commit `6b57e93` (speaker) **plus the scratch diagnostic
-hook** built 2026-09-04 (prints `WIFI-DIAG` lines). Everything below is
-committed in the fork but not on the dog.
+Flashed now: fork commit `807e7a5` (rows 1-4, the 2026-09-04 batch, flashed
+13:40; the LED went blue at boot and the dog rejoined the router). Row 5 is
+built as `noncodefiles/fw-build/2026-09-04-batch2/` and waits for the next
+Reset-in-hand moment. Rows are moved out of the table once their bench check
+has passed, not when flashed.
 
 | # | Change | Commit | Built? | Bench check after flashing |
 |---|---|---|---|---|
@@ -24,6 +26,7 @@ committed in the fork but not on the dog.
 | 2 | `XW1%SSID%pass` writes the esp-wifi primary slot; `XW1` shows it (the stock `w%` command is intercepted by the loop's BOOT check on this board) | `2c1b3c4` | yes | `XW1%<router>%<pass>` over serial, reboot: joins the router first, no 25 s hotspot detour; `XW2` can then go back to the iPhone |
 | 3 | Grove serial module off in the BiBoard V1.0 default table, and `XWp` ends `Serial2` and clears the module flag. GPIO 10 is TX2: with the module on, every `printToAllPorts` line went into the Speaker Plus as a loud tick (the 2026-09-04 "bark" was six ticks, one per acknowledged frame), and the ranger's echoes on GPIO 9 (RX2) were read as commands that abort gaits | `807e7a5` | yes, 89 % flash, all four rows in one image: `noncodefiles/fw-build/2026-09-04-batch/` (`flash.cmd` has the esptool line) | Banner shows `Grove_Serial` 0 in the module list; `?` over the Control tab produces no tick from the speaker; `POST /mouth/play {"sound":"positive_bark"}` is a bark |
 | 4 | Speaker ISR writes `GPIO_SIGMADELTA0_REG` directly instead of the flash-resident `sigmaDeltaWrite`, and the `spkPin` NVS write moves ahead of `timerAlarmEnable`: an IRAM timer ISR that runs during an NVS write (cache disabled) crashes the board | `807e7a5` | yes (same image) | With the speaker attached, `XW2%ssid%pass` (an NVS write) over serial must not reboot the dog; play a clip straight after |
+| 5 | Speaker output is 8-bit LEDC PWM at 62.5 kHz on channel 7 (high-speed timer 3, which the 12 servos leave free) instead of the sigma-delta modulator. With rows 3-4 flashed, a 2 s 440 Hz tone (`batch2/tone_440hz_2s.wav` through `POST /mouth/wav`) came out as crackle with no note: the amplifier never averaged the 12 ns sigma-delta edges. The Speaker Plus is specified for PWM input | `6c013ca` | yes, 89 % flash, rows 1-5 in one image: `noncodefiles/fw-build/2026-09-04-batch2/` (`flash.cmd` now ends with `--after no_reset`: tap Reset yourself) | The 440 Hz tone is a clear note; `positive_bark` is a bark; mood-light changes while the speaker is idle do not crackle (if they still do, the amplifier's supply shares the satellite's rail and the fix is the speaker's red wire, not firmware) |
 
 Wanted next (not started):
 
