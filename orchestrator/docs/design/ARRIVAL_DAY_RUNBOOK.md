@@ -140,6 +140,39 @@ the dog was off (LED power comes from analog socket B).
    light shows cyan (`person`) on its own. Step out of view: `vision.clear`
    after 2 s and the LED returns to the base mood.
 
+## 4c. Speaker firmware flash and first sound (2026-09-04, night)
+
+Outcome: the speaker fork (`XWp/XWa/XWq`) is on Laika and a bark clip
+played through the Grove Speaker Plus from the Control tab; six 1 KB frames
+acknowledged, ring buffer draining at 8 kHz. Three things cost the evening
+and are worth knowing:
+
+- **Laika was not on WiFi after the flash.** The esp-wifi primary slot held
+  the *iPhone hotspot*, not the router (a leash walk's WiFi-manager join had
+  overwritten it), so both slots failed with reason 201 "no AP found". Fix
+  applied: router stored in the fork's secondary slot (`XW2%SSID%pass` over
+  serial), primary since cleared by the BOOT-hold countdown. Boot now spends
+  ~25 s failing the (absent) hotspot before joining the router. Proper fix
+  pending: an `XW1` tool to write the primary, since the stock `w%` command
+  is intercepted by the loop's BOOT check on this board.
+- **The 2.4 KB audio frame crashed the firmware** (LoadProhibited in
+  `startWebTask`: a String whose allocation failed has a NULL buffer and
+  `strcpy(NULL+1)` follows). Adapter now sends 1024-byte chunks (works);
+  firmware commit `a51fd08` drops such commands instead of crashing and is
+  **built but not yet flashed** (`scratchpad fw/fix`, rebuild from the fork).
+- **Flashing this BiBoard.** The CH343's DTR line drives the BOOT pin (the
+  firmware prints "reboot and use Wifi manager" whenever the PC asserts
+  DTR, and holding it >2 s clears the primary WiFi slot); RTS does **not**
+  reach EN, so no PC-side sequence can enter download mode and a software
+  restart keeps the previously latched strapping value. Download mode needs
+  a **hardware** reset with BOOT low: hold BOOT, tap Reset, release, then
+  `esptool --before no_reset`. It took several tries tonight; a power-on
+  with BOOT held (battery off, USB replug) is the fallback. Open the serial
+  console with DTR and RTS released or the firmware reboots.
+- The startup greeting stood the dog up on the desk on reconnect and it
+  fell. Greeting disabled (`POST /greeting/disable`) for bench work; the
+  dog now sits on a stable low platform. Re-enable when it is on the floor.
+
 ## 5. Record the outcome
 
 Add a dated addendum to `VOICE_RELAY_BRIEF.md` and `NAVIGATION_MAPPING_BRIEF.md`

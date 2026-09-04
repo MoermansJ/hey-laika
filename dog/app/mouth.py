@@ -25,7 +25,12 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 RATE = 8000
-CHUNK_BYTES = 1800          # < BUFF_LEN (2507) minus the "XWa" header and b64 slack
+# 1024 samples = 128 ms per frame (~1.4 KB of base64 on the wire). 1800 fit
+# the firmware's command buffer but not its heap: the WebSocket layer copies
+# each frame into several Strings and a 2.4 KB frame failed allocation on
+# the live board (LoadProhibited panic, 2026-09-04). 1024 keeps ~14 KB/s of
+# throughput at a 70 ms round trip, above the 8 KB/s the audio needs.
+CHUNK_BYTES = 1024
 RING_BYTES = 8192           # mirrors the firmware ring; pacing waits when fuller
 _FREE_RE = re.compile(r"=\s*\r?\n?\s*(\d+)")
 
