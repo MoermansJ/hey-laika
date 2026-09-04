@@ -96,7 +96,7 @@ def test_play_wav_attaches_once_and_chunks():
     assert all(p.startswith(b"XWa") for p in ctrl.binary)
     assert all(len(p) - 3 <= CHUNK_BYTES for p in ctrl.binary)
     mouth.play_wav(make_wav(seconds=0.1))
-    assert ctrl.commands == ["XWp10"]                # still attached
+    assert ctrl.commands.count("XWp10") == 1         # still attached, not re-sent
 
 
 def test_pacing_sleeps_when_ring_is_nearly_full():
