@@ -21,7 +21,7 @@ committed in the fork but not on the dog.
 | # | Change | Commit | Built? | Bench check after flashing |
 |---|---|---|---|---|
 | 1 | Drop a command whose String allocation failed instead of `strcpy(NULL+1)` panicking; log WiFi SSID tried and disconnect reasons at the default level | `a51fd08` | yes (`scratchpad/fw/fix`, rebuild from the fork) | `POST /mouth/play` with `CHUNK_BYTES` temporarily 1800 must answer "command dropped, out of memory" on serial, not reboot |
-| 2 | `XW1%SSID%pass` writes the esp-wifi primary slot; `XW1` shows it (the stock `w%` command is intercepted by the loop's BOOT check on this board) | pending commit | compile-checked | `XW1%<router>%<pass>` over serial, reboot: joins the router first, no 25 s hotspot detour; `XW2` can then go back to the iPhone |
+| 2 | `XW1%SSID%pass` writes the esp-wifi primary slot; `XW1` shows it (the stock `w%` command is intercepted by the loop's BOOT check on this board) | `2c1b3c4` | yes, 89 % flash (`scratchpad/fw/fix` holds both 1 and 2) | `XW1%<router>%<pass>` over serial, reboot: joins the router first, no 25 s hotspot detour; `XW2` can then go back to the iPhone |
 
 Wanted next (not started):
 
