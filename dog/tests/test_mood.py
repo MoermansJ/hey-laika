@@ -113,6 +113,39 @@ def test_resync_repaints_a_rebooted_satellite():
     assert len(sat.calls) == calls                            # already in sync
 
 
+def test_rainbow_steps_through_the_colours_and_stops_when_replaced():
+    from app.mood import RAINBOW
+
+    sat = FakeSatellite()
+    mood = make(sat)
+    mood.set("rainbow")                                   # first colour goes out at once
+    assert sat.calls[-1][:3] == RAINBOW[0] and sat.calls[-1][3] == "solid"
+    gen = mood._rainbow_gen
+    assert mood.rainbow_step(gen) is True
+    assert sat.calls[-1][:3] == RAINBOW[1]
+    for _ in range(len(RAINBOW)):
+        mood.rainbow_step(gen)
+    assert sat.calls[-1][:3] == RAINBOW[1]                # wrapped around
+    assert mood.status()["mood"] == "rainbow"
+    mood.set("happy")                                     # supersedes the cycle
+    assert mood.rainbow_step(gen) is False
+    assert sat.calls[-1][:4] == MOODS["happy"][:4]
+    mood._resync_once()
+    mood.shutdown()
+
+
+def test_rainbow_flash_reverts_to_a_solid_base():
+    sat = FakeSatellite()
+    mood = make(sat)
+    mood.set("idle")
+    mood.flash("rainbow", 30)
+    gen = mood._rainbow_gen
+    mood._end_flash()
+    assert mood.rainbow_step(gen) is False
+    assert sat.calls[-1][:4] == MOODS["idle"][:4]
+    mood.shutdown()
+
+
 def test_disabled_without_satellite():
     mood = make(FakeSatellite(enabled=False))
     assert mood.enabled is False

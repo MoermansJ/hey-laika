@@ -261,6 +261,7 @@
       off: "#000", idle: "#ff8c28", heard: "#0078ff", thinking: "#a000ff", speaking: "#00ffaa",
       happy: "#00ff28", person: "#00d2ff", alert: "#ffa000", warn: "#ff5a00", lost: "#ff0000",
       low_battery: "#ff0000",
+      rainbow: "conic-gradient(red, orange, yellow, green, blue, indigo, violet, red)",
     };
 
     function renderMoodButtons(moods, current) {
@@ -293,7 +294,7 @@
         const c = m.color;
         const level = c.brightness / 255;
         const sw = $("#swatch");
-        sw.style.background = c.effect === "off" ? "#222" :
+        sw.style.background = c.effect === "off" ? "#222" : c.effect === "rainbow" ? MOOD_PREVIEW.rainbow :
             `rgb(${Math.round(c.r * level)}, ${Math.round(c.g * level)}, ${Math.round(c.b * level)})`;
         sw.className = "swatch " + (c.effect === "pulse" || c.effect === "blink" ? c.effect : "");
         sw.style.animationDuration = `${c.periodMs}ms`;

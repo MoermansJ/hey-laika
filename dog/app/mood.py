@@ -34,7 +34,15 @@ MOODS = {
     "warn":        (255, 90,  0,   "blink", 700,  255),   # leash stretching
     "lost":        (255, 0,   0,   "blink", 350,  255),   # leash at its end
     "low_battery": (255, 0,   0,   "pulse", 2500, 255),
+    "rainbow":     (0,   0,   0,   "rainbow", 600, 255),  # host-stepped, periodMs per colour
 }
+
+# The rainbow is stepped from here (one /led call per colour) rather than in
+# the satellite sketch: no XIAO reflash needed, and 600 ms steps are a
+# handful of tiny requests per second. Firmware-native smoothing is queued
+# in FIRMWARE_QUEUE.md.
+RAINBOW = ((255, 0, 0), (255, 110, 0), (255, 220, 0), (0, 200, 0),
+           (0, 90, 255), (60, 0, 200), (170, 0, 255))
 
 # event -> (mood, seconds); None seconds = becomes the base mood
 EVENT_MOODS = {
@@ -180,9 +188,15 @@ class MoodService:
     def _apply(self, spec: dict) -> bool:
         if not self.enabled:
             return False
+        if spec["effect"] == "rainbow":
+            return self._start_rainbow(spec)
+        self._stop_rainbow()
+        return self._send(spec["r"], spec["g"], spec["b"], spec["effect"],
+                          spec["periodMs"], spec["brightness"])
+
+    def _send(self, r, g, b, effect, period_ms, brightness) -> bool:
         try:
-            self.satellite.set_led(spec["r"], spec["g"], spec["b"], spec["effect"],
-                                   spec["periodMs"], spec["brightness"])
+            self.satellite.set_led(r, g, b, effect, period_ms, brightness)
         except SatelliteError as exc:
             self.stats["failures"] += 1
             self.stats["lastError"] = str(exc)
@@ -191,6 +205,41 @@ class MoodService:
         self.stats["lastSetAt"] = self._clock()
         self.stats["lastError"] = None
         return True
+
+    # -- rainbow: host-stepped colour cycle --
+
+    def _start_rainbow(self, spec: dict) -> bool:
+        with self._lock:
+            self._rainbow_gen = getattr(self, "_rainbow_gen", 0) + 1
+            gen = self._rainbow_gen
+            self._rainbow_index = 0
+        ok = self.rainbow_step(gen)
+        threading.Thread(target=self._rainbow_loop, args=(gen, spec["periodMs"] / 1000.0),
+                         daemon=True).start()
+        return ok
+
+    def _stop_rainbow(self) -> None:
+        with self._lock:
+            self._rainbow_gen = getattr(self, "_rainbow_gen", 0) + 1
+
+    def rainbow_step(self, gen: int | None = None) -> bool:
+        """Send the next rainbow colour; False once the cycle was superseded."""
+        with self._lock:
+            if gen is not None and gen != getattr(self, "_rainbow_gen", 0):
+                return False
+            index = getattr(self, "_rainbow_index", 0)
+            self._rainbow_index = (index + 1) % len(RAINBOW)
+            brightness = self._current_spec_locked()["brightness"]
+        r, g, b = RAINBOW[index]
+        return self._send(r, g, b, "solid", 1500, brightness)
+
+    def _rainbow_loop(self, gen: int, period_s: float) -> None:
+        while not self._stop.wait(period_s):
+            if not self.rainbow_step(gen):
+                return
+
+    def _current_spec_locked(self) -> dict:
+        return self._flash or self._base
 
     def _resync_loop(self) -> None:
         while not self._stop.wait(self.resync_s):
@@ -201,6 +250,8 @@ class MoodService:
 
     def _resync_once(self) -> None:
         current = self._current()
+        if current["effect"] == "rainbow":
+            return                       # the cycle repaints every step anyway
         try:
             shown = self.satellite.led()
         except SatelliteError as exc:

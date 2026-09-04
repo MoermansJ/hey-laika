@@ -257,6 +257,7 @@ const LED_PREVIEW = {
   off: "#000", idle: "#ff8c28", heard: "#0078ff", thinking: "#a000ff", speaking: "#00ffaa",
   happy: "#00ff28", person: "#00d2ff", alert: "#ffa000", warn: "#ff5a00", lost: "#ff0000",
   low_battery: "#ff0000",
+  rainbow: "conic-gradient(red, orange, yellow, green, blue, indigo, violet, red)",
 };
 
 async function refreshSpeaker() {
