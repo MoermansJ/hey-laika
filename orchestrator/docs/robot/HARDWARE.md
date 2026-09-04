@@ -14,7 +14,7 @@
 | Firmware flash | Hardware reset with BOOT low: hold BOOT, tap Reset, release, then `esptool --chip esp32 --port COM3 --before no_reset write_flash …` (binaries from `arduino-cli compile --output-dir`). Fallback: battery off, USB unplugged, hold BOOT, plug USB in. A software restart keeps the last latched strapping value, so BOOT-then-`ESP.restart()` does not work |
 | WiFi slots | esp-wifi primary (stock `w%` path, currently empty after the 2026-09-04 clears) and the fork's secondary in Preferences (`XW2%SSID%pass`, currently the home router). Boot tries primary then secondary |
 | Voice module | Onboard (Bittle X): mic + "Hey Bittle"-style hotword on a separate MCU wired to Serial1; emits unsolicited `X…` lines |
-| Speaker | Onboard buzzer (melody/tone). Plus, since 2026-09-03, a **Grove Speaker Plus** (2 W amp + speaker, volume pot) on **GPIO 10** (UART socket white wire), power tapped from the I2C socket; firmware sigma-delta PWM playback (`XWp/XWa/XWq`), walkie-talkie speech from host TTS. `SPEAKER_PIN=10` |
+| Speaker | Onboard buzzer (melody/tone). Plus, since 2026-09-03, a **Grove Speaker Plus** (2 W amp + speaker, volume pot) on **GPIO 10** (UART socket white wire), power tapped from the I2C socket; firmware sigma-delta PWM playback (`XWp/XWa/XWq`), walkie-talkie speech from host TTS. `SPEAKER_PIN=10`. **GPIO 10 is also TX2 of the Grove serial module**, on by default in the stock V1.0 table: until the queued firmware is flashed every firmware response goes into the amplifier as a loud tick and no speech is heard (`../design/FIRMWARE_QUEUE.md` row 3) |
 | Sensor suite | Ultrasonic ranger, satellite camera + microphone + mood light, IMU, battery, WiFi RSSI and fingerprints, pose. What each yields: `SENSOR_DATA.md` |
 | Not present on this board | IR receiver, NeoPixel, OLED, MP3 module |
 
@@ -46,7 +46,7 @@ installed (unverified on this unit). Firmware interpolates moves at
 | Command endpoint | WebSocket `ws://192.168.0.246:81` (see `NETWORK_API.md`) |
 | Other transports | USB serial, BLE UART (`<ID>_BLE`), classic BT SPP (`<ID>_SSP`), Grove UART on pins 9/10 |
 | Ultrasonic ranger | Grove one-pin ranger, SIG on **GPIO 9** (UART socket), powered from the same socket. Validated 2026-09-03: one-shot `XU` reads, 0 misses in 120 reads on a stationary target, ~2 m window, `-1` = no echo. `ULTRASONIC_PIN=9` |
-| Satellite | XIAO ESP32S3 Sense on the head, own WiFi at **192.168.0.189** (flashed 2026-09-03, MAC 68:ee:8f:50:ec:5c; `SATELLITE_HOST`, reserve its DHCP address), powered from analog socket A. OV2640 camera (QVGA JPEG, `/snap` + `/stream` on port 80), PDM mic (PCM over UDP to the adapter), Grove Chainable RGB LED (P9813) on **D2 = clock (yellow), D3 = data (white)**, power from analog socket B, driven through `/led`. Sketch: `satellite/xiao_sense` |
+| Satellite | XIAO ESP32S3 Sense on the head, own WiFi at **192.168.0.189** (flashed 2026-09-03, MAC 68:ee:8f:50:ec:5c; `SATELLITE_HOST`, reserve its DHCP address), powered from analog socket A. OV2640 camera (QVGA JPEG, `/snap` + `/stream` on port 80), PDM mic (PCM over UDP to the adapter), Grove Chainable RGB LED (P9813) on **D2 = clock (yellow), D3 = data (white)**, **power from the XIAO's 3V3 and GND pins, never the 5 V socket** (P9813 input threshold is 0.7 × VDD: at 5 V the XIAO's 3.3 V never registers, the driver stays in its power-on state and the LED is stuck pure white; found 2026-09-04), driven through `/led`. Sketch: `satellite/xiao_sense` |
 | Reset WiFi | Hold the boot button (GPIO0) through its 10-count at startup |
 
 ## Care and feeding

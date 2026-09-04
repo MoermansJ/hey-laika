@@ -51,7 +51,7 @@ bisected 2026-09-03 with `-DSATELLITE_MIC=0`. Keep it that way.
 | Module | XIAO pins | Notes |
 |---|---|---|
 | Power | 5V / GND | From analog socket A on the BiBoard (red/black) |
-| Chainable RGB LED | **D2 = CI (clock, Grove yellow)**, **D3 = DI (data, Grove white)** | LED power (red/black) from analog socket B; the LED's OUT socket is free for a second LED |
+| Chainable RGB LED | **D2 = CI (clock, Grove yellow)**, **D3 = DI (data, Grove white)** | LED power: **red to the XIAO's 3V3 pin, black to its GND**. Not the 5 V socket: the P9813 wants inputs above 0.7 × VDD, which the XIAO's 3.3 V never reaches at 5 V, and the LED then sits pure white ignoring every frame (2026-09-04). The LED's OUT socket is free for a second LED |
 | Camera, mic | on-board | Sense expansion board, camera ribbon seated |
 
 ## Bench validation (before it goes on the dog)
@@ -63,8 +63,9 @@ bisected 2026-09-03 with `-DSATELLITE_MIC=0`. Keep it that way.
    `"led"` object.
 3. `GET http://<xiao-ip>/led?r=255&g=0&b=0` → solid red;
    `.../led?r=0&g=0&b=255&effect=pulse&periodMs=1000` → breathing blue.
-   Nothing: clock/data swapped, or no 5 V on the LED. Wrong colour: P9813
-   byte order (report it).
+   Nothing: clock/data swapped, or no power on the LED. Pure white that
+   never changes: the LED is on 5 V and cannot read 3.3 V logic, move its
+   red wire to the XIAO's 3V3 pin. Wrong colour: P9813 byte order (report it).
 4. `GET http://localhost:15001/api/robots/bittle-1/ears` on the adapter →
    `"streaming": true` and `packets` climbing, `dropped` near zero.
 5. Say "Hey Laika, sit down" near the board → `ears/transcripts` shows the

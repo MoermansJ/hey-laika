@@ -21,7 +21,9 @@ committed in the fork but not on the dog.
 | # | Change | Commit | Built? | Bench check after flashing |
 |---|---|---|---|---|
 | 1 | Drop a command whose String allocation failed instead of `strcpy(NULL+1)` panicking; log WiFi SSID tried and disconnect reasons at the default level | `a51fd08` | yes (`scratchpad/fw/fix`, rebuild from the fork) | `POST /mouth/play` with `CHUNK_BYTES` temporarily 1800 must answer "command dropped, out of memory" on serial, not reboot |
-| 2 | `XW1%SSID%pass` writes the esp-wifi primary slot; `XW1` shows it (the stock `w%` command is intercepted by the loop's BOOT check on this board) | `2c1b3c4` | yes, 89 % flash (`scratchpad/fw/fix` holds both 1 and 2) | `XW1%<router>%<pass>` over serial, reboot: joins the router first, no 25 s hotspot detour; `XW2` can then go back to the iPhone |
+| 2 | `XW1%SSID%pass` writes the esp-wifi primary slot; `XW1` shows it (the stock `w%` command is intercepted by the loop's BOOT check on this board) | `2c1b3c4` | yes | `XW1%<router>%<pass>` over serial, reboot: joins the router first, no 25 s hotspot detour; `XW2` can then go back to the iPhone |
+| 3 | Grove serial module off in the BiBoard V1.0 default table, and `XWp` ends `Serial2` and clears the module flag. GPIO 10 is TX2: with the module on, every `printToAllPorts` line went into the Speaker Plus as a loud tick (the 2026-09-04 "bark" was six ticks, one per acknowledged frame), and the ranger's echoes on GPIO 9 (RX2) were read as commands that abort gaits | `807e7a5` | yes, 89 % flash, all four rows in one image: `noncodefiles/fw-build/2026-09-04-batch/` (`flash.cmd` has the esptool line) | Banner shows `Grove_Serial` 0 in the module list; `?` over the Control tab produces no tick from the speaker; `POST /mouth/play {"sound":"positive_bark"}` is a bark |
+| 4 | Speaker ISR writes `GPIO_SIGMADELTA0_REG` directly instead of the flash-resident `sigmaDeltaWrite`, and the `spkPin` NVS write moves ahead of `timerAlarmEnable`: an IRAM timer ISR that runs during an NVS write (cache disabled) crashes the board | `807e7a5` | yes (same image) | With the speaker attached, `XW2%ssid%pass` (an NVS write) over serial must not reboot the dog; play a clip straight after |
 
 Wanted next (not started):
 
@@ -40,6 +42,13 @@ Flashed now: the 2026-09-04 build (P9813 LED, `/led`, ESP-IDF I2S mic).
 |---|---|---|---|
 | 1 | Native `rainbow` LED effect (smooth hue sweep in `pumpLed`), replacing the host-stepped cycle in `mood.py` | not started; host version shipped instead | `/led?effect=rainbow&periodMs=4000` sweeps smoothly |
 | 2 | Lower WiFi TX power (`WiFi.setTxPower`) and re-enable modem sleep between audio packets: the head-mounted radio only has to reach the router | not started | ears `dropped` stays ~0 for 5 min; XIAO `rssi` at the router unchanged |
+
+Not firmware, but found the same night and fixed by wiring: the P9813 mood
+light never accepted a frame. Its input threshold is 0.7 × VDD (3.5 V on
+the 5 V socket) and the XIAO drives 3.3 V, so the driver stayed in its
+power-on state, all three sinks on, pure white. Power the LED from the
+XIAO's 3V3 pin instead (threshold 2.3 V, VDD minimum 3.0 V); see
+`../robot/HARDWARE.md` satellite row and `../../satellite/README.md`.
 
 ## How to flash the queue
 

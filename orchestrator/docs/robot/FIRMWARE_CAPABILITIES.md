@@ -64,7 +64,7 @@ Build flags on this board: `BITTLE` + `BiBoard_V1_0`, NVS persistence (no I2C EE
 | **BLE UART** | Nordic UART Service, name `<ID>_BLE` | Full token protocol; TX chunked at 10 B — reassemble lines. Bare `g` is rewritten `gf/gF` |
 | **Classic Bluetooth SPP** | `<ID>_SSP`, auto-pairs | Read at HIGHER priority than USB serial |
 | BLE client mode | Boot-time 3 s scan for a `BBC` (micro:bit) peripheral | ⚠ If found, the BLE server never starts; server also absent for first ~3.5 s of boot |
-| **Grove UART (Serial2)** | 115200 on pins RX 9 / TX 10, module `XS` (default ON) | A 4th command port — a Pi/MCU riding the dog could drive it without USB |
+| **Grove UART (Serial2)** | 115200 on pins RX 9 / TX 10, module `XS` (default ON upstream; **OFF in the hey-laika fork** since 2026-09-04, the socket carries the ranger and the speaker) | A 4th command port — a Pi/MCU riding the dog could drive it without USB |
 | WS extras | `results[i]` = captured output of command i; one task group at a time (second concurrent → error); `b64:` for all binary tokens | Already partially used |
 | WS push events | `event_cam` (x,y,w,h), `event_us` (distance) | Needs camera / ultrasonic module |
 | Boot button GPIO0 | press = reboot to WiFi-manager; 10-count hold = clear WiFi creds | |

@@ -120,7 +120,10 @@ the dog was off (LED power comes from analog socket B).
    **blue while joining WiFi**, then goes dark (the adapter owns it now).
    Serial prints `LED: P9813 on D2/D3` and `HTTP: / /snap /stream /led`.
    - Never lights: swap the yellow/white wires (clock and data crossed), then
-     check the 5 V tap on analog socket B.
+     check the LED's power (red on the XIAO 3V3 pin, black on GND).
+   - Pure white, never changes: the LED is on the 5 V socket. The P9813
+     needs inputs above 0.7 × VDD and the XIAO drives 3.3 V, so at 5 V no
+     frame is ever accepted. Move red to the XIAO's 3V3 pin (2026-09-04).
    - Wrong colours: `GET http://<xiao-ip>/led?r=255&g=0&b=0` must be red;
      if it is blue the P9813 byte order is off (report it, don't guess).
 3. `GET /api/robots/bittle-1/mood` → `enabled: true`, `sets` ≥ 1 within
@@ -172,6 +175,25 @@ and are worth knowing:
 - The startup greeting stood the dog up on the desk on reconnect and it
   fell. Greeting disabled (`POST /greeting/disable`) for bench work; the
   dog now sits on a stable low platform. Re-enable when it is on the floor.
+
+## 4d. What the "bark" actually was (2026-09-04, next morning)
+
+The clip was heard as a series of loud electric ticks, not a bark, and the
+mood light was stuck pure white all evening. Both are explained:
+
+- **Speaker.** GPIO 10 is TX2 of the Grove serial module, which the stock
+  V1.0 table enables by default and protects from `Xs`. `printToAllPorts`
+  writes every response line to it at 115200 baud, so each acknowledged
+  frame's `=` reply went into the amplifier as one tick: six frames, six
+  ticks. Fix queued in `FIRMWARE_QUEUE.md` rows 3 and 4 (module off, `XWp`
+  ends `Serial2`, IRAM-safe ISR), built as the 2026-09-04 batch.
+- **LED.** P9813 input threshold is 0.7 × VDD. On the 5 V socket that is
+  3.5 V; the XIAO drives 3.3 V, so no frame was ever accepted and the
+  driver stayed in its power-on state with all three sinks on: white. The
+  satellite reported every request as applied because its side is fine.
+  Fix: power the LED from the XIAO's 3V3 pin (wiring only, no flash).
+  Verified without the dog's help by querying the satellite directly: it
+  accepted red at brightness 40 and a blue pulse; the LED stayed white.
 
 ## 5. Record the outcome
 
