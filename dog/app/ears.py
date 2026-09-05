@@ -77,6 +77,24 @@ class Transcript(Base):
 
 # ---- wake phrase + intent ----------------------------------------------------
 
+def collapse_repeats(text: str, max_repeats: int = 2) -> str:
+    """Whisper sometimes loops ("Hello. Hello. Hello. ..." for seconds of
+    audio); keep at most `max_repeats` consecutive copies of any 1-4 word
+    phrase."""
+    out: list[str] = []
+    for word in text.split():
+        out.append(word)
+        for n in range(1, 5):
+            if len(out) < n * (max_repeats + 1):
+                break
+            phrase = out[-n:]
+            copies = (out[-n * (k + 1):len(out) - n * k] for k in range(max_repeats + 1))
+            if all(copy == phrase for copy in copies):
+                del out[-n:]
+                break
+    return " ".join(out)
+
+
 def _normalize(text: str) -> str:
     return " ".join(re.sub(r"[^a-z' ]+", " ", text.lower()).split())
 
@@ -142,8 +160,8 @@ class WhisperTranscriber:
             audio = audio[idx]
         segments, _info = self._load().transcribe(
             audio, language="en", beam_size=1, vad_filter=True,
-            initial_prompt=WHISPER_PROMPT)
-        return " ".join(s.text.strip() for s in segments).strip()
+            initial_prompt=WHISPER_PROMPT, condition_on_previous_text=False)
+        return collapse_repeats(" ".join(s.text.strip() for s in segments).strip())
 
 
 # ---- the service --------------------------------------------------------------

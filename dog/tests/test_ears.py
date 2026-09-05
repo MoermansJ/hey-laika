@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from app.ears import (PACKET_HEADER, EarsService, WhisperTranscriber,
-                      detect_intent, match_wake)
+                      collapse_repeats, detect_intent, match_wake)
 from app.models import init_db
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -56,6 +56,15 @@ def setup_module(module):
 ])
 def test_wake_matching(text, expected):
     assert match_wake(text) == expected
+
+
+def test_collapse_repeats_keeps_two_copies():
+    assert collapse_repeats("Hello. " * 40) == "Hello. Hello."
+    assert collapse_repeats("Hey Laika, hello. " * 5) == "Hey Laika, hello. Hey Laika, hello."
+    assert collapse_repeats("no no no no stop") == "no no stop"
+    assert collapse_repeats("Hey Laika, hello. Hey Laika, hello.") == "Hey Laika, hello. Hey Laika, hello."
+    assert collapse_repeats("the weather is nice today") == "the weather is nice today"
+    assert collapse_repeats("") == ""
 
 
 def test_intents():
