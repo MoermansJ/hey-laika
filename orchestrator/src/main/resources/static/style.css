@@ -511,3 +511,19 @@ input[type="text"] {
   gap: 0.9rem;
   margin-bottom: 1rem;
 }
+
+/* ---- shared card pieces used on the robot page (mirrors console.css) ---- */
+.hl-badge { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.55rem;
+  border-radius: 999px; background: var(--hl-badge); color: #1b2631; white-space: nowrap; }
+.hl-pulse { animation: hlPulse 0.7s ease-in-out infinite alternate; }
+@keyframes hlPulse { from { opacity: 1; } to { opacity: 0.35; } }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; }
+.sensor { border: 1px solid var(--border); border-radius: 8px; padding: 0.45rem 0.6rem; }
+.sensor.na { opacity: 0.45; }
+.sensor .name { font-size: 0.7rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.04em; }
+.sensor .value { font-size: 1.1rem; margin-top: 0.1rem; }
+.sensor .value .unit { font-size: 0.7rem; color: var(--text-light); }
+.panel h2 .row { display: flex; gap: 0.4rem; align-items: center; }
+.panel h2 button { font-size: 0.85rem; padding: 0.3rem 0.7rem; }
+.hint { font-size: 0.75rem; color: var(--text-light); margin-top: 0.5rem; }
+label.small { font-size: 0.78rem; color: var(--text-light); display: inline-flex; align-items: center; gap: 0.3rem; }
