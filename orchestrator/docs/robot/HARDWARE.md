@@ -49,6 +49,41 @@ installed (unverified on this unit). Firmware interpolates moves at
 | Satellite | XIAO ESP32S3 Sense on the head, own WiFi at **192.168.0.189** (flashed 2026-09-03, MAC 68:ee:8f:50:ec:5c; `SATELLITE_HOST`, reserve its DHCP address), powered from analog socket A. OV2640 camera (QVGA JPEG, `/snap` + `/stream` on port 80), PDM mic (PCM over UDP to the adapter), Grove Chainable RGB LED (P9813), cable in the LED's **IN** port (in OUT it never responds, at any voltage), **yellow on D2 (clock), white on D3 (data), red on the XIAO's 3V3 pin, black on any BiBoard socket ground** (the grounds are common through the XIAO's feed), **never the 5 V socket** (P9813 input threshold is 0.7 × VDD: at 5 V the XIAO's 3.3 V never registers, the driver stays in its power-on state and the LED is stuck pure white; found 2026-09-04), driven through `/led`. Sketch: `satellite/xiao_sense` |
 | Reset WiFi | Hold the boot button (GPIO0) through its 10-count at startup |
 
+## Cabling plan (agreed 2026-09-05, before the tidy-up)
+
+Sockets before: UART (ranger SIG on 9, speaker SIG on 10, ranger power),
+analog A (XIAO power only), a third socket (speaker power only), a socket
+ground for the LED. One socket of four carries a signal.
+
+| Step | Change | Why |
+|---|---|---|
+| 1 | LED black moves from a BiBoard socket ground to the XIAO's single GND pin (shared with the BiBoard ground wire, two wires on one pin) or spliced into the XIAO's black lead | The LED becomes a self-contained head unit on the XIAO; frees a socket |
+| 2 | Speaker red/black move onto analog A next to the XIAO's power, through a Grove Branch Cable (one plug to two) or a splice | All sockets share the one 5 V regulator, so only the connector changes; frees a socket |
+| 3 | UART cable untouched: yellow = ranger on GPIO 9, white = speaker on GPIO 10 | Those GPIOs exist only on that socket; moving a signal changes `ULTRASONIC_PIN` / `SPEAKER_PIN` and the firmware |
+
+After: UART and analog A in use; I2C (GPIO 21/22, the VL53L ToF mount in
+`noncodefiles/stl`) and analog B (GPIO 36/39) free.
+
+Rules for the pass:
+
+- **Label both signal leads of the UART cable at both ends** (yellow =
+  ranger, white = speaker). The 2026-09-04 speaker hunt was this cable.
+- **Service loop at the neck** for every head cable (XIAO power, LED, and
+  the speaker if on the head): the head pan servo sweeps 180°; test the
+  full sweep by hand after tying down.
+- **Antenna** lead away from the servo and the BiBoard, antenna clear of
+  metal; the satellite read -84 to -90 dBm against the BiBoard's -61 dBm
+  from the same router on 2026-09-05. Retest `/satellite` → `rssi`.
+- **Air around the XIAO**: no foam or tape over it, no contact with a
+  servo housing, camera ribbon not folded tightly. It has no thermal
+  protection of its own (see `SENSOR_DATA.md`).
+- **Speaker goes on the head** (top, or forward out of the mouth). It sits
+  centimetres from the mic on the XIAO, so the ears must be muted during
+  playback; that guard is still to be written.
+- **Volume pot facing outward.**
+- **Camera** aimed forward, not at the desk (2026-09-05 frames were black
+  for that reason).
+
 ## Care and feeding
 
 - The firmware **silently drops** commands received while busy — every host
