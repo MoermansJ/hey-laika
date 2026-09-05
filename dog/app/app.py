@@ -144,7 +144,8 @@ power_saver = PowerSaver(
     battery_reader=lambda: _battery_reading().get("battery"),
     idle_seconds=event_binder.idle_seconds,
     speak=lambda text: mouth.say(text) if mouth.enabled else None,
-    enabled=Config.POWER_SAVER_ENABLED)
+    enabled=Config.POWER_SAVER_ENABLED,
+    ranger=ranger, motion_at=lambda: bittle.last_motion_at)
 power_saver.init()
 conversation.motion_allowed = power_saver.motion_allowed
 

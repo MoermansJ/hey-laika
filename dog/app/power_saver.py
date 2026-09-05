@@ -15,6 +15,12 @@ climbs back above the threshold plus a hysteresis band (charging), or on a
 manual override from the console. The microphone stays on in every tier so
 "Hey Laika" always works.
 
+Independently of the tiers, the sensor gate: the camera, the ranger and the
+WiFi sniffer run only while she is moving (a motion command in the last
+`stationaryAfterS` seconds). Stationary, only the ears and the speaker stay
+live, so "Hey Laika" still works and she still answers. `sensorsWhenStationary`
+turns the gate off.
+
 What each tier saves comes from the parts list: holding servos are the
 biggest draw and go to zero after `d`; the satellite's camera and WiFi bursts
 (peaks ~340 mA) shrink with fewer frames; the LED is up to 60 mA at full
@@ -35,6 +41,7 @@ DEFAULT_CONFIG = {
     "ecoPct": 30.0, "dozePct": 15.0, "criticalPct": 8.0, "hysteresisPct": 5.0,
     "ecoIdleS": 300.0, "dozeIdleS": 900.0,
     "ecoFps": 1.0, "ecoLedDim": 0.4, "dozeLedDim": 0.1,
+    "sensorsWhenStationary": 0.0, "stationaryAfterS": 20.0,
 }
 WAKE_EVENTS = ("voice.wake", "voice.phrase", "voice.intent", "conversation.listen",
                "vision.person", "leash.near", "leash.warn", "leash.far", "leash.lost",
@@ -45,11 +52,16 @@ SAY_REFUSE = "My battery is too low to move. Please charge me first."
 
 class PowerSaver:
     def __init__(self, binder, eyes, mood, senses, battery_reader, idle_seconds,
-                 speak=None, tick_s: float = 5.0, clock=time.time, enabled: bool = True):
+                 speak=None, tick_s: float = 5.0, clock=time.time, enabled: bool = True,
+                 ranger=None, motion_at=None):
         self.binder = binder
         self.eyes = eyes
         self.mood = mood
         self.senses = senses
+        self.ranger = ranger
+        self.motion_at = motion_at or (lambda: None)   # -> epoch of the last motion command
+        self.moving = True
+        self.sensors_gated = False
         self.battery_reader = battery_reader      # -> pct | None
         self.idle_seconds = idle_seconds          # -> seconds since the last motion
         self.speak = speak or (lambda text: None)
@@ -114,7 +126,45 @@ class PowerSaver:
         target, reasons = self._target(battery, idle)
         if target != self.tier:
             self._apply(target, reasons)
+        self._gate_sensors()
         return self.status()
+
+    # -- the sensor gate: sensors follow motion, ears and speaker do not --
+
+    def motion_seconds(self) -> float | None:
+        try:
+            at = self.motion_at()
+        except Exception:
+            at = None
+        return None if at is None else max(0.0, self._clock() - at)
+
+    def _gate_sensors(self) -> None:
+        if self.config.get("sensorsWhenStationary"):
+            moving = True
+        else:
+            since = self.motion_seconds()
+            moving = since is not None and since < self.config["stationaryAfterS"]
+        if moving == self.moving and (self.sensors_gated == (not moving) or moving):
+            return
+        self.moving = moving
+        if self.tier in ("doze", "critical"):
+            return                                  # the tier already has them off
+        if moving:
+            self._eyes(fps=self._base_fps if self.tier == "active" else self.config["ecoFps"], running=True)
+            self._sniffer(self.tier == "active")
+            self._ranger(True)
+            self.sensors_gated = False
+        else:
+            self._eyes(running=False)
+            self._sniffer(False)
+            self._ranger(False)
+            self.sensors_gated = True
+        logger.info("Power saver: sensors %s (%s)", "on" if moving else "paused",
+                    "moving" if moving else "stationary")
+
+    def _ranger(self, on: bool) -> None:
+        if self.ranger is not None and hasattr(self.ranger, "gated"):
+            self.ranger.gated = not on
 
     def _target(self, battery, idle) -> tuple[str, list[str]]:
         if self.manual:
@@ -159,14 +209,16 @@ class PowerSaver:
         c = self.config
         try:
             if tier == "active":
-                self._eyes(fps=self._base_fps, running=True)
+                self._eyes(fps=self._base_fps, running=self.moving)
                 self._dim(1.0)
-                self._sniffer(True)
+                self._sniffer(self.moving)
+                self._ranger(self.moving)
                 self._said_critical = False
             elif tier == "eco":
-                self._eyes(fps=c["ecoFps"], running=True)
+                self._eyes(fps=c["ecoFps"], running=self.moving)
                 self._dim(c["ecoLedDim"])
                 self._sniffer(False)
+                self._ranger(self.moving)
             elif tier == "doze":
                 self._eyes(running=False)
                 self._dim(c["dozeLedDim"])
@@ -197,6 +249,8 @@ class PowerSaver:
         elif running is True and self._paused_eyes:
             self.eyes.set_enabled(True)
             self._paused_eyes = False
+        if running is True:
+            self.sensors_gated = False
 
     def _dim(self, factor: float) -> None:
         if self.mood is not None and hasattr(self.mood, "set_dim"):
@@ -236,7 +290,8 @@ class PowerSaver:
     def configure(self, updates: dict) -> dict:
         bounds = {"ecoPct": (0, 100), "dozePct": (0, 100), "criticalPct": (0, 100),
                   "hysteresisPct": (0, 30), "ecoIdleS": (30, 86400), "dozeIdleS": (60, 86400),
-                  "ecoFps": (0.2, 10), "ecoLedDim": (0, 1), "dozeLedDim": (0, 1)}
+                  "ecoFps": (0.2, 10), "ecoLedDim": (0, 1), "dozeLedDim": (0, 1),
+                  "sensorsWhenStationary": (0, 1), "stationaryAfterS": (3, 3600)}
         new = dict(self.config)
         for key, value in (updates or {}).items():
             if key not in bounds:
@@ -255,6 +310,7 @@ class PowerSaver:
             raise ValueError("ecoIdleS must not exceed dozeIdleS")
         self.config = new
         self._save_config()
+        self.moving = not self.moving           # force the gate to re-evaluate
         return self.evaluate()
 
     def _load_config(self) -> None:
@@ -280,7 +336,10 @@ class PowerSaver:
     # -- reporting --
 
     def status(self) -> dict:
+        motion = self.motion_seconds()
         return {"enabled": self.enabled, "tier": self.tier, "tiers": list(TIERS),
+                "moving": self.moving, "sensorsGated": self.sensors_gated,
+                "motionS": None if motion is None else round(motion, 1),
                 "sinceS": round(self._clock() - self.since, 1), "reasons": list(self.reasons),
                 "manual": self.manual, "battery": self.stats["lastBattery"],
                 "idleS": round(self._idle(), 1), "lastActivity": self._activity_reason,

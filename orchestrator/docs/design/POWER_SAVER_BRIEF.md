@@ -29,6 +29,21 @@ floor that stays.
 
 The microphone stays on in every tier, so "Hey Laika" always works.
 
+### The sensor gate
+
+Independent of the tiers: the camera, the ranger and the WiFi sniffer run
+only while she is moving, meaning a motion command in the last
+`stationaryAfterS` seconds (20 by default, from the controller's motion
+clock). Once she has been still that long they pause, and only the ears and
+the speaker stay live. The next motion command brings them back at the tier's
+rate. `sensorsWhenStationary` turns the gate off. The Vision tab's chips say
+"paused (battery saver or manual)" and "paused while stationary"; the ranger
+route answers from its last reading with `gated: true` instead of asking the
+firmware.
+
+A consequence worth knowing: while she is still, a person walking up is not
+seen, only heard. "Hey Laika" is the way to get her attention.
+
 Quiet time is the shorter of the idle ladder's motion clock and the time since
 the last activity the saver saw. Activity is anything that shows someone is
 there: `voice.wake`, `voice.phrase`, `voice.intent`, `conversation.listen`,

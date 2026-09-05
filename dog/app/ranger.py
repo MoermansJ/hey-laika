@@ -23,6 +23,7 @@ class RangerService:
         self._lock = threading.Lock()
         self._recent: deque = deque(maxlen=history)
         self._last: dict | None = None
+        self.gated = False                  # battery saver: stationary, do not ask the firmware
         self.stats = {"reads": 0, "misses": 0, "lastReadMs": None}
 
     @property
@@ -31,6 +32,11 @@ class RangerService:
 
     def read(self, pin: int | None = None) -> dict:
         pin = pin or self.pin
+        if self.gated and (pin == self.pin or pin is None):
+            # Battery saver: she is stationary, the firmware is not asked.
+            last = self._last or {"distanceCm": None, "ok": False, "pin": pin,
+                                  "at": time.time(), "readMs": 0}
+            return {**last, "cached": True, "gated": True}
         if not pin:
             raise RuntimeError("ULTRASONIC_PIN is not set")
         now = self._clock()
@@ -57,6 +63,6 @@ class RangerService:
         with self._lock:
             recent = list(self._recent)
             last = dict(self._last) if self._last else None
-        return {"enabled": self.enabled, "pin": self.pin,
+        return {"enabled": self.enabled, "pin": self.pin, "gated": self.gated,
                 "minIntervalS": self.min_interval_s, "last": last,
                 "recent": recent, **self.stats}

@@ -481,6 +481,7 @@ function hlPowerCard(host, base, { title = "Battery saver", intervalMs = 5000 } 
     ["ecoPct", "eco below %"], ["dozePct", "doze below %"], ["criticalPct", "critical below %"],
     ["hysteresisPct", "hysteresis %"], ["ecoIdleS", "eco after quiet s"], ["dozeIdleS", "doze after quiet s"],
     ["ecoFps", "eco camera fps"], ["ecoLedDim", "eco LED (0-1)"], ["dozeLedDim", "doze LED (0-1)"],
+    ["stationaryAfterS", "stationary after s"], ["sensorsWhenStationary", "sensors while still (0/1)"],
   ];
   host.innerHTML =
       `<h2>${esc(title)} <span class="pw-tier"></span><span class="hint pw-since" style="margin:0"></span>` +
@@ -494,7 +495,9 @@ function hlPowerCard(host, base, { title = "Battery saver", intervalMs = 5000 } 
       `<details style="margin-top:0.6rem"><summary class="hint" style="cursor:pointer;margin:0">Thresholds</summary>` +
       `<div class="row pw-fields" style="margin-top:0.4rem"></div>` +
       `<div class="row" style="margin-top:0.4rem"><button class="pw-save">Save</button><span class="hint pw-saved" style="margin:0"></span></div></details>` +
-      `<div class="hint">Anything that shows someone is there wakes her: a wake phrase, a person in view, a leash event,` +
+      `<div class="hint">Sensors follow motion: the camera, the ranger and the WiFi sniffer run while she moves and pause` +
+      ` once she has been still for the stationary time; the ears and the speaker never pause.` +
+      ` Anything that shows someone is there wakes her: a wake phrase, a person in view, a leash event,` +
       ` being lifted, a command from the console. A battery-forced tier lifts only once the level climbs back above the` +
       ` threshold plus the hysteresis band, or on Wake.</div>`;
   const q = (sel) => host.querySelector(sel);
@@ -515,8 +518,11 @@ function hlPowerCard(host, base, { title = "Battery saver", intervalMs = 5000 } 
       const p = await hlApi(base, "/power/saver");
       q(".pw-tier").innerHTML = hlBadge(TIER_BADGE[p.tier] || "warn", p.tier + (p.manual ? " · held" : ""));
       q(".pw-since").textContent = `for ${Math.round(p.sinceS)} s` + (p.reasons.length ? ` · ${p.reasons.join(", ")}` : "");
+      const sensors = p.config.sensorsWhenStationary ? "sensors always on"
+          : p.moving ? `moving${p.motionS != null ? ` (${Math.round(p.motionS)} s ago)` : ""}: camera, ranger, sniffer on`
+          : `stationary${p.motionS != null ? ` ${Math.round(p.motionS)} s` : ""}: camera, ranger, sniffer paused; ears and speaker on`;
       q(".pw-detail").textContent =
-          `${TIER_HELP[p.tier] || ""} · battery ${p.battery != null ? Math.round(p.battery) + " %" : "unknown"}` +
+          `${TIER_HELP[p.tier] || ""} · ${sensors} · battery ${p.battery != null ? Math.round(p.battery) + " %" : "unknown"}` +
           ` · quiet ${Math.round(p.idleS)} s (last activity: ${p.lastActivity})` +
           ` · ${p.transitions} transitions, ${p.wakes} wakes${p.enabled ? "" : " · DISABLED (POWER_SAVER_ENABLED)"}`;
       q(".pw-tiers").innerHTML = p.tiers.map((t) =>

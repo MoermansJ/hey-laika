@@ -119,7 +119,7 @@
           $("#eyes-toggle").disabled = true;
           $("#eyes-fresh").disabled = true;
         } else {
-          chip.textContent = !e.enabled ? "paused" : e.streaming ? `live · ${e.fps} fps` : "no frames";
+          chip.textContent = !e.enabled ? "paused (battery saver or manual)" : e.streaming ? `live · ${e.fps} fps` : "no frames";
           chip.className = "chip " + (!e.enabled ? "warn" : e.streaming ? "on" : "bad");
           $("#eyes-toggle").textContent = e.enabled ? "Pause" : "Resume";
           $("#eyes-toggle").disabled = false;
@@ -192,8 +192,8 @@
         const bar = $("#range-bar");
         bar.firstElementChild.style.width = cm == null ? "0%" : `${Math.min(100, cm / RANGE_MAX_CM * 100)}%`;
         bar.className = "range-bar " + (cm == null ? "" : cm < 25 ? "blocked" : cm < 60 ? "close" : "");
-        chip.textContent = cm == null ? "no echo" : cm < 25 ? "blocked" : cm < 60 ? "close" : "clear";
-        chip.className = "chip " + (cm == null ? "warn" : cm < 25 ? "bad" : "on");
+        chip.textContent = r.gated ? "paused while stationary" : cm == null ? "no echo" : cm < 25 ? "blocked" : cm < 60 ? "close" : "clear";
+        chip.className = "chip " + (r.gated ? "" : cm == null ? "warn" : cm < 25 ? "bad" : "on");
         drawSparkline(r.recent || []);
         $("#range-detail").textContent =
             `pin ${r.pin} · ${r.readMs} ms per read · ${r.reads} reads, ${r.misses} misses` +

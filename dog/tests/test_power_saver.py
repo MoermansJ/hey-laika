@@ -29,6 +29,10 @@ class FakeSenses:
     def __init__(self): self.enabled = True
 
 
+class FakeRanger:
+    def __init__(self): self.gated = False
+
+
 class FakeBinder:
     def __init__(self):
         self.listeners = []
@@ -45,18 +49,22 @@ class Clock:
     def advance(self, s): self.t += s
 
 
-def make(battery=80.0):
+def make(battery=80.0, gate=False):
     init_db()
     clock = Clock()
     reading = {"battery": battery}
     idle = {"s": 0.0}
+    motion = {"at": clock.t}                 # a motion command just happened
     said = []
-    binder, eyes, mood, senses = FakeBinder(), FakeEyes(), FakeMood(), FakeSenses()
+    binder, eyes, mood, senses, ranger = FakeBinder(), FakeEyes(), FakeMood(), FakeSenses(), FakeRanger()
     saver = PowerSaver(binder, eyes, mood, senses, battery_reader=lambda: reading["battery"],
-                       idle_seconds=lambda: idle["s"], speak=said.append, clock=clock, enabled=False)
+                       idle_seconds=lambda: idle["s"], speak=said.append, clock=clock, enabled=False,
+                       ranger=ranger, motion_at=lambda: motion["at"])
     saver.init()
-    return saver, dict(clock=clock, reading=reading, idle=idle, said=said, binder=binder,
-                       eyes=eyes, mood=mood, senses=senses)
+    if not gate:
+        saver.config["sensorsWhenStationary"] = 1.0      # the tier tests want sensors independent of motion
+    return saver, dict(clock=clock, reading=reading, idle=idle, motion=motion, said=said, binder=binder,
+                       eyes=eyes, mood=mood, senses=senses, ranger=ranger)
 
 
 def test_starts_active_and_goes_eco_after_a_quiet_spell():
@@ -127,6 +135,36 @@ def test_manual_override_and_back_to_auto():
         saver.override("nap")
 
 
+def test_sensors_pause_when_stationary_and_resume_on_motion():
+    saver, f = make(gate=True)
+    s = saver.evaluate()
+    assert s["moving"] is True and s["sensorsGated"] is False and f["eyes"].enabled and not f["ranger"].gated
+    f["clock"].advance(21)                   # no motion command for 21 s
+    s = saver.evaluate()
+    assert s["moving"] is False and s["sensorsGated"] is True
+    assert f["eyes"].enabled is False and f["ranger"].gated is True and f["senses"].enabled is False
+    assert saver.tier == "active"            # the ears and the speaker are untouched: still active
+    f["motion"]["at"] = f["clock"].t         # she moves again
+    s = saver.evaluate()
+    assert s["moving"] is True and f["eyes"].enabled is True and f["eyes"].fps == 4.0
+    assert f["ranger"].gated is False and f["senses"].enabled is True
+
+
+def test_gate_respects_the_eco_tier_and_can_be_switched_off():
+    saver, f = make(gate=True)
+    f["idle"]["s"] = 301
+    f["clock"].advance(301)
+    saver.evaluate()
+    assert saver.tier == "eco" and f["eyes"].enabled is False    # stationary for 301 s too
+    f["motion"]["at"] = f["clock"].t
+    saver.evaluate()
+    assert f["eyes"].enabled is True and f["eyes"].fps == 1.0 and f["senses"].enabled is False
+    saver.configure({"sensorsWhenStationary": 1})
+    f["clock"].advance(100)
+    saver.evaluate()
+    assert f["eyes"].enabled is True and saver.status()["moving"] is True
+
+
 def test_configure_validates_and_persists():
     saver, f = make()
     s = saver.configure({"ecoIdleS": 60, "ecoPct": 40})
@@ -137,4 +175,4 @@ def test_configure_validates_and_persists():
         saver.configure({"dozePct": 50})       # above ecoPct
     with pytest.raises(ValueError):
         saver.configure({"bogus": 1})
-    saver.configure({"ecoIdleS": 300, "ecoPct": 30})
+    saver.configure({"ecoIdleS": 300, "ecoPct": 30, "sensorsWhenStationary": 0})
