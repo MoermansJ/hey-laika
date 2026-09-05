@@ -1,6 +1,6 @@
 # Laika's sensor data — what can be read today, and what is left on the table
 
-**Updated:** 2026-09-03 · Reference for the perception work (one snapshot
+**Updated:** 2026-09-05 (ears `level`, DC-offset gate fix) · Reference for the perception work (one snapshot
 of the world for the GUI and the agent). Every sense listed here is
 installed and wired; "exposed" means it is readable from the adapter API
 right now, "stored" means it lands in `bittle.db`, "dormant" means the
@@ -75,7 +75,8 @@ faster-whisper `base` on CPU, and gates on the wake phrase.
 |---|---|
 | `streaming`, `packets`, `dropped`, `lastSeq`, `lastPacketAgeS` | transport health; `dropped` from sequence gaps |
 | `utterances`, `wakes`, `lastText`, `lastError` | pipeline counters |
-| `model`, `modelLoaded`, `wakePhrase`, `udpPort`, `sampleRate` | configuration (the energy floor is `EARS_ENERGY_FLOOR` in `.env`, not reported) |
+| `model`, `modelLoaded`, `wakePhrase`, `udpPort`, `sampleRate` | configuration |
+| `level` → `rms, peak, median, floor, speaking` | live loudness: DC-free RMS of the last 20 ms packet, peak and median over the last second, the gate floor (`EARS_ENERGY_FLOOR`), and whether the gate is open |
 
 `/ears/transcripts`: every utterance whisper turned into text, wake or not:
 `at, text, wake, intent, durationS, latencyS`. Stored in `transcripts`,
@@ -87,9 +88,11 @@ come, stop, greet, unknown`), `transcriptId`.
 
 **Left on the table**
 
-- Sound level. The RMS is computed for every packet and thrown away; a
-  rolling level (dBFS, peak, noise floor) is the cheapest new metric there
-  is, and it is what a level meter in the Ears card needs.
+- Sound level beyond `level`: a longer noise-floor estimate, dBFS, and a
+  history for the Ears card's meter. Note the PDM mic carries a DC offset
+  of ~1700 after the ×8 gain; until 2026-09-05 the gate measured that
+  offset instead of the sound and stayed open permanently (8 s blocks,
+  all discarded by whisper's VAD). The RMS is mean-subtracted now.
 - Non-speech sounds: a loud bang, a doorbell, clapping, the dog's own
   buzzer. The energy gate already sees them; whisper returns nothing.
   An onset detector or a small sound-classifier (YAMNet-class) would turn

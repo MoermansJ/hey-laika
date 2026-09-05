@@ -38,6 +38,8 @@ from app.models import Base, SessionLocal, engine, utcnow
 logger = logging.getLogger(__name__)
 
 PACKET_HEADER = struct.Struct(">I")  # sequence number, then int16 LE samples
+LEVEL_WINDOW_PACKETS = 50
+
 
 # Spellings whisper produces for "Laika" (owner's accent + tiny model).
 WAKE_VARIANTS = ("laika", "laker", "lika", "leica", "lycra", "lyca", "like a",
@@ -146,7 +148,7 @@ class WhisperTranscriber:
 class EarsService:
     def __init__(self, event_binder, transcriber=None,
                  sample_rate: int = 16000, udp_port: int = 5005,
-                 wake_phrase: str = "hey laika", energy_floor: int = 600,
+                 wake_phrase: str = "hey laika", energy_floor: int = 200,
                  silence_s: float = 0.8, max_utterance_s: float = 8.0,
                  min_utterance_s: float = 0.4, clock=time.time):
         self.binder = event_binder
@@ -166,6 +168,8 @@ class EarsService:
         self._last_voice_at = 0.0
         self._utterance_started = 0.0
         self._queue: deque = deque()
+        self._levels: deque = deque(maxlen=LEVEL_WINDOW_PACKETS)
+        self._level_rms = 0.0
         self._work = threading.Condition()
         self._stop = threading.Event()
         self.stats = {"packets": 0, "dropped": 0, "lastSeq": None,
@@ -202,7 +206,10 @@ class EarsService:
     def feed_pcm(self, pcm: bytes) -> None:
         """Raw int16 mono samples at self.sample_rate; segments utterances."""
         now = self._clock()
-        loud = _rms(pcm) >= self.energy_floor
+        rms = _rms(pcm)
+        loud = rms >= self.energy_floor
+        self._levels.append(rms)
+        self._level_rms = rms
         with self._lock:
             if loud:
                 if not self._speaking:
@@ -340,7 +347,18 @@ class EarsService:
             "lastPacketAgeS": round(now - last, 1) if last else None,
             "modelLoaded": bool(getattr(self.transcriber, "loaded", False)),
             "model": getattr(self.transcriber, "model_name", None),
+            "level": self._level(),
             **self.stats,
+        }
+
+    def _level(self) -> dict:
+        recent = list(self._levels)
+        return {
+            "rms": round(self._level_rms),
+            "peak": round(max(recent)) if recent else 0,
+            "median": round(sorted(recent)[len(recent) // 2]) if recent else 0,
+            "floor": self.energy_floor,
+            "speaking": self._speaking,
         }
 
     def transcripts(self, limit: int = 20) -> list[dict]:
@@ -355,7 +373,8 @@ def _rms(pcm: bytes) -> float:
     if count == 0:
         return 0.0
     samples = struct.unpack("<%dh" % count, pcm[:count * 2])
-    return (sum(s * s for s in samples) / count) ** 0.5
+    mean = sum(samples) / count
+    return (sum((s - mean) ** 2 for s in samples) / count) ** 0.5
 
 
 def build_transcriber():

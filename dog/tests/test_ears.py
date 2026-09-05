@@ -124,6 +124,20 @@ def test_status_shape():
     status = ears.status()
     assert status["udpPort"] == 5555 and status["streaming"] is False
     assert status["wakePhrase"] == "hey laika" and status["model"] == "fake"
+    assert status["level"] == {"rms": 0, "peak": 0, "median": 0,
+                               "floor": 200, "speaking": False}
+
+
+def test_dc_offset_is_not_loudness():
+    ears = EarsService(CapturingBinder(), transcriber=FakeTranscriber("x"),
+                       energy_floor=200)
+    silent_with_offset = struct.pack("<320h", *([1700] * 320))
+    ears.feed_pcm(silent_with_offset)
+    assert ears.status()["level"]["rms"] == 0 and not ears._speaking
+    tone_with_offset = struct.pack("<320h", *([1700 + 800, 1700 - 800] * 160))
+    ears.feed_pcm(tone_with_offset)
+    level = ears.status()["level"]
+    assert level["rms"] == 800 and level["peak"] == 800 and level["speaking"]
 
 
 @pytest.mark.skipif(not os.getenv("EARS_REAL_MODEL"),

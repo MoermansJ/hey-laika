@@ -115,7 +115,7 @@ proxies and scheduled for removal (audit fix #11).
 | `/senses/samples` | GET | Fingerprint samples, newest first, with the live pose and `matched`/`total` counts. Filters: `?since=`/`?until=` (epoch s), `?source=auto|manual`, `?minAps=`, `?every=N` (keep one in N), `?limit=` (≤2000) |
 | `/senses/pose/reset` | POST | Re-anchor the dead-reckoned origin at the dog's current spot (`{"heading"}` optional) |
 | `/senses/range` | GET | Ultrasonic read (`?pin=9|10` to validate wiring; default `ULTRASONIC_PIN`), throttled to one firmware read per 150 ms, with `readMs`, `reads`/`misses` counters and the last 60 readings (`recent`, `null` = no echo) for the Eyes tab's live card |
-| `/ears` | GET | Ears status: satellite PCM stream, whisper model, wake/utterance counters |
+| `/ears` | GET | Ears status: satellite PCM stream, whisper model, wake/utterance counters, `level` (DC-free RMS of the last packet, 1 s peak and median, the gate floor, whether the gate is open) |
 | `/ears/transcripts` | GET | Recent transcripts (`?limit=`), wake flag and detected intent |
 | `/ears/clip` | POST | Bench test: run an uploaded 16-bit mono WAV through the ears pipeline |
 | `/mouth` | GET | Mouth status: speaker pin, TTS engine, last utterance |

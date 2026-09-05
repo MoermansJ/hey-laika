@@ -76,8 +76,9 @@ Volume pot on the Speaker Plus at a quarter turn to start.
 5. Say "Hey Laika, sit down" at arm's length. First utterance loads whisper
    (~15 s once), then transcripts appear within ~2 s. Expect `wake: true,
    intent: sit` and Laika sits (binding `voice.phrase` → `idle_sit`).
-   - Nothing heard: raise `MIC_GAIN_SHIFT` in the sketch or lower
-     `EARS_ENERGY_FLOOR` in `.env`.
+   - Nothing heard: watch `GET /ears` → `level` while speaking; `peak`
+     must clear `floor` (fan noise idles at ~50 rms, ~160 peak). Lower
+     `EARS_ENERGY_FLOOR` in `.env` or raise `MIC_GAIN_SHIFT` in the sketch.
    - Heard but no wake: read the transcript text; add the spelling whisper
      used to `WAKE_VARIANTS` in `ears.py`.
 6. Say "Hey Laika, lie down" and "Hey Laika, hello" to exercise `rest` and
