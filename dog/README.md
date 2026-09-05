@@ -128,6 +128,8 @@ proxies and scheduled for removal (audit fix #11).
 | `/mouth` | GET | Mouth status: speaker pin, TTS engine, last utterance |
 | `/mouth/say` | POST | `{"text"}` → host TTS → 8 kHz PCM → firmware PWM on the Grove Speaker Plus |
 | `/mouth/wav` | POST | Play an uploaded PCM WAV on the speaker (wiring check without TTS) |
+| `/mouth/voices` | GET | The voices the TTS engine offers (espeak-ng English voices), the variants (male/female/croak/whisper) and the current choice |
+| `/mouth/voice` | POST | `{"voice", "variant", "speed", "pitch", "preview"}` picks the speaking voice, persisted in `settings`; `preview` says a sample sentence |
 | `/mouth/stop` | POST | Stop and flush speaker playback |
 | `/mouth/sounds` | GET | Clip library: every WAV/MP3 in `dog/sounds` by name |
 | `/mouth/play` | POST | `{"sound": "positive_bark"}` → the clip on the speaker (decoded once, cached) |

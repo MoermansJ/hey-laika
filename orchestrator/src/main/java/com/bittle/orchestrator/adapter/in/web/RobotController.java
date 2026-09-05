@@ -431,6 +431,17 @@ public class RobotController {
         return relayPostWithBody.execute(robotId, "/mouth/say", body);
     }
 
+    @GetMapping("/mouth/voices")
+    public Map<String, Object> mouthVoices(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/mouth/voices");
+    }
+
+    @PostMapping("/mouth/voice")
+    public Map<String, Object> mouthVoice(@PathVariable String robotId,
+                                          @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/mouth/voice", body);
+    }
+
     @PostMapping("/mouth/stop")
     public Map<String, Object> mouthStop(@PathVariable String robotId) {
         return relayPost.execute(robotId, "/mouth/stop");

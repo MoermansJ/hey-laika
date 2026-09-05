@@ -121,12 +121,57 @@ function hlSpeakerCard(host, base, { title = "Speaker", say = true, intervalMs =
              ` placeholder="Say it on the dog (Grove Speaker Plus)" autocomplete="off">` +
              `<button class="sc-say">Speak</button></div>` : "") +
       `<div class="actions sc-sounds" style="margin-top:0.5rem"></div>` +
+      `<div class="row sc-voice" style="margin-top:0.5rem">` +
+      `<label class="small">voice <select class="sc-voice-id"></select></label>` +
+      `<label class="small">variant <select class="sc-variant"></select></label>` +
+      `<label class="small">speed <input type="number" class="sc-speed" min="80" max="300" step="10" style="width:4.5rem"> wpm</label>` +
+      `<label class="small">pitch <input type="number" class="sc-pitch" min="0" max="99" step="5" style="width:4rem"></label>` +
+      `<button class="sc-try" title="Save and say a sample sentence">Try</button>` +
+      `<span class="hint sc-engine" style="margin:0"></span></div>` +
       `<div class="hint sc-detail"></div>` +
       `<div class="hint">Clips play on the Grove Speaker Plus on the dog. The volume pot on the` +
       ` speaker is the first thing to check when it sounds wrong.</div>`;
   const q = (sel) => host.querySelector(sel);
   let rendered = "";
   let enabled = false;
+  let voicesLoaded = false;
+
+  async function loadVoices() {
+    try {
+      const v = await hlApi(base, "/mouth/voices");
+      const VARIANT_LABELS = { "": "default", m1: "male 1", m2: "male 2", m3: "male 3", m4: "male 4",
+        m5: "male 5", m6: "male 6", m7: "male 7", f1: "female 1", f2: "female 2", f3: "female 3",
+        f4: "female 4", f5: "female 5", croak: "croak", whisper: "whisper" };
+      q(".sc-voice-id").innerHTML = (v.voices || []).map((o) =>
+          `<option value="${esc(o.id)}">${esc(o.name)} (${esc(o.id)})</option>`).join("")
+          || `<option value="${esc(v.current.voice)}">${esc(v.current.voice)}</option>`;
+      q(".sc-variant").innerHTML = (v.variants || [""]).map((x) =>
+          `<option value="${esc(x)}">${esc(VARIANT_LABELS[x] ?? x)}</option>`).join("");
+      q(".sc-voice-id").value = v.current.voice;
+      q(".sc-variant").value = v.current.variant || "";
+      q(".sc-speed").value = v.current.speed;
+      q(".sc-pitch").value = v.current.pitch;
+      q(".sc-engine").textContent = v.engine === "espeak-ng" ? "" : `engine: ${v.engine} (voice options apply to espeak-ng)`;
+      host.querySelectorAll(".sc-voice select, .sc-voice input, .sc-try").forEach((el) => { el.disabled = v.engine !== "espeak-ng"; });
+      voicesLoaded = true;
+    } catch (err) {
+      q(".sc-engine").textContent = `voices unavailable: ${err.message}`;
+    }
+  }
+
+  async function saveVoice(preview) {
+    q(".sc-try").disabled = true;
+    try {
+      await hlJsonPost(base, "/mouth/voice", {
+        voice: q(".sc-voice-id").value, variant: q(".sc-variant").value,
+        speed: Number(q(".sc-speed").value), pitch: Number(q(".sc-pitch").value), preview,
+      });
+    } catch (err) { q(".sc-detail").textContent = `voice: ${err.message}`; }
+    finally { q(".sc-try").disabled = false; refresh(); }
+  }
+  q(".sc-try").onclick = () => saveVoice(true);
+  [".sc-voice-id", ".sc-variant"].forEach((sel) => q(sel).addEventListener("change", () => saveVoice(true)));
+  [".sc-speed", ".sc-pitch"].forEach((sel) => q(sel).addEventListener("change", () => saveVoice(false)));
 
   async function play(sound) {
     try { await hlJsonPost(base, "/mouth/play", { sound }); }
@@ -156,6 +201,7 @@ function hlSpeakerCard(host, base, { title = "Speaker", say = true, intervalMs =
       }
       sounds.querySelectorAll("[data-sound]").forEach((btn) => { btn.disabled = !enabled; });
       if (say) q(".sc-say").disabled = !enabled;
+      if (!voicesLoaded) await loadVoices();
     } catch (err) {
       chip.textContent = "speaker unavailable"; chip.className = "chip sc-chip warn"; chip.title = err.message;
     }

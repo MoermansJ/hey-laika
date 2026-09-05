@@ -86,6 +86,37 @@ def test_shipped_bark_clips_decode():
     assert len(to_pcm8(library.wav("positive_bark"))) > RATE // 4    # > 0.25 s of audio
 
 
+def test_voice_setting_reaches_a_voice_aware_tts_and_persists():
+    from app.models import init_db
+    init_db()
+    seen = []
+
+    def tts(text, voice):
+        seen.append((text, dict(voice)))
+        return make_wav(0.2)
+
+    ctrl = ScriptedController()
+    mouth = MouthService(ctrl, pin=10, tts=tts, sleep=lambda s: None)
+    mouth.set_voice(voice="en-gb", variant="f3", speed=170, pitch=60)
+    mouth.say("hello")
+    assert seen[-1] == ("hello", {"voice": "en-gb", "variant": "f3", "speed": 170, "pitch": 60})
+    fresh = MouthService(ctrl, pin=10, tts=tts, sleep=lambda s: None)
+    fresh.init()
+    assert fresh.voice["voice"] == "en-gb" and fresh.voice["speed"] == 170
+    with pytest.raises(ValueError):
+        mouth.set_voice(speed=10)
+    with pytest.raises(ValueError):
+        mouth.set_voice(variant="robot")
+    assert mouth.status()["voice"]["variant"] == "f3"
+    mouth.set_voice(voice="en-us", variant="", speed=150, pitch=50)
+
+
+def test_plain_tts_still_works_without_a_voice_parameter():
+    ctrl = ScriptedController()
+    mouth = MouthService(ctrl, pin=10, tts=lambda text: make_wav(0.2), sleep=lambda s: None)
+    assert mouth.say("hi")["chunks"] >= 1
+
+
 def test_play_wav_attaches_once_and_chunks():
     ctrl = ScriptedController()
     mouth = MouthService(ctrl, pin=10, sleep=lambda s: None)

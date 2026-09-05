@@ -191,6 +191,7 @@ adapter without a typed DTO.
 | `/ears/record` | POST | *relay* — Audio input tab's phrase recorder: `{"seconds"}` captures the live microphone, returns the transcript and whether it matched the wake phrase; never fires the voice event |
 | `/ears/vocabulary` | GET / POST | *relay* — extra phrases whisper is primed with and extra accepted spellings of the name |
 | `/mouth`, `/mouth/say`, `/mouth/stop` | GET/POST | *relay* — speaker status, speak text on the dog, stop playback |
+| `/mouth/voices`, `/mouth/voice` | GET / POST | *relay* — the speaking voice: espeak-ng voices and variants, the current choice; the Speaker card's dropdowns |
 | `/mouth/sounds`, `/mouth/play` | GET/POST | *relay* — clip library on the dog's speaker; `{"sound"}` plays one (Audio output tab, Speaker card) |
 | `/satellite` | GET | *relay* — the XIAO's own status JSON (mic, camera, rssi, led) |
 | `/eyes`, `/eyes/config` | GET/POST | *relay* — camera/person-detection status; pause or resume frame grabbing |

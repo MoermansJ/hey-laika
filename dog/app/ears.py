@@ -165,22 +165,30 @@ class WhisperTranscriber:
             step = sample_rate / 16000.0
             idx = (np.arange(int(len(audio) / step)) * step).astype(np.int64)
             audio = audio[idx]
+        # Speech runs at ~3 words/s; a decode that wants far more tokens than
+        # the clip could hold is a hallucination loop, and a loop cost 7 s of
+        # CPU on 0.9 s of noise. Cap it at the source instead of trimming after.
+        max_tokens = int(16 + 6 * len(audio) / 16000.0)
         segments, _info = self._load().transcribe(
             audio, language="en", beam_size=1, vad_filter=True,
-            initial_prompt=self.prompt, condition_on_previous_text=False)
+            initial_prompt=self.prompt, condition_on_previous_text=False,
+            max_new_tokens=max_tokens)
         return collapse_repeats(" ".join(s.text.strip() for s in segments).strip())
 
 
 # ---- the service --------------------------------------------------------------
 
 class EarsService:
-    def __init__(self, event_binder, transcriber=None,
+    def __init__(self, event_binder, transcriber=None, wake_transcriber=None,
                  sample_rate: int = 16000, udp_port: int = 5005,
                  wake_phrase: str = "hey laika", energy_floor: int = 300,
                  silence_s: float = 0.8, max_utterance_s: float = 8.0,
                  min_utterance_s: float = 0.4, clock=time.time):
         self.binder = event_binder
         self.transcriber = transcriber
+        # Optional faster model for the always-on wake path; the accurate one
+        # then only runs on the request a conversation is waiting for.
+        self.wake_transcriber = wake_transcriber
         self.sample_rate = sample_rate
         self.udp_port = udp_port
         self.wake_phrase = wake_phrase
@@ -356,8 +364,9 @@ class EarsService:
         return " ".join([PROMPT_TEMPLATE.format(phrase=phrase), *extra])
 
     def _apply_vocabulary(self) -> None:
-        if self.transcriber is not None:
-            self.transcriber.prompt = self._prompt()
+        for engine in (self.transcriber, self.wake_transcriber):
+            if engine is not None:
+                engine.prompt = self._prompt()
 
     def _load_vocabulary(self) -> None:
         with SessionLocal() as session:
@@ -391,9 +400,13 @@ class EarsService:
         if duration < self.min_utterance_s:
             return
         with self._work:
-            self._queue.append((pcm, self.sample_rate, duration, started))
-            if len(self._queue) > 3:
-                self._queue.popleft()  # never let a backlog grow unbounded
+            if self._listen is not None:
+                # A conversation is waiting: this utterance skips the backlog.
+                self._queue.appendleft((pcm, self.sample_rate, duration, started))
+            else:
+                self._queue.append((pcm, self.sample_rate, duration, started))
+            while len(self._queue) > 3:
+                self._queue.pop()      # never let a backlog grow unbounded
             self._work.notify()
 
     def _transcribe_loop(self) -> None:
@@ -415,12 +428,14 @@ class EarsService:
         if self.transcriber is None:
             self.stats["lastError"] = "no transcriber configured"
             return None
+        listen = self._listen
+        engine = self.transcriber if (listen is not None or self.wake_transcriber is None) \
+            else self.wake_transcriber
         started = time.time()
-        text = self.transcriber.transcribe(pcm, rate)
+        text = engine.transcribe(pcm, rate)
         latency = time.time() - started
         self.stats["utterances"] += 1
         self.stats["lastText"] = text
-        listen = self._listen
         if listen is not None and trigger:
             # A conversation is waiting for this utterance: it is the request,
             # not a new wake phrase.
@@ -534,6 +549,8 @@ class EarsService:
             "lastPacketAgeS": round(now - last, 1) if last else None,
             "modelLoaded": bool(getattr(self.transcriber, "loaded", False)),
             "model": getattr(self.transcriber, "model_name", None),
+            "wakeModel": getattr(self.wake_transcriber, "model_name", None),
+            "wakeModelLoaded": bool(getattr(self.wake_transcriber, "loaded", False)),
             "level": self._level(),
             "listening": self._listen is not None,
             "mutedForS": round(max(0.0, self._mute_until - now), 1),
@@ -567,7 +584,7 @@ def _rms(pcm: bytes) -> float:
     return (sum((s - mean) ** 2 for s in samples) / count) ** 0.5
 
 
-def build_transcriber():
-    if not Config.EARS_ENABLED:
+def build_transcriber(model_name: str | None = None):
+    if not Config.EARS_ENABLED or model_name == "":
         return None
-    return WhisperTranscriber(Config.WHISPER_MODEL, Config.WHISPER_CACHE or None)
+    return WhisperTranscriber(model_name or Config.WHISPER_MODEL, Config.WHISPER_CACHE or None)

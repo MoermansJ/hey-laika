@@ -307,6 +307,7 @@ function resetRobotPanels() {
   if (state.arbiterCard) { state.arbiterCard.stop(); state.arbiterCard = null; }
   $("#arbiter-card").innerHTML = "";
   $("#activity").innerHTML = "";
+  $("#activity-age").textContent = "";
   ["#poll-ttl", "#poll-batt", "#poll-mult", "#poll-postures"].forEach((sel) => {
     $(sel).value = "";
   });
@@ -562,7 +563,31 @@ function renderActivity(robotId) {
         `${escapeHtml(entry.message)}<span class="at">${at}</span>`;
     feed.appendChild(li);
   });
+  renderActivityAge();
 }
+
+// "12 s ago" under the newest entry, ticking every second so a stale feed
+// is obvious without reading clocks.
+function fmtAgo(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s} s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ${s % 60} s ago`;
+  const h = Math.floor(m / 60);
+  return `${h} h ${m % 60} min ago`;
+}
+
+function renderActivityAge() {
+  const el = $("#activity-age");
+  if (!el) return;
+  const newest = state.selected ? (state.activity[state.selected] || [])[0] : null;
+  const t = newest && newest.at ? Date.parse(newest.at) : NaN;
+  el.textContent = Number.isFinite(t) ? `newest ${fmtAgo(Date.now() - t)}` : "";
+}
+
+setInterval(() => {
+  if (!document.hidden && state.page === "robot") renderActivityAge();
+}, 1000);
 
 // ---------- actions ----------
 // (Fleet-wide autonomous handlers removed with their buttons: the legacy

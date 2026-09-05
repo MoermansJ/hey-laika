@@ -89,15 +89,20 @@ senses.init()
 power = PowerTracker(bittle)
 power.init()
 # Ears: the XIAO satellite's microphone stream -> transcripts -> voice.phrase.
-ears = EarsService(event_binder, transcriber=build_transcriber(),
+ears = EarsService(event_binder, transcriber=build_transcriber(Config.WHISPER_MODEL),
+                   wake_transcriber=(build_transcriber(Config.WHISPER_WAKE_MODEL)
+                                     if Config.WHISPER_WAKE_MODEL not in ("", Config.WHISPER_MODEL)
+                                     else None),
                    sample_rate=Config.EARS_SAMPLE_RATE,
                    udp_port=Config.EARS_UDP_PORT,
                    wake_phrase=Config.WAKE_PHRASE,
-                   energy_floor=Config.EARS_ENERGY_FLOOR)
+                   energy_floor=Config.EARS_ENERGY_FLOOR,
+                   silence_s=Config.EARS_SILENCE_S)
 if Config.EARS_ENABLED:
     ears.init()
 # Mouth: host TTS -> 8 kHz PCM -> firmware PWM on the Grove Speaker Plus.
 mouth = MouthService(bittle, Config.SPEAKER_PIN)
+mouth.init()
 # Ultrasonic ranger on the UART socket: throttled one-shot reads.
 ranger = RangerService(bittle, Config.ULTRASONIC_PIN)
 # Satellite (camera + mood light) over HTTP; eyes and mood are inert
@@ -822,6 +827,31 @@ def mouth_play(robot_id: str):
         mood.flash("speaking", float(result["seconds"]))
     log_activity("voice", f"Played sound: {name}")
     return jsonify({"robotId": robot_id, **result})
+
+
+@app.get("/api/robots/<robot_id>/mouth/voices")
+@robot_scoped
+def mouth_voices(robot_id: str):
+    """The voices the TTS engine offers, the current choice and the variants."""
+    return jsonify({"robotId": robot_id, **mouth.voices_view()})
+
+
+@app.post("/api/robots/<robot_id>/mouth/voice")
+@robot_scoped
+def mouth_voice_set(robot_id: str):
+    """{"voice", "variant", "speed", "pitch", "preview"}: pick the speaking
+    voice; preview says a sample sentence on the speaker."""
+    body = request.get_json(silent=True) or {}
+    try:
+        view = mouth.set_voice(body.get("voice"), body.get("variant"), body.get("speed"),
+                               body.get("pitch"), preview=bool(body.get("preview")))
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": "speaker_error", "message": str(exc)}), 502
+    log_activity("voice", f"Voice set to {mouth.voice['voice']}"
+                          f"{'+' + mouth.voice['variant'] if mouth.voice['variant'] else ''}")
+    return jsonify({"robotId": robot_id, **view})
 
 
 @app.post("/api/robots/<robot_id>/mouth/stop")

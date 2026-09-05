@@ -145,6 +145,39 @@ def test_listen_hands_the_next_utterance_to_the_caller_and_mute_drops_packets():
     assert ears.status()["mutedForS"] > 4
 
 
+def test_wake_model_hears_everything_and_the_accurate_one_hears_the_request():
+    init_db()
+    binder = CapturingBinder()
+    accurate = FakeTranscriber("Hey Laika, sit")
+    fast = FakeTranscriber("Hey Laika, sit")
+    ears = EarsService(binder, transcriber=accurate, wake_transcriber=fast)
+    ears._process(b"\x00\x00" * 16000, 16000, 1.0)
+    assert len(fast.calls) == 1 and accurate.calls == []
+    assert ears.status()["wakeModel"] == "fake"
+
+    def speak_later():
+        time.sleep(0.1)
+        ears._process(b"\x00\x00" * 16000, 16000, 1.0)
+
+    threading.Thread(target=speak_later).start()
+    text, _ = ears.listen(2.0, 5.0)
+    assert text == "Hey Laika, sit" and len(accurate.calls) == 1 and len(fast.calls) == 1
+    ears.set_vocabulary(phrases=["Laika"])
+    assert fast.prompt == accurate.prompt
+
+
+def test_listening_utterance_jumps_the_queue():
+    ears = EarsService(CapturingBinder(), transcriber=FakeTranscriber("x"),
+                       silence_s=0.5, min_utterance_s=0.1, clock=lambda: 0.0)
+    ears._queue.append((b"old", 16000, 1.0, 0.0))
+    ears._listen = {"deadline": 99, "max": 5.0, "event": threading.Event(), "text": None, "latency": None}
+    ears._utterance = bytearray(b"\x00\x00" * 8000)
+    ears._utterance_started = 0.0
+    ears._speaking = True
+    ears._finish_utterance_locked()
+    assert ears._queue[0][0] != b"old"
+
+
 def test_listen_window_closes_when_nobody_speaks():
     ears = EarsService(CapturingBinder(), transcriber=FakeTranscriber("x"))
     ears._clock = lambda: 1000.0

@@ -56,6 +56,8 @@ def query_ollama(prompt: str, model: str | None = None,
         "prompt": prompt,
         "system": system or LAIKA_SYSTEM_PROMPT,
         "stream": False,
+        # Keep the model resident: a cold load cost 8 s on the first turn.
+        "keep_alive": "30m",
         # Ollama reads sampling knobs from `options`, not top-level.
         "options": {"temperature": temperature,
                     "num_predict": max_tokens},

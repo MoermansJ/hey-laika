@@ -82,7 +82,13 @@ class Config:
     EARS_SAMPLE_RATE = int(os.getenv("EARS_SAMPLE_RATE", "16000"))
     EARS_ENERGY_FLOOR = int(os.getenv("EARS_ENERGY_FLOOR", "300"))
     WAKE_PHRASE = os.getenv("WAKE_PHRASE", "hey laika")
-    WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+    # Two whisper models: a fast one hears every utterance for the wake phrase,
+    # the accurate one transcribes the request a conversation is waiting for.
+    # English-only variants are both faster and more accurate for English.
+    WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base.en")
+    WHISPER_WAKE_MODEL = os.getenv("WHISPER_WAKE_MODEL", "tiny.en")
+    # Quiet this long ends an utterance; shorter = faster wake, more splits.
+    EARS_SILENCE_S = float(os.getenv("EARS_SILENCE_S", "0.6"))
     # Conversation: "Hey Laika" -> listen -> LLM router -> behavior and/or speech.
     CONVERSATION_ENABLED = _bool("CONVERSATION_ENABLED", True)
     CONVERSATION_LISTEN_S = float(os.getenv("CONVERSATION_LISTEN_S", "8"))
