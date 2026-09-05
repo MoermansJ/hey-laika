@@ -22,6 +22,7 @@
     .rec::before { content: "●"; margin-right: 0.35rem; animation: hlPulse 0.7s ease-in-out infinite alternate; }
   </style>
   <script src="common.js"></script>
+  <script src="cards.js"></script>
   <script src="nav.js" defer></script>
 </head>
 <body>
@@ -32,6 +33,8 @@
   </div>
 
   <div class="grid">
+    <section class="card" id="conversation-card" style="grid-column: 1 / -1"></section>
+
     <section class="card">
       <h2>Live level <span id="gate-chip" class="chip">…</span></h2>
       <div class="meter" id="meter">
@@ -98,7 +101,7 @@
 
   <script>
     const $ = (sel) => document.querySelector(sel);
-    const state = { robotId: null, vocabularyLoaded: false, dirty: false };
+    const state = { robotId: null, vocabularyLoaded: false, dirty: false, conversation: null };
     const METER_MAX = 3000;
 
     const base = () => `/api/robots/${state.robotId}`;
@@ -266,6 +269,8 @@
           state.robotId = id;
           state.vocabularyLoaded = false;
           hlLoadBadgePalette(base());
+          if (state.conversation) state.conversation.stop();
+          state.conversation = hlConversationCard($("#conversation-card"), base(), { full: true });
           refresh();
         } });
       } catch (err) {
@@ -274,6 +279,11 @@
       }
       if (!page.robotId) return;
       state.robotId = page.robotId;
+      const mountConversation = () => {
+        if (state.conversation) state.conversation.stop();
+        state.conversation = hlConversationCard($("#conversation-card"), base(), { full: true });
+      };
+      mountConversation();
       ["#vocab-wake", "#vocab-phrases", "#vocab-variants"].forEach((sel) =>
           $(sel).addEventListener("input", () => { state.dirty = true; }));
       $("#vocab-save").onclick = () => saveVocabulary();

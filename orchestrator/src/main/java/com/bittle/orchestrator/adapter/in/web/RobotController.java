@@ -370,6 +370,39 @@ public class RobotController {
         return relayGet.execute(robotId, "/ears/transcripts?limit=" + Math.max(1, Math.min(limit, 200)));
     }
 
+    @GetMapping("/conversation")
+    public Map<String, Object> conversation(@PathVariable String robotId,
+                                            @RequestParam(defaultValue = "10") int limit) {
+        return relayGet.execute(robotId, "/conversation?limit=" + Math.max(1, Math.min(limit, 100)));
+    }
+
+    @PostMapping("/conversation/say")
+    public Map<String, Object> conversationSay(@PathVariable String robotId,
+                                               @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/conversation/say", body);
+    }
+
+    @PostMapping("/conversation/listen")
+    public Map<String, Object> conversationListen(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/conversation/listen");
+    }
+
+    @PostMapping("/conversation/cancel")
+    public Map<String, Object> conversationCancel(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/conversation/cancel");
+    }
+
+    @GetMapping("/conversation/prompt")
+    public Map<String, Object> conversationPrompt(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/conversation/prompt");
+    }
+
+    @PostMapping("/conversation/prompt")
+    public Map<String, Object> conversationPromptSet(@PathVariable String robotId,
+                                                     @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/conversation/prompt", body);
+    }
+
     @PostMapping("/ears/record")
     public Map<String, Object> earsRecord(@PathVariable String robotId,
                                           @RequestBody(required = false) Map<String, Object> body) {

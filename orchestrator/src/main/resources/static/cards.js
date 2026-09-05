@@ -9,6 +9,8 @@
  *                  (option why: the event -> binding -> behavior cause chain)
  *  hlPoseCard      the dead-reckoned pose and the WiFi sniffer's state
  *  hlSensesStrip   one row of live readings: battery, range, signal, mic, satellite
+ *  hlConversationCard  "Hey Laika" turns: live state, the last turn, typed input,
+ *                  the prompt template and the tool menu (option full)
  */
 "use strict";
 
@@ -317,6 +319,103 @@ function hlSensesStrip(host, base, { intervalMs = 3000 } = {}) {
     show("signal", l?.rssi != null ? Math.round(l.rssi) : null, l ? `${l.ssid || "?"} · zone ${l.zone}` : "no leash data");
     show("mic", e?.level ? e.level.rms : null, e ? `1 s peak ${e.level?.peak} · floor ${e.level?.floor}${e.level?.speaking ? " · gate open" : ""}` : "no satellite stream");
     show("satellite", d?.rssi ?? null, d ? `up ${Math.round((d.uptimeS || 0) / 60)} min · mic ${d.mic ? "ok" : "off"} · camera ${d.camera ? "ok" : "off"}` : "satellite offline");
+  }
+  const poller = hlPoll(refresh, intervalMs);
+  return { refresh, stop: poller.stop };
+}
+
+// -------------------------------------------------------------- conversation
+
+function hlConversationCard(host, base, { title = "Conversation", full = false, intervalMs = 1000 } = {}) {
+  host.innerHTML =
+      `<h2>${esc(title)} <span class="cc-state"></span>` +
+      `<button class="cc-listen" style="margin-left:auto" title="Start a turn as if the wake phrase had been heard: sit, listen, answer">Listen</button>` +
+      `<button class="cc-cancel" title="Stop speaking and go back to idle">Cancel</button></h2>` +
+      `<div class="row"><input type="text" class="cc-text" style="flex:1" autocomplete="off"` +
+      ` placeholder="Type what you would say after “Hey Laika” — same router, same speaker"><button class="cc-say primary">Send</button></div>` +
+      `<div class="cc-current hint"></div>` +
+      `<div class="cc-turns" style="margin-top:0.5rem"></div>` +
+      (full ? `<details class="cc-settings" style="margin-top:0.6rem"><summary class="hint" style="cursor:pointer;margin:0">Prompt and tools</summary>` +
+              `<label class="hint" style="display:block;margin:0.4rem 0 0.2rem">Prompt template (<code>%s</code> is the transcript; a brevity instruction is appended)</label>` +
+              `<textarea class="cc-prompt" spellcheck="false" style="min-height:4.5rem"></textarea>` +
+              `<div class="row" style="margin-top:0.3rem"><label class="small">reply cap <input type="number" class="cc-cap" min="40" max="2000" step="20"> chars</label>` +
+              `<button class="cc-save">Save</button><span class="hint cc-saved" style="margin:0"></span></div>` +
+              `<div class="hint cc-tools"></div></details>` : "") +
+      `<div class="hint">“Hey Laika” alone: she sits, the LED pulses green while she listens, purple while the LLM thinks, teal while she speaks.` +
+      ` The LLM picks one tool from the bindings on <code>voice.intent</code> or answers in one or two sentences.</div>`;
+  const q = (sel) => host.querySelector(sel);
+  const STATE_BADGE = { listening: "listening", thinking: "thinking", speaking: "speaking" };
+  let promptLoaded = false, promptDirty = false;
+
+  async function post(path, body) {
+    try { await hlJsonPost(base, path, body); } catch (err) { hlToast(err.message, true); }
+    refresh();
+  }
+
+  function renderTurns(turns) {
+    const el = q(".cc-turns");
+    if (!turns.length) { el.innerHTML = `<span class="empty">no turns yet</span>`; return; }
+    el.innerHTML = `<table class="data-table"><tr><th>When</th><th>Heard</th><th>Did</th><th>Said</th><th>Latency</th></tr>` +
+        turns.map((t) => {
+          const did = t.error ? `<span style="color:var(--critical)">${esc(t.error)}</span>`
+              : t.tool && t.tool !== "answer" ? hlBadge("wake", t.tool) : (t.tool ? "answered" : "—");
+          const lat = [t.whisperS != null ? `ears ${t.whisperS}s` : null, t.llmS != null ? `llm ${t.llmS}s` : null,
+                       t.speakS != null ? `speak ${t.speakS}s` : null].filter(Boolean).join(" · ");
+          return `<tr><td class="muted">${new Date(t.at).toLocaleTimeString()}</td><td>${esc(t.heard || "")}</td>` +
+              `<td>${did}</td><td>${esc(t.said || "")}</td><td class="muted">${lat}</td></tr>`;
+        }).join("") + `</table>`;
+  }
+
+  async function refresh() {
+    try {
+      const c = await hlApi(base, `/conversation?limit=${full ? 10 : 5}`);
+      const badge = STATE_BADGE[c.state];
+      q(".cc-state").innerHTML = !c.enabled ? `<span class="chip warn">disabled</span>`
+          : badge ? hlBadge(badge, c.state) : `<span class="chip">idle</span>`;
+      q(".cc-cancel").disabled = c.state === "idle";
+      q(".cc-listen").disabled = c.state !== "idle";
+      q(".cc-say").disabled = c.state !== "idle";
+      const cur = c.current;
+      q(".cc-current").textContent = cur
+          ? `${c.state} for ${cur.elapsedS}s${cur.heard ? ` · heard “${cur.heard}”` : ""}${cur.tool ? ` · tool ${cur.tool}` : ""}${cur.said ? ` · saying “${cur.said}”` : ""}`
+          : `${c.turns.length ? "" : "say “Hey Laika” or type below · "}${c.tools.length} tools · ${c.turns.length} recent turns`;
+      renderTurns(c.turns || []);
+      if (full) {
+        if (!promptLoaded || !promptDirty) {
+          q(".cc-prompt").value = c.prompt || "";
+          q(".cc-cap").value = c.replyChars || 320;
+          promptLoaded = true;
+        }
+        q(".cc-tools").innerHTML = `tools from the bindings on voice.intent: ` +
+            (c.tools.map((t) => `<b>${esc(t.name)}</b> → ${esc(t.behavior)}`).join(", ") || "none") +
+            `, plus <b>answer</b>. Add a binding on the Behavior tab to add a voice command.`;
+      }
+    } catch (err) {
+      q(".cc-state").innerHTML = `<span class="chip warn" title="${esc(err.message)}">unavailable</span>`;
+    }
+  }
+
+  const send = () => {
+    const text = q(".cc-text").value.trim();
+    if (!text) return;
+    q(".cc-text").value = "";
+    post("/conversation/say", { text });
+  };
+  q(".cc-say").onclick = send;
+  q(".cc-text").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+  q(".cc-listen").onclick = () => post("/conversation/listen");
+  q(".cc-cancel").onclick = () => post("/conversation/cancel");
+  if (full) {
+    [".cc-prompt", ".cc-cap"].forEach((sel) => q(sel).addEventListener("input", () => { promptDirty = true; }));
+    q(".cc-save").onclick = async () => {
+      try {
+        await hlJsonPost(base, "/conversation/prompt",
+            { prompt: q(".cc-prompt").value, replyChars: Number(q(".cc-cap").value) });
+        promptDirty = false;
+        q(".cc-saved").textContent = `saved ${new Date().toLocaleTimeString()}`;
+      } catch (err) { q(".cc-saved").textContent = `failed: ${err.message}`; }
+      refresh();
+    };
   }
   const poller = hlPoll(refresh, intervalMs);
   return { refresh, stop: poller.stop };

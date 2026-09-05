@@ -6,16 +6,6 @@
   <title>Audio output</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
   <link rel="stylesheet" href="console.css">
-  <style>
-    .voice-log { display: flex; flex-direction: column; gap: 0.45rem; max-height: 55vh; overflow-y: auto; }
-    .voice-msg { max-width: 72ch; padding: 0.45rem 0.7rem; border-radius: 10px;
-      font-size: 0.85rem; border: 1px solid var(--ring); }
-    .voice-msg.user  { align-self: flex-end; background: var(--page); }
-    .voice-msg.laika { align-self: flex-start; background: var(--surface); }
-    .voice-msg.error { align-self: flex-start; color: var(--critical); }
-    .voice-msg .who { font-size: 0.65rem; color: var(--muted); display: block; margin-bottom: 0.15rem; }
-    .voice-msg .lat { font-size: 0.65rem; color: var(--muted); margin-left: 0.5rem; }
-  </style>
   <script src="common.js"></script>
   <script src="cards.js"></script>
   <script src="nav.js" defer></script>
@@ -30,38 +20,13 @@
   <div class="stack">
     <section class="card" id="speaker-card"></section>
 
-    <section class="card">
-      <h2>Conversation</h2>
-      <div class="row" style="margin-bottom:0.6rem">
-        <input type="text" id="voice-input" style="flex:1"
-               placeholder="Type a phrase in place of the microphone — e.g. “who’s a good dog?”" autocomplete="off">
-        <button id="voice-send" class="primary">Send</button>
-      </div>
-      <div id="voice-log" class="voice-log"></div>
-      <div class="hint">The reply comes from the local LLM. The live microphone, transcripts and wake
-        phrase are on the Audio input tab.
-        <label style="margin-left:0.5rem"><input type="checkbox" id="bark-on-reply" checked> bark on the dog after a reply</label>
-      </div>
-    </section>
+    <section class="card" id="conversation-card"></section>
   </div>
 
   <script>
     const $ = (sel) => document.querySelector(sel);
-    const state = { robotId: null, base: "", speaker: null };
+    const state = { robotId: null, base: "", speaker: null, conversation: null };
     const api = (path, options) => hlApi(state.base, path, options);
-
-    function voiceLogAppend(kind, text, latencySec) {
-      const log = $("#voice-log");
-      const msg = document.createElement("div");
-      msg.className = `voice-msg ${kind}`;
-      const who = kind === "user" ? "you" : kind === "laika" ? "laika" : "error";
-      const lat = typeof latencySec === "number"
-          ? `<span class="lat">${latencySec.toFixed(1)}s think</span>` : "";
-      // LLM output and the user's own text: never raw HTML.
-      msg.innerHTML = `<span class="who">${who}${lat}</span>${esc(text)}`;
-      log.appendChild(msg);
-      log.scrollTop = log.scrollHeight;
-    }
 
     async function refreshVoiceHealth() {
       const chip = $("#voice-chip");
@@ -84,36 +49,12 @@
       }
     }
 
-    async function sendVoiceInput() {
-      const input = $("#voice-input");
-      const button = $("#voice-send");
-      const text = input.value.trim();
-      if (!text || button.disabled) return;
-      voiceLogAppend("user", text);
-      input.value = "";
-      button.disabled = true;
-      button.textContent = "…";
-      try {
-        const result = await api("/voice/demo", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: text }),
-        });
-        voiceLogAppend("laika", result.response, result.latencySec?.ollama);
-        if ($("#bark-on-reply").checked && state.speaker)
-          state.speaker.play(Math.random() < 0.5 ? "positive_bark" : "positive_bark2");
-      } catch (err) {
-        voiceLogAppend("error", err.message);
-        if ($("#bark-on-reply").checked && state.speaker) state.speaker.play("negative_bark");
-      } finally {
-        button.disabled = false;
-        button.textContent = "Send";
-        input.focus();
-      }
-    }
-
     function mount() {
       if (state.speaker) state.speaker.stop();
+      if (state.conversation) state.conversation.stop();
       state.speaker = hlSpeakerCard($("#speaker-card"), state.base, { title: "Speaker", say: true });
+      state.conversation = hlConversationCard($("#conversation-card"), state.base,
+          { title: "Conversation", full: false });
       refreshVoiceHealth();
     }
 
@@ -128,8 +69,7 @@
       if (!page.robotId) return;
       state.robotId = page.robotId;
       state.base = page.base;
-      $("#voice-send").onclick = sendVoiceInput;
-      $("#voice-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendVoiceInput(); });
+      await hlLoadBadgePalette(state.base);
       mount();
       hlPoll(refreshVoiceHealth, 15000, { immediate: false });
     }

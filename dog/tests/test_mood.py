@@ -86,6 +86,18 @@ def test_events_map_to_base_or_flash():
     mood.shutdown()
 
 
+def test_hold_outranks_flashes_until_released():
+    sat = FakeSatellite()
+    mood = make(sat)
+    mood.hold("listening")
+    assert mood.status()["mood"] == "listening" and mood.status()["hold"] == "listening"
+    mood.flash("person", 30)
+    assert mood.status()["mood"] == "listening"
+    assert sat.calls[-1][3] == "pulse" and sat.calls[-1][1] == 255
+    mood.release()
+    assert mood.status()["mood"] == "person" and mood.status()["hold"] is None
+
+
 def test_every_event_mood_exists():
     for mood, _seconds in EVENT_MOODS.values():
         assert mood is None or mood in MOODS

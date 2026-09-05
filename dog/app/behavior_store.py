@@ -174,8 +174,7 @@ SEED_BINDINGS = [
      "behavior": "leash_far", "priority": PRIORITY_LIFECYCLE, "enabled": True},
     {"event": "leash.lost", "filter": None,
      "behavior": "rest_now", "priority": PRIORITY_SAFETY, "enabled": True},
-    # Voice (ears.py): the wake phrase + a recognised intent. Unknown intents
-    # get an acknowledgment so the owner knows she heard.
+    # Voice (ears.py): the wake phrase + a keyword intent runs straight away.
     {"event": "voice.phrase", "filter": {"intent": "sit"},
      "behavior": "idle_sit", "priority": PRIORITY_MANUAL, "enabled": True},
     {"event": "voice.phrase", "filter": {"intent": "rest"},
@@ -184,7 +183,20 @@ SEED_BINDINGS = [
      "behavior": "rest_now", "priority": PRIORITY_SAFETY, "enabled": True},
     {"event": "voice.phrase", "filter": {"intent": "greet"},
      "behavior": "startup_greeting", "priority": PRIORITY_MANUAL, "enabled": True},
-    {"event": "voice.phrase", "filter": {"intent": "unknown"},
+    # Conversation (conversation.py): the listening posture, and the tool menu
+    # the LLM router chooses from. Every voice.intent binding is one tool the
+    # next "Hey Laika" can pick; the filter's intent is the tool's name.
+    {"event": "conversation.listen", "filter": None,
+     "behavior": "idle_sit", "priority": PRIORITY_MANUAL, "enabled": True},
+    {"event": "voice.intent", "filter": {"intent": "sit"},
+     "behavior": "idle_sit", "priority": PRIORITY_MANUAL, "enabled": True},
+    {"event": "voice.intent", "filter": {"intent": "lie_down"},
+     "behavior": "idle_rest", "priority": PRIORITY_MANUAL, "enabled": True},
+    {"event": "voice.intent", "filter": {"intent": "stop"},
+     "behavior": "rest_now", "priority": PRIORITY_SAFETY, "enabled": True},
+    {"event": "voice.intent", "filter": {"intent": "greet"},
+     "behavior": "startup_greeting", "priority": PRIORITY_MANUAL, "enabled": True},
+    {"event": "voice.intent", "filter": {"intent": "acknowledge"},
      "behavior": "acknowledgment", "priority": PRIORITY_MANUAL, "enabled": True},
     # Vision (eyes.py): someone in the camera's view. The mood light reacts
     # on its own; moving the dog on sight ships disabled until follow-me.
@@ -210,15 +222,17 @@ class BehaviorStore:
                         interruptible=seed["interruptible"],
                         cooldown_s=seed["cooldownS"], is_builtin=True))
             fresh_db = session.query(Binding).first() is None
+            present = {(b.event, b.filter_json) for b in session.query(Binding).all()}
             for seed in SEED_BINDINGS:
                 # Original seeds only populate an empty table (users may have
-                # deliberately deleted them); NEW event families (leash.*)
-                # are added whenever their event has no binding at all.
+                # deliberately deleted them); NEW event families are added
+                # per (event, filter) whenever that exact pair is absent, so a
+                # family with several seeds (the voice.intent tools) fills in
+                # completely and a later new tool lands on an existing table.
                 if not fresh_db:
-                    is_new_family = seed["event"].startswith(("leash.", "voice.", "vision."))
-                    exists = session.query(Binding).filter_by(
-                        event=seed["event"]).first() is not None
-                    if not is_new_family or exists:
+                    is_new_family = seed["event"].startswith(
+                        ("leash.", "voice.", "vision.", "conversation."))
+                    if not is_new_family or (seed["event"], json.dumps(seed["filter"])) in present:
                         continue
                 session.add(Binding(
                     id=str(uuid.uuid4()), event=seed["event"],

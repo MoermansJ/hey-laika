@@ -118,6 +118,11 @@ proxies and scheduled for removal (audit fix #11).
 | `/ears` | GET | Ears status: satellite PCM stream, whisper model, wake/utterance counters, `level` (DC-free RMS of the last packet, 1 s peak and median, the gate floor, whether the gate is open) |
 | `/ears/transcripts` | GET | Recent transcripts (`?limit=`), wake flag and detected intent |
 | `/ears/clip` | POST | Bench test: run an uploaded 16-bit mono WAV through the ears pipeline |
+| `/conversation` | GET | "Hey Laika" turns: `state` (idle / listening / thinking / speaking), the current turn, recent `turns` (`?limit=`), the prompt template and the `tools` menu built from the bindings on `voice.intent` |
+| `/conversation/say` | POST | `{"text"}` starts a turn from typed text in place of the microphone: same router, behaviors and speaker |
+| `/conversation/listen` | POST | Starts a turn as if the wake phrase had been heard: sit, listen, answer |
+| `/conversation/cancel` | POST | Stop speaking, back to idle |
+| `/conversation/prompt` | GET / POST | `{"prompt", "replyChars"}` the LLM prompt template (`%s` is the transcript) and the spoken-reply cap; persisted in `settings` |
 | `/ears/record` | POST | `{"seconds": 3}` captures the live microphone for that long regardless of the gate, transcribes it, persists the transcript and returns `text`, `wake`, `command`, `intent`, `peak` vs `floor`; never fires `voice.phrase` |
 | `/ears/vocabulary` | GET / POST | `{"wakePhrase"}` the phrase a transcript must start with (overrides `WAKE_PHRASE`), `{"phrases": [...]}` extra text whisper is primed with (`initial_prompt`), `{"variants": [...]}` extra spellings accepted as the name after hey / hi / okay; persisted in the `settings` table |
 | `/mouth` | GET | Mouth status: speaker pin, TTS engine, last utterance |

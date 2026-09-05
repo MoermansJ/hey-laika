@@ -26,6 +26,7 @@ from app.choreography import ChoreographyLibrary
 from app.arbiter import Arbiter
 from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
                                 PRIORITY_MANUAL, BehaviorStore)
+from app.conversation import ConversationService
 from app.ears import EarsService, build_transcriber
 from app.event_binder import EventBinder
 from app.eyes import EyesService, build_detector
@@ -109,6 +110,15 @@ eyes.init()
 mood = MoodService(satellite, enabled=Config.MOOD_ENABLED)
 mood.init()
 event_binder.listeners.append(mood.on_event)
+# Conversation: wake -> sit and listen -> LLM router -> behavior and/or speech.
+conversation = ConversationService(
+    ears, mood, mouth, event_binder, behavior_store,
+    llm=lambda prompt, system, as_json: query_ollama(prompt, system=system,
+                                                     format_json=as_json, max_tokens=160),
+    beep=lambda pattern: play_beep(bittle, pattern),
+    enabled=Config.CONVERSATION_ENABLED, listen_s=Config.CONVERSATION_LISTEN_S,
+    reply_chars=Config.CONVERSATION_REPLY_CHARS)
+conversation.init()
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -818,6 +828,61 @@ def mouth_play(robot_id: str):
 @robot_scoped
 def mouth_stop(robot_id: str):
     return jsonify({"robotId": robot_id, "stopped": mouth.stop()})
+
+
+# ---- Conversation ("Hey Laika" -> listen -> LLM router -> speak) ----
+
+@app.get("/api/robots/<robot_id>/conversation")
+@robot_scoped
+def conversation_status(robot_id: str):
+    limit = _num_param(request.args, "limit", 10, lo=1, hi=100)
+    return jsonify({"robotId": robot_id, **conversation.status(),
+                    "turns": conversation.turns(limit)})
+
+
+@app.post("/api/robots/<robot_id>/conversation/say")
+@robot_scoped
+def conversation_say(robot_id: str):
+    """A turn from typed text in place of the microphone (the console's
+    conversation card); the same router, behaviors and speaker."""
+    body = request.get_json(silent=True) or {}
+    text = str(body.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "bad_request", "message": "'text' is required"}), 400
+    status = conversation.start(text, source="text")
+    log_activity("voice", f"Conversation (typed): {text[:60]}")
+    return jsonify({"robotId": robot_id, **status})
+
+
+@app.post("/api/robots/<robot_id>/conversation/listen")
+@robot_scoped
+def conversation_listen(robot_id: str):
+    """Start a turn as if the wake phrase had been heard: sit, listen, answer."""
+    log_activity("voice", "Conversation started from the console")
+    return jsonify({"robotId": robot_id, **conversation.start(None, source="console")})
+
+
+@app.post("/api/robots/<robot_id>/conversation/cancel")
+@robot_scoped
+def conversation_cancel(robot_id: str):
+    return jsonify({"robotId": robot_id, **conversation.cancel()})
+
+
+@app.get("/api/robots/<robot_id>/conversation/prompt")
+@robot_scoped
+def conversation_prompt(robot_id: str):
+    return jsonify({"robotId": robot_id, **conversation.prompt_view()})
+
+
+@app.post("/api/robots/<robot_id>/conversation/prompt")
+@robot_scoped
+def conversation_prompt_set(robot_id: str):
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"robotId": robot_id,
+                        **conversation.set_prompt(body.get("prompt"), body.get("replyChars"))})
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
 
 
 # ---- Ears (XIAO satellite microphone -> whisper -> voice.phrase) ----

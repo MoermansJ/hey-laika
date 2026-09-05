@@ -83,6 +83,10 @@ class Config:
     EARS_ENERGY_FLOOR = int(os.getenv("EARS_ENERGY_FLOOR", "300"))
     WAKE_PHRASE = os.getenv("WAKE_PHRASE", "hey laika")
     WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+    # Conversation: "Hey Laika" -> listen -> LLM router -> behavior and/or speech.
+    CONVERSATION_ENABLED = _bool("CONVERSATION_ENABLED", True)
+    CONVERSATION_LISTEN_S = float(os.getenv("CONVERSATION_LISTEN_S", "8"))
+    CONVERSATION_REPLY_CHARS = int(os.getenv("CONVERSATION_REPLY_CHARS", "320"))
     WHISPER_CACHE = os.getenv("WHISPER_CACHE", "")
 
     # Ultrasonic ranger on the UART socket: which GPIO took the SIG wire

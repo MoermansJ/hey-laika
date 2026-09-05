@@ -103,8 +103,8 @@ the tab bar and the iframe per tab. Every tab is its own page, embedded with
 | Activity | `index.html` | the arbiter card and the activity feed |
 | Control | `control.html` | servos, actions, a live-readings strip, the mood light |
 | Behavior | `behavior.html` | the personality loop: chart, interact, lifecycle editors, personality decisions |
-| Audio input | `ears.html` | microphone level, phrase recorder, vocabulary, transcripts |
-| Audio output | `voice.html` | the speaker (text-to-speech and clips) and the conversation demo |
+| Audio input | `ears.html` | the conversation card (state, turns, prompt, tools), microphone level, phrase recorder, vocabulary, transcripts |
+| Audio output | `voice.html` | the speaker (text-to-speech and clips) and a compact conversation card |
 | Vision | `eyes.html` | camera with detections, ultrasonic range |
 | Mind | `mind.html` | the arbiter card with its cause chain, agent thoughts |
 | Leash | `leash.html` | signal zones, thresholds, walk-test marks |
@@ -122,7 +122,8 @@ Shared code, loaded by every page:
   (badges coloured from the adapter's mood palette), toasts.
 - `cards.js` — reusable cards, one implementation per concern, mounted where
   wanted: `hlMoodCard`, `hlSpeakerCard`, `hlArbiterCard` (with an optional
-  event → binding → behavior cause chain), `hlPoseCard`, `hlSensesStrip`.
+  event → binding → behavior cause chain), `hlPoseCard`, `hlSensesStrip`,
+  `hlConversationCard`.
   A card renders into a `.card` element, polls itself and returns
   `{ refresh, stop }`.
 
@@ -186,6 +187,7 @@ adapter without a typed DTO.
 | `/senses/sniff` | POST | *relay* — trigger one WiFi scan now |
 | `/senses/range` | GET | *relay* — one-shot ultrasonic read (`?pin=`) |
 | `/ears`, `/ears/transcripts` | GET | *relay* — satellite microphone status (with the live `level` and the custom `vocabulary`) and recent transcripts |
+| `/conversation`, `/conversation/say`, `/conversation/listen`, `/conversation/cancel`, `/conversation/prompt` | GET / POST | *relay* — the "Hey Laika" conversation: state and recent turns, a typed turn, a console-started turn, cancel, the prompt template |
 | `/ears/record` | POST | *relay* — Audio input tab's phrase recorder: `{"seconds"}` captures the live microphone, returns the transcript and whether it matched the wake phrase; never fires the voice event |
 | `/ears/vocabulary` | GET / POST | *relay* — extra phrases whisper is primed with and extra accepted spellings of the name |
 | `/mouth`, `/mouth/say`, `/mouth/stop` | GET/POST | *relay* — speaker status, speak text on the dog, stop playback |

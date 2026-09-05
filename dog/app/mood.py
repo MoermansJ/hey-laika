@@ -28,6 +28,7 @@ MOODS = {
     "heard":       (0,   120, 255, "pulse", 900,  255),   # legacy blue; wake is green now
     "wake":        (0,   255, 40,  "solid", 1500, 255),   # wake phrase heard
     "wake_greet":  (0,   255, 40,  "pulse", 700,  255),   # ...and it was a greeting
+    "listening":   (0,   255, 40,  "pulse", 700,  255),   # recording the request (the spinner)
     "thinking":    (160, 0,   255, "pulse", 700,  255),
     "speaking":    (0,   255, 170, "pulse", 450,  255),
     "happy":       (0,   255, 40,  "solid", 1500, 255),
@@ -52,6 +53,7 @@ RAINBOW = ((255, 0, 0), (255, 110, 0), (255, 220, 0), (0, 200, 0),
 EVENT_MOODS = {
     "robot.online":     ("happy", 4.0),
     "voice.phrase":     ("wake", 2.5),
+    "voice.wake":       ("wake", 2.5),
     "vision.person":    ("person", 1.5),
     "vision.clear":     (None, None),
     "exception.report": ("alert", 3.0),
@@ -68,7 +70,8 @@ INTENT_MOODS = {"greet": "wake_greet"}
 
 # GUI badge kinds -> the mood whose colour and effect they must share, so a
 # badge on screen and the LED on the head always agree (single source).
-BADGES = {"wake": "wake", "wakeGreet": "wake_greet", "person": "person",
+BADGES = {"wake": "wake", "wakeGreet": "wake_greet", "listening": "listening",
+          "thinking": "thinking", "speaking": "speaking", "person": "person",
           "online": "happy", "alert": "alert", "warn": "warn", "lost": "lost",
           "lowBattery": "low_battery"}
 
@@ -83,6 +86,7 @@ class MoodService:
         self._lock = threading.Lock()
         self._base = dict(_mood_spec(base), name=base)
         self._flash: dict | None = None
+        self._hold: dict | None = None
         self._flash_timer: threading.Timer | None = None
         self._manual_until = 0.0
         self._stop = threading.Event()
@@ -120,7 +124,7 @@ class MoodService:
             self._clear_flash_locked()
             if manual:
                 self._manual_until = self._clock() + MANUAL_HOLD_S
-        self._apply(spec)
+        self._apply(self._current())
         return self.status()
 
     def set_color(self, r: int, g: int, b: int, effect: str = "solid",
@@ -135,7 +139,7 @@ class MoodService:
             self._base = spec
             self._clear_flash_locked()
             self._manual_until = self._clock() + MANUAL_HOLD_S
-        self._apply(spec)
+        self._apply(self._current())
         return self.status()
 
     def flash(self, mood: str, seconds: float) -> dict:
@@ -147,7 +151,22 @@ class MoodService:
             self._flash_timer = threading.Timer(seconds, self._end_flash)
             self._flash_timer.daemon = True
             self._flash_timer.start()
+        self._apply(self._current())
+        return self.status()
+
+    def hold(self, mood: str) -> dict:
+        """Show a mood on top of everything until release(): the conversation's
+        listening / thinking / speaking states, which have no fixed length."""
+        spec = dict(_mood_spec(mood), name=mood)
+        with self._lock:
+            self._hold = spec
         self._apply(spec)
+        return self.status()
+
+    def release(self) -> dict:
+        with self._lock:
+            self._hold = None
+        self._apply(self._current())
         return self.status()
 
     def on_event(self, event: str, payload: dict | None = None) -> None:
@@ -179,12 +198,14 @@ class MoodService:
         with self._lock:
             base = dict(self._base)
             flash = dict(self._flash) if self._flash else None
-        current = flash or base
+            hold = dict(self._hold) if self._hold else None
+        current = hold or flash or base
         return {"enabled": self.enabled, "moods": list(MOODS),
                 "palette": {name: _mood_spec(name) for name in MOODS},
                 "badges": dict(BADGES),
                 "effects": list(LED_EFFECTS),
                 "mood": current["name"], "base": base["name"],
+                "hold": hold["name"] if hold else None,
                 "flash": ({"name": flash["name"],
                            "remainingS": round(max(0.0, flash["until"] - self._clock()), 1)}
                           if flash else None),
@@ -196,7 +217,7 @@ class MoodService:
 
     def _current(self) -> dict:
         with self._lock:
-            return dict(self._flash or self._base)
+            return dict(self._hold or self._flash or self._base)
 
     def _clear_flash_locked(self) -> None:
         if self._flash_timer:
@@ -208,8 +229,7 @@ class MoodService:
         with self._lock:
             self._flash = None
             self._flash_timer = None
-            base = dict(self._base)
-        self._apply(base)
+        self._apply(self._current())
 
     def _apply(self, spec: dict) -> bool:
         if not self.enabled:

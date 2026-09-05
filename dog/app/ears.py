@@ -199,6 +199,8 @@ class EarsService:
         self._levels: deque = deque(maxlen=LEVEL_WINDOW_PACKETS)
         self._level_rms = 0.0
         self._record: bytearray | None = None
+        self._mute_until = 0.0
+        self._listen: dict | None = None     # {"deadline", "max", "event", "text", "latency"}
         self.default_wake_phrase = wake_phrase
         self.vocabulary = {"phrases": [], "variants": []}
         self._work = threading.Condition()
@@ -233,6 +235,12 @@ class EarsService:
         self.stats["lastSeq"] = seq
         self.stats["packets"] += 1
         self.stats["lastPacketAt"] = self._clock()
+        if self._clock() < self._mute_until:
+            # The speaker is playing centimetres from the mic: hear nothing.
+            with self._lock:
+                self._speaking = False
+                self._utterance = bytearray()
+            return
         self.feed_pcm(datagram[PACKET_HEADER.size:])
 
     def feed_pcm(self, pcm: bytes) -> None:
@@ -254,7 +262,8 @@ class EarsService:
                 self._last_voice_at = now
             if self._speaking:
                 self._utterance += pcm
-                too_long = now - self._utterance_started >= self.max_utterance_s
+                max_s = self._listen["max"] if self._listen else self.max_utterance_s
+                too_long = now - self._utterance_started >= max_s
                 quiet = now - self._last_voice_at >= self.silence_s
                 if too_long or (quiet and not loud):
                     self._finish_utterance_locked()
@@ -411,6 +420,16 @@ class EarsService:
         latency = time.time() - started
         self.stats["utterances"] += 1
         self.stats["lastText"] = text
+        listen = self._listen
+        if listen is not None and trigger:
+            # A conversation is waiting for this utterance: it is the request,
+            # not a new wake phrase.
+            row = self._persist(text, False, None, duration, latency) if text else None
+            logger.info("Ears (listening): %r (%.2fs)", text, latency)
+            listen["text"] = text or ""
+            listen["latency"] = round(latency, 2)
+            listen["event"].set()
+            return row
         if not text:
             return None
         command = match_wake(text, self.wake_phrase, self.vocabulary["variants"])
@@ -421,9 +440,14 @@ class EarsService:
         if wake:
             self.stats["wakes"] += 1
         if wake and trigger:
-            self.binder.trigger("voice.phrase", {
-                "text": text, "command": command, "intent": intent or "unknown",
-                "transcriptId": row.get("id")})
+            payload = {"text": text, "command": command, "transcriptId": row.get("id"),
+                       "latencyS": round(latency, 2)}
+            if intent:
+                # Keyword shortcut: sit / rest / stop / greet run straight away.
+                self.binder.trigger("voice.phrase", {**payload, "intent": intent})
+            else:
+                # Everything else is a conversation turn (conversation.py).
+                self.binder.trigger("voice.wake", payload)
         return row
 
     def _persist(self, text, wake, intent, duration, latency) -> dict:
@@ -463,10 +487,38 @@ class EarsService:
         sock.close()
 
     def flush_if_silent(self) -> None:
-        """The stream stopped mid-utterance (packet loss): close it out."""
+        """The stream stopped mid-utterance (packet loss): close it out. Also
+        the tick that ends a listening window nobody spoke into."""
         with self._lock:
             if self._speaking and self._clock() - self._last_voice_at >= self.silence_s:
                 self._finish_utterance_locked()
+            listen = self._listen
+            if listen and not self._speaking and self._clock() >= listen["deadline"]:
+                listen["event"].set()
+
+    # -- conversation hooks --
+
+    def mute(self, seconds: float) -> None:
+        """Drop the microphone for `seconds` (the speaker is playing)."""
+        self._mute_until = max(self._mute_until, self._clock() + float(seconds))
+
+    def listen(self, window_s: float, max_utterance_s: float) -> tuple[str | None, float | None]:
+        """Block until the next utterance is transcribed and return
+        (text, whisperSeconds); (None, None) when the window closes with
+        nothing said. The text goes to the caller instead of the wake
+        matcher. Only one listener at a time."""
+        pending = {"deadline": self._clock() + window_s, "max": max_utterance_s,
+                   "event": threading.Event(), "text": None, "latency": None}
+        with self._lock:
+            if self._listen is not None:
+                raise RuntimeError("already listening")
+            self._listen = pending
+        # Speech may start just before the deadline and run to the cap, and
+        # whisper needs a moment after that.
+        pending["event"].wait(window_s + max_utterance_s + 15.0)
+        with self._lock:
+            self._listen = None
+        return pending["text"], pending["latency"]
 
     # -- reporting --
 
@@ -483,6 +535,8 @@ class EarsService:
             "modelLoaded": bool(getattr(self.transcriber, "loaded", False)),
             "model": getattr(self.transcriber, "model_name", None),
             "level": self._level(),
+            "listening": self._listen is not None,
+            "mutedForS": round(max(0.0, self._mute_until - now), 1),
             "vocabulary": self.vocabulary_view(),
             **self.stats,
         }

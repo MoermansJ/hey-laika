@@ -100,9 +100,10 @@ def test_udp_segmentation_emits_wake_event_and_persists():
     pcm, rate, duration, _ = ears._queue.popleft()
     row = ears._process(pcm, rate, duration)
     assert row["wake"] is True and row["intent"] == "sit"
-    assert binder.events == [("voice.phrase", {
-        "text": "Hey Laika, sit down.", "command": "sit down",
-        "intent": "sit", "transcriptId": row["id"]})]
+    event, payload = binder.events[0]
+    assert event == "voice.phrase" and payload["command"] == "sit down"
+    assert payload["intent"] == "sit" and payload["transcriptId"] == row["id"]
+    assert payload["latencyS"] is not None
     assert ears.transcripts(1)[0]["text"] == "Hey Laika, sit down."
     assert fake.calls[0][1] == 16000
 
@@ -112,6 +113,54 @@ def test_dropped_packets_are_counted():
     ears.feed_packet(_tone_packet(1, 5))
     ears.feed_packet(_tone_packet(5, 5))
     assert ears.stats["dropped"] == 3
+
+
+def test_wake_without_motion_intent_starts_a_conversation():
+    init_db()
+    binder = CapturingBinder()
+    ears = EarsService(binder, transcriber=FakeTranscriber("Hey Laika, what time is it?"))
+    row = ears._process(b"\x00\x00" * 16000, 16000, 1.0)
+    assert row["wake"] is True and row["intent"] is None
+    assert binder.events[-1][0] == "voice.wake"
+    assert binder.events[-1][1]["command"] == "what time is it"
+
+
+def test_listen_hands_the_next_utterance_to_the_caller_and_mute_drops_packets():
+    init_db()
+    binder = CapturingBinder()
+    ears = EarsService(binder, transcriber=FakeTranscriber("Hey Laika, sit"), energy_floor=200)
+
+    def speak_later():
+        time.sleep(0.15)
+        ears._process(b"\x00\x00" * 16000, 16000, 1.0)
+
+    threading.Thread(target=speak_later).start()
+    text, latency = ears.listen(2.0, 5.0)
+    assert text == "Hey Laika, sit" and latency is not None
+    assert binder.events == []                    # no wake, no intent: it was the request
+    ears.mute(5.0)
+    before = ears.stats["packets"]
+    ears.feed_packet(_tone_packet(1, 5000))
+    assert ears.stats["packets"] == before + 1 and not ears._speaking
+    assert ears.status()["mutedForS"] > 4
+
+
+def test_listen_window_closes_when_nobody_speaks():
+    ears = EarsService(CapturingBinder(), transcriber=FakeTranscriber("x"))
+    ears._clock = lambda: 1000.0
+    pending_started = threading.Thread(target=lambda: None)
+    result = {}
+
+    def run():
+        result["value"] = ears.listen(0.5, 1.0)
+
+    t = threading.Thread(target=run)
+    t.start()
+    time.sleep(0.1)
+    ears._clock = lambda: 1001.0            # the window has passed
+    ears.flush_if_silent()
+    t.join(3)
+    assert result["value"] == (None, None)
 
 
 def test_non_wake_utterance_persists_without_event():

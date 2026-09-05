@@ -239,6 +239,15 @@ class RobotControllerTest {
     }
 
     @Test
+    void givenConversationRequested_whenRelayed_thenLimitIsClamped() {
+        when(relayGet.execute("bittle-1", "/conversation?limit=100")).thenReturn(Map.of("state", "idle"));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/conversation?limit=500").exchange();
+
+        assertThat(result).hasStatusOk().bodyJson().extractingPath("$.state").isEqualTo("idle");
+    }
+
+    @Test
     void givenVocabularyPosted_whenRelayed_thenBodyPassesThrough() {
         when(relayPostWithBody.execute("bittle-1", "/ears/vocabulary", Map.of("variants", List.of("lake up"))))
                 .thenReturn(Map.of("variants", List.of("lake up")));

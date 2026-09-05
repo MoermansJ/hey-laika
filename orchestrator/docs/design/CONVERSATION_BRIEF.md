@@ -1,6 +1,12 @@
 # Planning Brief — "Hey Laika" conversation (wake → listen → think → speak)
 
-**Status:** planned 2026-09-05, not started. Builds on `VOICE_RELAY_BRIEF.md`
+**Status:** steps 1 to 3 built 2026-09-05 (`dog/app/conversation.py`, relay routes,
+console cards); step 4, tuning on the dog, and step 5 docs remain. The owner's
+answers: keyword motion shortcuts stay; neutral assistant prompt by default;
+five to eight seconds of wait is acceptable with the LED as the spinner;
+espeak-ng for now. Two additions since planning: the LLM router and the sound
+contract, both below. First live turns: a question answered in 8.3 s of LLM
+time (cold model), a routed "please sit down" in 1.3 s. Builds on `VOICE_RELAY_BRIEF.md`
 (the microphone and speaker are installed and validated) and on the 2026-09-05
 ears work: DC-free gate, phrase recorder, custom vocabulary, wake moods.
 
@@ -59,6 +65,28 @@ Mood changes: a `hold(mood)` / `release()` pair so LISTENING stays pulsing
 green until the state changes, instead of the timed flash. `listening`
 becomes a named mood (pulsing green, period 700 ms); `wake_greet` is
 retired in its favour, and the badge enum follows.
+
+### The router: tools are the bindings
+
+The transcript does not go to the LLM as a plain question. It goes with a
+menu of tools generated live from the bindings on the event `voice.intent`
+(the filter's `intent` is the tool's name, the behavior's description its
+help text), plus `answer`. Ollama is asked for JSON with a `tool` and a `say`,
+and the service fires `voice.intent` with the chosen name so the binding runs
+the behavior, then speaks `say`. `answer` means no tool fit and `say` is the
+reply. Adding a voice command is therefore one binding row in the console,
+and a planning agent later replaces the router with the same contract.
+Seeded tools: sit, lie_down, stop, greet, acknowledge. The listening posture
+is itself a binding, `conversation.listen` to `idle_sit`.
+
+### Sound contract
+
+One bark when the request is picked up (recording starts, or a same-utterance
+request is accepted). Two barks before the terminal step: before the chosen
+behavior runs, or before the answer is spoken. Barks are the speaker's
+`positive_bark` clip with the ears muted for the clip; without a speaker the
+buzzer's wake beep stands in. A listening window nobody spoke into ends with
+the buzzer's timeout chirp and no speech.
 
 ### Same-utterance questions
 
