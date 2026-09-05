@@ -860,11 +860,13 @@ def ears_vocabulary(robot_id: str):
 @robot_scoped
 def ears_vocabulary_set(robot_id: str):
     """{"phrases": [...]} extra text whisper is primed with; {"variants": [...]}
-    extra spellings accepted as the name after a leader ("hey", "okay", ...)."""
+    extra spellings accepted as the name after a leader ("hey", "okay", ...);
+    {"wakePhrase": "hey laika"} the phrase itself."""
     body = request.get_json(silent=True) or {}
     try:
         return jsonify({"robotId": robot_id,
-                        **ears.set_vocabulary(body.get("phrases"), body.get("variants"))})
+                        **ears.set_vocabulary(body.get("phrases"), body.get("variants"),
+                                              body.get("wakePhrase"))})
     except ValueError as exc:
         return jsonify({"error": "bad_request", "message": str(exc)}), 400
 

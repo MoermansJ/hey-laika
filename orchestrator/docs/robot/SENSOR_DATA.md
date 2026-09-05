@@ -77,7 +77,7 @@ faster-whisper `base` on CPU, and gates on the wake phrase.
 | `utterances`, `wakes`, `lastText`, `lastError` | pipeline counters |
 | `model`, `modelLoaded`, `wakePhrase`, `udpPort`, `sampleRate` | configuration |
 | `level` → `rms, peak, median, floor, speaking` | live loudness: DC-free RMS of the last 20 ms packet, peak and median over the last second, the gate floor (`EARS_ENERGY_FLOOR`), and whether the gate is open |
-| `vocabulary` → `phrases, variants, builtinVariants, prompt` | the custom vocabulary (`/ears/vocabulary`): phrases whisper is primed with, extra accepted spellings of the name, and the effective prompt |
+| `vocabulary` → `wakePhrase, defaultWakePhrase, phrases, variants, builtinVariants, prompt` | the custom vocabulary (`/ears/vocabulary`): the wake phrase (a saved one overrides `WAKE_PHRASE`), phrases whisper is primed with, extra accepted spellings of the name, and the effective prompt |
 
 `/ears/transcripts`: every utterance whisper turned into text, wake or not:
 `at, text, wake, intent, durationS, latencyS`. Stored in `transcripts`,

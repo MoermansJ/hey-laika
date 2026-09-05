@@ -167,6 +167,21 @@ def test_vocabulary_extends_prompt_and_name_spellings_and_persists():
         ears.set_vocabulary(variants="nope")
 
 
+def test_wake_phrase_is_a_setting_and_drives_the_prompt():
+    init_db()
+    ears = EarsService(CapturingBinder(), transcriber=FakeTranscriber("Okay Bittle, stop"))
+    view = ears.set_vocabulary(wake_phrase="Okay,  Bittle")
+    assert view["wakePhrase"] == "okay bittle" and view["defaultWakePhrase"] == "hey laika"
+    assert view["prompt"].startswith("Okay Bittle, sit. Okay Bittle, come here.")
+    row = ears._process(b"\x00\x00" * 16000, 16000, 1.0)
+    assert row["wake"] is True and row["intent"] == "stop"
+    fresh = EarsService(CapturingBinder(), transcriber=FakeTranscriber("x"))
+    fresh._load_vocabulary()
+    assert fresh.wake_phrase == "okay bittle"
+    with pytest.raises(ValueError):
+        ears.set_vocabulary(wake_phrase="   ")
+
+
 def test_feed_wav_rejects_stereo(tmp_path):
     path = tmp_path / "stereo.wav"
     with wave.open(str(path), "wb") as w:

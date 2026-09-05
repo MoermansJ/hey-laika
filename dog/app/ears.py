@@ -47,6 +47,7 @@ WAKE_VARIANTS = ("laika", "laker", "lika", "leica", "lycra", "lyca", "like a",
                  "like up", "laca", "lakea", "leika", "lyka")
 WAKE_LEADERS = ("hey", "hi", "ok", "okay", "yo", "")
 WHISPER_PROMPT = "Hey Laika, sit. Hey Laika, come here. Hey Laika, lie down."
+PROMPT_TEMPLATE = "{phrase}, sit. {phrase}, come here. {phrase}, lie down."
 VOCABULARY_KEY = "ears.vocabulary"
 MAX_VOCABULARY = 40
 RECORD_MAX_S = 10.0
@@ -198,6 +199,7 @@ class EarsService:
         self._levels: deque = deque(maxlen=LEVEL_WINDOW_PACKETS)
         self._level_rms = 0.0
         self._record: bytearray | None = None
+        self.default_wake_phrase = wake_phrase
         self.vocabulary = {"phrases": [], "variants": []}
         self._work = threading.Condition()
         self._stop = threading.Event()
@@ -303,12 +305,14 @@ class EarsService:
     # -- vocabulary: extra prompt phrases for whisper, extra spellings of the name --
 
     def vocabulary_view(self) -> dict:
-        return {"phrases": list(self.vocabulary["phrases"]),
+        return {"wakePhrase": self.wake_phrase,
+                "defaultWakePhrase": self.default_wake_phrase,
+                "phrases": list(self.vocabulary["phrases"]),
                 "variants": list(self.vocabulary["variants"]),
                 "builtinVariants": list(WAKE_VARIANTS),
                 "prompt": self._prompt()}
 
-    def set_vocabulary(self, phrases=None, variants=None) -> dict:
+    def set_vocabulary(self, phrases=None, variants=None, wake_phrase=None) -> dict:
         def clean(items, label):
             if items is None:
                 return None
@@ -323,6 +327,10 @@ class EarsService:
                 raise ValueError(f"at most {MAX_VOCABULARY} {label}")
             return out
 
+        if wake_phrase is not None:
+            if not isinstance(wake_phrase, str) or not _normalize(wake_phrase):
+                raise ValueError("wakePhrase must be a non-empty string")
+            self.wake_phrase = _normalize(wake_phrase)
         new_phrases = clean(phrases, "phrases")
         new_variants = clean(variants, "variants")
         if new_phrases is not None:
@@ -334,8 +342,9 @@ class EarsService:
         return self.vocabulary_view()
 
     def _prompt(self) -> str:
+        phrase = " ".join(w.capitalize() for w in self.wake_phrase.split())
         extra = [p if p.endswith((".", "!", "?")) else p + "." for p in self.vocabulary["phrases"]]
-        return " ".join([WHISPER_PROMPT, *extra])
+        return " ".join([PROMPT_TEMPLATE.format(phrase=phrase), *extra])
 
     def _apply_vocabulary(self) -> None:
         if self.transcriber is not None:
@@ -351,12 +360,14 @@ class EarsService:
                 data = {}
             self.vocabulary = {"phrases": list(data.get("phrases", [])),
                                "variants": list(data.get("variants", []))}
+            if _normalize(str(data.get("wakePhrase") or "")):
+                self.wake_phrase = _normalize(data["wakePhrase"])
         self._apply_vocabulary()
 
     def _save_vocabulary(self) -> None:
         with SessionLocal() as session:
             row = session.get(Setting, VOCABULARY_KEY) or Setting(key=VOCABULARY_KEY)
-            row.value = json.dumps(self.vocabulary)
+            row.value = json.dumps({**self.vocabulary, "wakePhrase": self.wake_phrase})
             session.add(row)
             session.commit()
 

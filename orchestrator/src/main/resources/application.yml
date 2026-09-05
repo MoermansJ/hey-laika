@@ -21,6 +21,14 @@ spring:
     hibernate:
       ddl-auto: update
     open-in-view: false
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # The console is plain static files with no versioned names; make
+          # every browser revalidate them (conditional GETs on Last-Modified)
+          # so a rebuilt image is never paired with a stale app.js.
+          no-cache: true
 
 management:
   endpoints:
