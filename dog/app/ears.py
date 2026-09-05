@@ -78,7 +78,7 @@ class Transcript(Base):
 # ---- wake phrase + intent ----------------------------------------------------
 
 def _normalize(text: str) -> str:
-    return re.sub(r"[^a-z' ]+", " ", text.lower()).strip()
+    return " ".join(re.sub(r"[^a-z' ]+", " ", text.lower()).split())
 
 
 def match_wake(text: str, phrase: str = "hey laika") -> str | None:
