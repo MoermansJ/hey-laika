@@ -3,69 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Control Panel</title>
+  <title>Control</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
+  <link rel="stylesheet" href="console.css">
   <style>
-    /* Console design system (style.css palette) — fixed light, matching
-       the fleet console this page is embedded in. */
-    :root {
-      color-scheme: light;
-      --page:        #ecf0f1;   /* console --bg */
-      --surface:     #ffffff;   /* console --card */
-      --ink:         #2c3e50;   /* console --text */
-      --ink-2:       #46627f;
-      --muted:       #7f8c8d;   /* console --text-light */
-      --grid:        #e3e8ea;
-      --baseline:    #d5dbdb;   /* console --border */
-      --ring:        #d5dbdb;
-      --good:        #27ae60;
-      --critical:    #e74c3c;
-      --warn:        #f39c12;
-      --seq:         #3498db;   /* console --accent */
-    }
-
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--page);
-      color: var(--ink);
-      padding: 1rem 1.25rem 2rem;
-    }
-    a { color: var(--seq); }
-    h1 { font-size: 1.15rem; margin: 0; }
-    .topbar {
-      display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
-      margin-bottom: 1rem;
-    }
-    .topbar .spacer { flex: 1; }
-    select, button {
-      font: inherit; color: var(--ink);
-      background: var(--surface);
-      border: 1px solid var(--ring);
-      border-radius: 6px; padding: 0.35rem 0.7rem; cursor: pointer;
-    }
-    button:hover { border-color: var(--muted); }
-    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
-    button.danger  { border-color: var(--critical); color: var(--critical); }
-    button:disabled { opacity: 0.45; cursor: default; }
-    .chip {
-      font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
-      border: 1px solid var(--ring); color: var(--ink-2);
-    }
-    .chip.on   { color: var(--good); border-color: var(--good); }
-    .chip.off  { color: var(--critical); border-color: var(--critical); }
-    .chip.warn { color: var(--warn); border-color: var(--warn); }
-
-    .grid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(280px, 1fr); gap: 0.9rem; }
-    @media (max-width: 950px) { .grid { grid-template-columns: 1fr; } }
-    .card {
-      background: var(--surface); border: 1px solid var(--ring);
-      border-radius: 8px; padding: 0.8rem 0.9rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
-    }
-    .card h2 { font-size: 0.85rem; margin: 0 0 0.6rem; color: var(--ink-2); font-weight: 600; }
-
+    .grid-main { grid-template-columns: minmax(0, 2.2fr) minmax(280px, 1fr); }
     .servo-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.7rem; }
     .servo-group h3 {
       font-size: 0.78rem; margin: 0 0 0.4rem; color: var(--ink-2);
@@ -80,93 +22,52 @@
     .servo-row .head .sval { font-variant-numeric: tabular-nums; }
     .servo-row .head .sval .target { color: var(--ink); font-weight: 600; }
     .servo-row .head .sval .actual { color: var(--muted); }
-    .servo-row input[type="range"] { width: 100%; accent-color: var(--seq); margin: 0; }
-    .servo-row .range-labels {
-      display: flex; justify-content: space-between;
-      font-size: 0.62rem; color: var(--muted);
-    }
-
-    .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .servo-row input[type="range"] { width: 100%; margin: 0; }
+    .servo-row .range-labels { display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--muted); }
     .actions .cat { width: 100%; font-size: 0.7rem; color: var(--muted); margin-top: 0.35rem; }
-    .actions button.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
     .actions button .dur { font-size: 0.68rem; color: var(--muted); margin-left: 0.3rem; }
     .actions button .unverified { color: var(--warn); }
-
-    .sensors { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.5rem; }
-    .sensor {
-      border: 1px solid var(--ring); border-radius: 8px; padding: 0.45rem 0.6rem;
-    }
-    .sensor.na { opacity: 0.45; }
-    .sensor .name { font-size: 0.7rem; color: var(--ink-2); }
-    .sensor .value { font-size: 1.1rem; margin-top: 0.1rem; }
-    .sensor .value .unit { font-size: 0.7rem; color: var(--muted); }
-
     .meta { font-size: 0.72rem; color: var(--muted); margin-top: 0.8rem; }
     .meta b { color: var(--ink-2); font-weight: 600; }
-    #toast {
-      position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
-      background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
-      padding: 0.5rem 0.9rem; font-size: 0.8rem; display: none; z-index: 10;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.22);
-    }
-    #toast.err { border-color: var(--critical); color: var(--critical); }
-    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
   </style>
   <script src="common.js"></script>
+  <script src="cards.js"></script>
   <script src="nav.js" defer></script>
 </head>
 <body>
   <div class="topbar">
-    <h1>Control Panel</h1>
+    <h1>Control — servos, actions, mood light</h1>
     <select id="robot-select" title="Robot"></select>
     <span id="mode-chip" class="chip">…</span>
-    <span id="battery-chip" class="chip" style="display:none"></span>
     <span id="autonomy-chip" class="chip" style="display:none">autonomy on</span>
     <span class="spacer"></span>
     <button id="btn-balance" class="primary">Balance</button>
     <button id="btn-rest" class="danger">Rest</button>
   </div>
 
-  <div class="grid">
+  <div class="grid-main">
     <section class="card">
-      <h2>Servos <span id="readback-chip" class="chip" style="font-weight:400">readback: —</span></h2>
+      <h2>Servos <span id="readback-chip" class="chip">readback: —</span></h2>
       <div id="servo-groups" class="servo-groups"><span class="hint">loading schema…</span></div>
       <div class="hint">Release a slider to send. Readback shows the firmware's target angle
         (these servos have no position feedback). Limits are conservative estimates pending
         the per-joint hardware limit test.</div>
     </section>
 
-    <div>
+    <div class="stack">
       <section class="card">
         <h2>Actions</h2>
         <div id="actions" class="actions"></div>
         <div class="hint">* = skill not yet verified against this firmware</div>
       </section>
 
-      <section class="card" style="margin-top:0.9rem">
-        <h2>Sensors</h2>
-        <div id="sensors" class="sensors"></div>
-        <div class="hint">Greyed sensors are not wired into telemetry yet</div>
+      <section class="card">
+        <h2>Live readings</h2>
+        <div id="senses-strip"></div>
+        <div class="hint">The full views live on the Vision, Audio input, Leash and Map tabs.</div>
       </section>
 
-      <section class="card" style="margin-top:0.9rem">
-        <h2>Speaker <span id="speaker-chip" class="chip" style="font-weight:400">…</span></h2>
-        <div id="speaker-sounds" class="actions"></div>
-        <div class="hint">Clips on the Grove Speaker Plus. Buzzer beeps and text-to-speech live on the Voice tab.</div>
-      </section>
-
-      <section class="card" style="margin-top:0.9rem">
-        <h2>Mood light <span id="led-chip" class="chip" style="font-weight:400">…</span></h2>
-        <div id="led-moods" class="actions"></div>
-        <div class="actions" style="margin-top:0.5rem; align-items:center">
-          <input type="color" id="led-color" value="#3498db" title="Custom colour"
-                 style="width:2.4rem;height:2rem;padding:0;border:1px solid var(--ring);border-radius:6px;background:var(--surface)">
-          <select id="led-effect"><option value="solid">solid</option><option value="pulse">pulse</option><option value="blink">blink</option></select>
-          <button id="led-apply">Set colour</button>
-          <button id="led-off">Off</button>
-        </div>
-        <div class="hint">The RGB LED on the satellite. Events (wake phrase, someone in view, leash, battery) recolour it on their own; the Eyes tab shows the full state.</div>
-      </section>
+      <section class="card" id="mood-card"></section>
     </div>
   </div>
 

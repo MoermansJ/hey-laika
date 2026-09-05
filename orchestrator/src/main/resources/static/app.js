@@ -26,6 +26,7 @@ const state = {
   wsConnected: false,
   wsGaveUp: false,
   wsFailures: 0,
+  arbiterCard: null,       // hlArbiterCard mounted on the Activity tab
 };
 
 // ---------- helpers ----------
@@ -268,7 +269,31 @@ function route() {
   $("#sidebar").classList.remove("open");
 }
 
-const FRAME_TABS = ["control", "behavior", "voice", "mind", "leash", "map", "metrics"];
+// The robot page's tabs, in order. `page` embeds that file in an iframe;
+// tabs without one (activity, specs) are panels in index.html itself.
+const TABS = [
+  { id: "activity", label: "Activity" },
+  { id: "control",  label: "Control",      page: "control.html" },
+  { id: "behavior", label: "Behavior",     page: "behavior.html" },
+  { id: "ears",     label: "Audio input",  page: "ears.html" },
+  { id: "voice",    label: "Audio output", page: "voice.html" },
+  { id: "eyes",     label: "Vision",       page: "eyes.html" },
+  { id: "mind",     label: "Mind",         page: "mind.html" },
+  { id: "leash",    label: "Leash",        page: "leash.html" },
+  { id: "map",      label: "Map",          page: "map.html" },
+  { id: "metrics",  label: "Metrics",      page: "metrics.html" },
+  { id: "specs",    label: "Specs" },
+];
+const FRAME_TABS = TABS.filter((t) => t.page).map((t) => t.id);
+
+function renderTabs() {
+  $("#tab-bar").innerHTML = TABS.map((t, i) =>
+      `<button class="tab${i === 0 ? " active" : ""}" role="tab" aria-selected="${i === 0}"` +
+      ` data-tab="${t.id}">${escapeHtml(t.label)}</button>`).join("");
+  $("#robot-frames").innerHTML = TABS.filter((t) => t.page).map((t) =>
+      `<div id="robot-tab-${t.id}" class="robot-tab hidden">` +
+      `<iframe id="${t.id}-frame" class="control-frame" title="${escapeHtml(t.label)}"></iframe></div>`).join("");
+}
 
 function clearFrames() {
   // Dropping src stops every poll loop inside the embedded pages.
@@ -279,8 +304,8 @@ function clearFrames() {
 }
 
 function resetRobotPanels() {
-  $("#arbiter-current").textContent = "—";
-  $("#arbiter-log").innerHTML = "";
+  if (state.arbiterCard) { state.arbiterCard.stop(); state.arbiterCard = null; }
+  $("#arbiter-card").innerHTML = "";
   $("#activity").innerHTML = "";
   ["#poll-ttl", "#poll-batt", "#poll-mult", "#poll-postures"].forEach((sel) => {
     $(sel).value = "";
@@ -318,6 +343,7 @@ function showPage(page) {
     // Leaving a robot page: unload its frames so nothing keeps polling
     // the adapters from behind the dashboard.
     clearFrames();
+    resetRobotPanels();
     state.selected = null;
     renderRobotGrid();
   }
@@ -344,9 +370,11 @@ function showRobotPage(robotId) {
 
   renderRobotHeader(robotId);
   renderActivity(robotId);
-  renderArbiter(robotId);
+  if (!state.arbiterCard) {
+    state.arbiterCard = hlArbiterCard($("#arbiter-card"), `/api/robots/${robotId}`,
+        { title: "Current behavior", runs: 6 });
+  }
   refreshRobotDetail(robotId);
-  loadPollingPanel(robotId);
   renderSidebarRobots();
 }
 
@@ -543,62 +571,14 @@ function renderActivity(robotId) {
 
 $("#sidebar-open").onclick = () => $("#sidebar").classList.toggle("open");
 
-// ---------- behavior arbiter status (robot page) ----------
-
-let arbiterInFlight = false;
-
-async function renderArbiter(robotId) {
-  if (arbiterInFlight) return;              // never pile up on a slow adapter
-  arbiterInFlight = true;
-  try {
-    const status = await api(`/api/robots/${robotId}/arbiter/status`);
-    if (state.selected !== robotId) return;   // stale: robot changed meanwhile
-    const current = status.current;
-    $("#arbiter-current").innerHTML = current
-        ? `<strong>${escapeHtml(current.behavior)}</strong>` +
-          ` · step ${current.step}/${current.stepTotal}` +
-          ` · <span class="muted">${escapeHtml(current.source)}</span>` +
-          ` · P${current.priority}` +
-          (status.queued.length ? ` · ${status.queued.length} queued` : "")
-        : `idle${status.queued.length ? ` · ${status.queued.length} queued` : ""}`;
-    const rows = (status.recentRuns || []).slice(0, 6).map((run) => {
-      const at = run.startedAt
-          ? new Date(run.startedAt).toLocaleTimeString() : "";
-      return `<tr><td>${escapeHtml(run.behavior)}</td>` +
-          `<td>${escapeHtml(run.status)}</td>` +
-          `<td class="muted">${escapeHtml(run.source)}</td>` +
-          `<td class="muted">${at}</td></tr>`;
-    }).join("");
-    $("#arbiter-log").innerHTML = rows
-        ? "<tr><th>Behavior</th><th>Status</th><th>Source</th><th>Started</th></tr>" + rows
-        : "";
-  } catch { /* adapter offline */ }
-  finally { arbiterInFlight = false; }
-}
-
-$("#arbiter-stop").onclick = () =>
-    api(`/api/robots/${state.selected}/arbiter/stop`, { method: "POST" })
-      .then(() => renderArbiter(state.selected))
-      .catch((e) => toast(e.message, true));
-
-setInterval(() => {
-  if (document.hidden) return;
-  if (state.page === "robot" && state.selected) renderArbiter(state.selected);
-}, 5000);
-
 // Robot page tabs. Embedded per-robot pages lazy-load on first activation
 // (frames are cleared whenever the selected robot changes or the user
 // returns to the dashboard).
+renderTabs();
 document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     selectTab(tab.dataset.tab);
-    const frames = {
-      control: "control.html", behavior: "behavior.html", ears: "ears.html",
-      voice: "voice.html",
-      eyes: "eyes.html", mind: "mind.html", leash: "leash.html", map: "map.html",
-      metrics: "metrics.html",
-    };
-    const src = frames[tab.dataset.tab];
+    const src = TABS.find((t) => t.id === tab.dataset.tab)?.page;
     if (src) {
       const frame = $(`#${tab.dataset.tab}-frame`);
       if (frame && !frame.getAttribute("src")) {
@@ -607,6 +587,7 @@ document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
     }
     if (tab.dataset.tab === "specs") {
       renderSpecsPage($("#specs-content"), state.selected);
+      loadPollingPanel(state.selected);
     }
   });
 });

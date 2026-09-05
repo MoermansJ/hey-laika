@@ -3,148 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Laika's Mind</title>
+  <title>Mind</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
-  <style>
-    :root {
-      color-scheme: light;
-      --page: #ecf0f1; --surface: #ffffff; --ink: #2c3e50; --ink-2: #46627f;
-      --muted: #7f8c8d; --ring: #d5dbdb; --good: #27ae60; --critical: #e74c3c;
-      --warn: #f39c12; --seq: #3498db;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem; }
-    h1 { font-size: 1.15rem; margin: 0 0 1rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0.9rem; }
-    .panel { background: var(--surface); border: 1px solid var(--ring);
-      border-radius: 10px; padding: 0.75rem 1rem; }
-    .panel h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--muted); margin: 0 0 0.6rem; }
-    .big { font-size: 1.25rem; font-weight: 650; }
-    .sub { color: var(--ink-2); font-size: 0.85rem; margin-top: 0.2rem; }
-    .empty { color: var(--muted); font-size: 0.85rem; font-style: italic; }
-    .why-line { font-size: 0.82rem; padding: 0.3rem 0; border-bottom: 1px solid var(--ring); }
-    .why-line:last-child { border-bottom: none; }
-    .why-line .cause { color: var(--ink-2); }
-    .why-line .arrow { color: var(--muted); }
-    .why-line .status-complete { color: var(--good); }
-    .why-line .status-interrupted { color: var(--warn); }
-    .why-line .status-failed, .why-line .status-error { color: var(--critical); }
-    .ticker { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1rem; font-size: 0.85rem; }
-    .ticker .label { color: var(--muted); }
-    .mono { font-family: ui-monospace, Consolas, monospace; }
-    .pill { display: inline-block; font-size: 0.7rem; border: 1px solid var(--ring);
-      border-radius: 999px; padding: 0.05rem 0.5rem; color: var(--ink-2); margin-left: 0.4rem; }
-  </style>
+  <link rel="stylesheet" href="console.css">
+  <script src="common.js"></script>
+  <script src="cards.js"></script>
+  <script src="nav.js" defer></script>
 </head>
 <body>
-  <h1>Mind</h1>
-  <div class="grid">
-    <div class="panel">
-      <h2>What I'm doing</h2>
-      <div id="doing" class="empty">…</div>
-    </div>
-    <div class="panel">
-      <h2>Where I think I am</h2>
-      <div id="where" class="empty">…</div>
-    </div>
-    <div class="panel">
-      <h2>Senses</h2>
-      <div id="senses" class="empty">…</div>
-    </div>
-    <div class="panel" style="grid-column: 1 / -1;">
-      <h2>Why — recent decisions (event → binding → behavior)</h2>
-      <div id="why" class="empty">…</div>
-    </div>
-    <div class="panel" style="grid-column: 1 / -1;">
-      <h2>Agent thoughts — the personality loop's own reasoning</h2>
-      <div id="thoughts" class="empty">…</div>
-    </div>
+  <div class="topbar">
+    <h1>Mind — what she is doing and why</h1>
+    <select id="robot-select" title="Robot"></select>
+    <span id="mind-chip" class="chip">…</span>
   </div>
 
-  <script src="common.js"></script>
-  <script src="nav.js" defer></script>
+  <div class="stack">
+    <section class="card" id="arbiter-card"></section>
+
+    <section class="card">
+      <h2>Agent thoughts <span class="note">the personality loop's own reasoning</span></h2>
+      <div id="thoughts" class="empty">…</div>
+    </section>
+
+    <div class="hint">Her position and the WiFi senses live on the Map tab; the signal leash on the Leash tab.</div>
+  </div>
+
   <script>
-    const ROBOT = hlRobotParam("bittle-1");
-    const R = `/api/robots/${encodeURIComponent(ROBOT)}`;
-    document.querySelector("h1").textContent = `Mind — ${ROBOT}`;
-    // esc() comes from common.js.
-
-    function causeText(run) {
-      const c = run.cause;
-      if (!c) return `<span class="cause">${esc(run.source)}</span>`;
-      if (c.type === "event") {
-        const payload = c.payload ? ` ${esc(JSON.stringify(c.payload))}` : "";
-        return `<span class="cause">${esc(c.event)}${payload}</span>` +
-               (c.filter ? `<span class="pill">filter ${esc(JSON.stringify(c.filter))}</span>` : "");
-      }
-      if (c.type === "agent")
-        return `<span class="cause">agent decision${c.decisionId ? " " + esc(c.decisionId) : ""}</span>`;
-      return `<span class="cause">${esc(c.type)}${c.via ? " via " + esc(c.via) : ""}</span>`;
-    }
-
-    function renderDoing(arb) {
-      const el = document.getElementById("doing");
-      if (arb.current) {
-        const c = arb.current;
-        el.className = "";
-        el.innerHTML = `<div class="big">${esc(c.behavior)}</div>` +
-          `<div class="sub">step ${c.step}/${c.stepTotal} · source ${esc(c.source)} · priority ${c.priority}</div>` +
-          (arb.queued && arb.queued.length
-            ? `<div class="sub">queued: ${arb.queued.map((q) => esc(q.behavior)).join(", ")}</div>` : "");
-      } else {
-        el.className = "";
-        el.innerHTML = `<div class="big" style="color:var(--muted)">idle</div>` +
-          `<div class="sub">no behavior running</div>`;
-      }
-    }
-
-    function renderWhy(arb) {
-      const el = document.getElementById("why");
-      const runs = (arb.recentRuns || []).slice(0, 12);
-      if (!runs.length) { el.className = "empty"; el.textContent = "no runs yet"; return; }
-      el.className = "";
-      el.innerHTML = runs.map((r) => {
-        const preempt = r.preemptedBy
-          ? `<span class="pill">preempted by ${r.preemptedBy === "manual_stop" ? "manual stop" : "run " + esc(String(r.preemptedBy).slice(0, 8))}</span>` : "";
-        return `<div class="why-line">${causeText(r)} <span class="arrow">→</span> ` +
-          `<b>${esc(r.behavior)}</b> <span class="status-${esc(r.status)}">${esc(r.status)}</span>${preempt}</div>`;
-      }).join("");
-    }
-
-    function renderWhere(s) {
-      const el = document.getElementById("where");
-      if (!s || !s.pose) { el.className = "empty"; el.textContent = "no spatial data yet"; return; }
-      el.className = "";
-      const p = s.pose;
-      el.innerHTML = `<div class="big mono">(${p.x} m, ${p.y} m) @ ${p.heading}°</div>` +
-        `<div class="sub">dead-reckoned from commanded motion · drift ${p.driftM} m since anchor</div>` +
-        `<div class="sub">${s.sampleCount ?? 0} WiFi fingerprint samples collected</div>`;
-    }
-
-    function renderSenses(s, leash) {
-      const el = document.getElementById("senses");
-      el.className = "";
-      const rows = [];
-      if (leash && leash.enabled)
-        rows.push(["Leash", `${esc(leash.zone)} (${leash.rssi ?? "—"} dBm)`]);
-      else
-        rows.push(["Leash", "off (home mode)"]);
-      if (s) {
-        rows.push(["Last sniff", s.lastSniffAgeS != null ? `${Math.round(s.lastSniffAgeS)}s ago` : "not yet"]);
-        if (s.lastSample)
-          rows.push(["APs heard", `${s.lastSample.aps.length} (${s.lastSample.aps.map((a) => a.rssi).join(", ")} dBm)`]);
-        rows.push(["Sniffer", s.away ? "suppressed (away mode)" : (s.enabled ? "listening for motion gaps" : "off")]);
-      }
-      el.innerHTML = `<div class="ticker">` +
-        rows.map(([k, v]) => `<span class="label">${k}</span><span>${v}</span>`).join("") + `</div>`;
-    }
+    const $ = (sel) => document.querySelector(sel);
+    const state = { base: "", arbiter: null };
 
     // The orchestrator's behavior loop stores every decision with its
     // reasoning (/behavior/history); this is the loop thinking out loud.
     function renderThoughts(decisions) {
-      const el = document.getElementById("thoughts");
+      const el = $("#thoughts");
       if (!Array.isArray(decisions) || !decisions.length) {
         el.className = "empty";
         el.textContent = "no decisions yet — start the loop in the Behavior tab";
@@ -154,32 +45,45 @@
       el.innerHTML = decisions.slice(0, 10).map((d) => {
         const at = d.decidedAt ? new Date(d.decidedAt).toLocaleTimeString() : "";
         const failed = d.success === false
-          ? ` <span class="pill" style="color:var(--critical)">failed</span>` : "";
+            ? ` <span class="pill" style="color:var(--critical)">failed</span>` : "";
         return `<div class="why-line"><span class="cause mono">${esc(at)}</span> ` +
-          `<span class="arrow">→</span> <b>${esc(d.selectedAction ?? "rest")}</b>` +
-          `<span class="pill">${esc(d.source ?? "")}</span>${failed}` +
-          `<div class="sub">${esc(d.reasoning ?? "")}</div></div>`;
+            `<span class="arrow">→</span> <b>${esc(d.selectedAction ?? "rest")}</b>` +
+            `<span class="pill">${esc(d.source ?? "")}</span>${failed}` +
+            `<div class="sub">${esc(d.reasoning ?? "")}</div></div>`;
       }).join("");
     }
 
-    async function get(path) {
+    async function refresh() {
+      const chip = $("#mind-chip");
       try {
-        const { res, body } = await hlFetchJson(R + path, {}, 6000);
-        return res.ok ? body : null;
-      } catch (e) { return null; }
+        renderThoughts(await hlApi(state.base, "/behavior/history?limit=10"));
+        chip.textContent = "live"; chip.className = "chip on";
+      } catch (err) {
+        chip.textContent = "orchestrator unreachable"; chip.className = "chip warn"; chip.title = err.message;
+      }
     }
 
-    async function refresh() {
-      const [arb, senses, leash, thoughts] = await Promise.all([
-        get("/arbiter/status"), get("/senses"), get("/leash"),
-        get("/behavior/history?limit=10")]);
-      if (arb) { renderDoing(arb); renderWhy(arb); }
-      renderWhere(senses);
-      renderSenses(senses, leash);
-      renderThoughts(thoughts);
+    function mount() {
+      if (state.arbiter) state.arbiter.stop();
+      state.arbiter = hlArbiterCard($("#arbiter-card"), state.base,
+          { title: "What I'm doing, and why", runs: 12, why: true, intervalMs: 2000 });
+      refresh();
     }
-    // 2 s cadence with overlap guard and hidden-tab pause (common.js).
-    hlPoll(refresh, 2000);
+
+    async function boot() {
+      let page;
+      try {
+        page = await hlPage({ onRobotChange: (id) => { state.base = `/api/robots/${id}`; mount(); } });
+      } catch (err) {
+        $("#mind-chip").textContent = "orchestrator unreachable";
+        return;
+      }
+      if (!page.robotId) return;
+      state.base = page.base;
+      mount();
+      hlPoll(refresh, 2000, { immediate: false });
+    }
+    boot();
   </script>
 </body>
 </html>

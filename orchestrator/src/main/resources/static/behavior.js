@@ -65,21 +65,21 @@ function appendPoint(point) {
 }
 
 async function loadHistory() {
-  const res = await fetch(`/api/robots/${state.robotId}/behavior/history?limit=${MAX_POINTS}`);
-  const decisions = await res.json().catch(() => null);   // newest first
-  if (!Array.isArray(decisions)) {
-    // An error object ({error, message}) has no reverse(); show it instead.
+  let decisions;   // newest first
+  try {
+    decisions = await hlApi(`/api/robots/${state.robotId}`, `/behavior/history?limit=${MAX_POINTS}`);
+  } catch (err) {
     $("#decisions").innerHTML =
-        `<tr><td colspan="5" class="hint">${esc(decisions?.message || "history unavailable")}</td></tr>`;
+        `<tr><td colspan="5" class="hint">${esc(err.message || "history unavailable")}</td></tr>`;
     return;
   }
+  if (!Array.isArray(decisions)) return;
   state.points = decisions.reverse().map(toPoint);
   renderAll();
 }
 
 async function refreshStatus() {
-  const res = await fetch(`/api/robots/${state.robotId}/behavior/status`);
-  const status = await res.json();
+  const status = await hlApi(`/api/robots/${state.robotId}`, "/behavior/status");
   state.running = status.running;
   renderLoopControls();
   if (!state.wsConnected && status.lastDecision) {
@@ -366,9 +366,12 @@ function renderDecisions() {
 // ---------- controls ----------
 
 async function post(path) {
-  const res = await fetch(`/api/robots/${state.robotId}/behavior/${path}`, { method: "POST" });
-  if (!res.ok) console.warn("POST failed", path, res.status);
-  return res.ok ? res.json() : null;
+  try {
+    return await hlApi(`/api/robots/${state.robotId}`, `/behavior/${path}`, { method: "POST" });
+  } catch (err) {
+    hlToast(err.message, true);
+    return null;
+  }
 }
 
 function bindControls() {
@@ -382,13 +385,6 @@ function bindControls() {
   const actionSelect = $("#action-select");
   actionSelect.innerHTML = ACTIONS.map((a) => `<option>${a}</option>`).join("");
   $("#btn-action").onclick = () => post(`action/${actionSelect.value}`);
-  $("#robot-select").onchange = async (event) => {
-    state.robotId = event.target.value;
-    state.points = [];
-    await loadHistory();
-    await refreshStatus();
-    if (state.wsConnected) subscribeRobot();
-  };
 
   const canvas = $("#chart");
   canvas.addEventListener("pointermove", onChartHover);
@@ -398,23 +394,23 @@ function bindControls() {
 // ---------- boot ----------
 
 async function boot() {
-  let robots;
+  let page;
   try {
-    robots = await hlApi("", "/api/fleet/robots");
+    page = await hlPage({ onRobotChange: async (id) => {
+      state.robotId = id;
+      state.points = [];
+      await loadHistory();
+      await refreshStatus();
+      if (state.wsConnected) subscribeRobot();
+      loadLifecycleEditors();
+    } });
   } catch (err) {
     $("#conn-chip").textContent = "orchestrator unreachable";
     return;
   }
-  state.robots = robots;
-  const select = $("#robot-select");
-  select.innerHTML = robots.map((r) =>
-      `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
-  // Embedded tab: honour the parent's robot; never default to robots[0].
-  const wanted = hlRobotParam(null);
-  state.robotId = robots.some((r) => r.robotId === wanted)
-      ? wanted : robots[0]?.robotId;
+  state.robots = page.robots;
+  state.robotId = page.robotId;
   if (!state.robotId) return;
-  select.value = state.robotId;
 
   renderLegend();
   bindControls();

@@ -5,79 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vision</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
+  <link rel="stylesheet" href="console.css">
   <style>
-    /* Console design system (style.css palette) — fixed light. */
-    :root {
-      color-scheme: light;
-      --page:     #ecf0f1;
-      --surface:  #ffffff;
-      --ink:      #2c3e50;
-      --ink-2:    #46627f;
-      --muted:    #7f8c8d;
-      --ring:     #d5dbdb;
-      --good:     #27ae60;
-      --critical: #e74c3c;
-      --warn:     #f39c12;
-      --seq:      #3498db;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem;
-    }
-    h1 { font-size: 1.15rem; margin: 0; }
-    h2 { font-size: 0.95rem; margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
-    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    select, button, input[type=number] {
-      font: inherit; color: var(--ink); background: var(--surface);
-      border: 1px solid var(--ring); border-radius: 6px;
-      padding: 0.35rem 0.7rem; cursor: pointer;
-    }
-    button:hover { border-color: var(--muted); }
-    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
-    button.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
-    button:disabled { opacity: 0.45; cursor: default; }
-    .chip {
-      font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
-      border: 1px solid var(--ring); color: var(--ink-2); font-weight: 400;
-    }
-    .chip.on   { color: var(--good); border-color: var(--good); }
-    .chip.warn { color: var(--warn); border-color: var(--warn); }
-    .chip.bad  { color: var(--critical); border-color: var(--critical); }
-    .card {
-      background: var(--surface); border: 1px solid var(--ring);
-      border-radius: 8px; padding: 0.8rem 0.9rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
-    }
-    .grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 0.9rem; }
-    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
     .viewport { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #111;
       border-radius: 6px; overflow: hidden; }
     .viewport img { width: 100%; height: 100%; object-fit: contain; display: block; }
     .viewport svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     .viewport .empty { position: absolute; inset: 0; display: grid; place-items: center;
-      color: #bbb; font-size: 0.85rem; text-align: center; padding: 1rem; }
+      color: #bbb; font-size: 0.85rem; text-align: center; padding: 1rem; font-style: normal; }
     .viewport .empty[hidden] { display: none; }
     .box { fill: none; stroke: #2ecc71; stroke-width: 0.6; }
     .box-label { fill: #2ecc71; font-size: 3px; font-family: system-ui, sans-serif; }
-    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 0.6rem; }
-    .row.tight { margin-top: 0.4rem; }
-    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
-    .kv { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.8rem; font-size: 0.8rem; margin-top: 0.5rem; }
-    .kv dt { color: var(--muted); } .kv dd { margin: 0; }
-    .swatch { width: 2.2rem; height: 2.2rem; border-radius: 50%; border: 1px solid var(--ring);
-      box-shadow: inset 0 0 0 3px var(--surface); transition: background 0.3s; }
-    .swatch.pulse { animation: breathe 1.4s ease-in-out infinite; }
-    .swatch.blink { animation: blink 0.7s steps(1) infinite; }
-    @keyframes breathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
-    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.1; } }
-    .moods { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
-    .moods button { padding: 0.25rem 0.6rem; font-size: 0.8rem; display: flex; align-items: center; gap: 0.35rem; }
-    .moods .dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,0.15); }
-    input[type=color] { width: 2.6rem; height: 2rem; padding: 0; border: 1px solid var(--ring); border-radius: 6px; background: var(--surface); }
-    input[type=range] { width: 7rem; }
-    label.small { font-size: 0.78rem; color: var(--ink-2); display: flex; align-items: center; gap: 0.3rem; }
-    .stack { display: flex; flex-direction: column; gap: 0.9rem; }
     .range-big { font-size: 2.4rem; font-weight: 600; line-height: 1; margin-top: 0.4rem; }
     .range-big small { font-size: 0.9rem; font-weight: 400; color: var(--muted); margin-left: 0.3rem; }
     .range-bar { height: 10px; border-radius: 999px; background: var(--page); overflow: hidden; margin-top: 0.5rem; }
@@ -94,12 +32,12 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>Vision — camera, range and mood light</h1>
+    <h1>Vision — camera and range</h1>
     <select id="robot-select" title="Robot"></select>
     <span id="sat-chip" class="chip">checking…</span>
   </div>
 
-  <div class="grid">
+  <div class="grid-main">
     <section class="card">
       <h2>Camera <span id="eyes-chip" class="chip">…</span> <span id="person-chip" class="chip">no one in view</span></h2>
       <div class="viewport">
@@ -120,10 +58,9 @@
       </dl>
       <div class="hint">QVGA JPEG from the XIAO's OV2640, polled through the adapter; YOLOv8-nano runs on
         the host and emits <code>vision.person</code> (with an x-offset for follow-me) and
-        <code>vision.clear</code> into the behavior framework.</div>
+        <code>vision.clear</code> into the behavior framework. The mood light is on the Control tab.</div>
     </section>
 
-    <div class="stack">
     <section class="card">
       <h2>Range <span id="range-chip" class="chip">…</span>
         <label class="small" style="margin-left:auto"><input type="checkbox" id="range-live" checked> live</label></h2>
@@ -133,41 +70,12 @@
       <svg class="sparkline" id="range-spark" viewBox="0 0 300 56" preserveAspectRatio="none"></svg>
       <div class="hint" id="range-detail">Grove ultrasonic ranger on the UART socket, one firmware read per poll (~3 Hz while this tab is open). Red dots are misses: no echo inside the 2 m window, usually a moving target or a beam-edge reflector.</div>
     </section>
-
-    <section class="card">
-      <h2>Mood light <span id="mood-chip" class="chip">…</span></h2>
-      <div class="row tight">
-        <div id="swatch" class="swatch"></div>
-        <div>
-          <div id="mood-name" style="font-weight:600">—</div>
-          <div id="mood-detail" class="hint" style="margin-top:0.1rem"></div>
-        </div>
-      </div>
-      <div id="moods" class="moods"></div>
-      <div class="row">
-        <input type="color" id="pick-color" value="#3498db" title="Custom colour">
-        <select id="pick-effect">
-          <option value="solid">solid</option>
-          <option value="pulse">pulse</option>
-          <option value="blink">blink</option>
-        </select>
-        <label class="small">brightness <input type="range" id="pick-brightness" min="5" max="255" value="255"></label>
-        <button id="pick-apply" class="primary">Apply</button>
-      </div>
-      <div class="hint">Named moods are what events set on their own (wake phrase heard, someone in view,
-        leash zones, low battery); pinning one here holds it until the next event. The colour
-        picker pins a custom colour.</div>
-    </section>
-    </div>
   </div>
 
   <script>
     const $ = (sel) => document.querySelector(sel);
-    const state = { robotId: null, satelliteHost: null, moodsRendered: false };
-
-    async function api(path, options) {
-      return hlApi(`/api/robots/${state.robotId}`, path, options);
-    }
+    const state = { robotId: null, base: "", satelliteHost: null };
+    const api = (path, options) => hlApi(state.base, path, options);
 
     // ---- camera ----------------------------------------------------------------
 
@@ -189,7 +97,7 @@
     }
 
     async function refreshFrame() {
-      await loadFrame(`/api/robots/${state.robotId}/eyes/snap?t=${Date.now()}`);
+      await loadFrame(`${state.base}/eyes/snap?t=${Date.now()}`);
     }
 
     function drawBoxes(persons) {
@@ -221,7 +129,7 @@
         if (e.personCount > 0) {
           const p = e.persons.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
           const side = Math.abs(p.x + p.w / 2 - 0.5) < 0.1 ? "centre" : (p.x + p.w / 2 < 0.5 ? "left" : "right");
-          pchip.textContent = `${e.personCount} in view · ${side}`; pchip.className = "chip on";
+          pchip.innerHTML = hlBadge("person", `${e.personCount} in view · ${side}`); pchip.className = "";
         } else {
           pchip.textContent = e.lastPersonAgeS != null ? `no one · last seen ${e.lastPersonAgeS}s ago` : "no one in view";
           pchip.className = "chip";
@@ -240,7 +148,7 @@
         link.hidden = !state.satelliteHost;
         if (state.satelliteHost) link.href = `http://${state.satelliteHost}/stream`;
       } catch (err) {
-        chip.textContent = "eyes unavailable"; chip.className = "chip bad";
+        chip.textContent = "eyes unavailable"; chip.className = "chip bad"; chip.title = err.message;
       }
     }
 
@@ -253,76 +161,7 @@
       } catch (err) { hlToast(err.message, true); }
       refreshEyes();
     };
-    $("#eyes-fresh").onclick = () => loadFrame(`/api/robots/${state.robotId}/eyes/snap?fresh=1&t=${Date.now()}`);
-
-    // ---- mood light --------------------------------------------------------------
-
-    const MOOD_PREVIEW = {   // mirrors mood.py MOODS for the buttons' dots
-      off: "#000", idle: "#ff8c28", heard: "#0078ff", thinking: "#a000ff", speaking: "#00ffaa",
-      happy: "#00ff28", person: "#00d2ff", alert: "#ffa000", warn: "#ff5a00", lost: "#ff0000",
-      low_battery: "#ff0000",
-      rainbow: "conic-gradient(red, orange, yellow, green, blue, indigo, violet, red)",
-    };
-
-    function renderMoodButtons(moods, current) {
-      const host = $("#moods");
-      if (!state.moodsRendered) {
-        host.innerHTML = moods.map((m) =>
-            `<button data-mood="${esc(m)}"><span class="dot" style="background:${MOOD_PREVIEW[m] || "#888"}"></span>${esc(m.replace("_", " "))}</button>`).join("");
-        host.querySelectorAll("button").forEach((btn) => btn.onclick = () => setMood({ mood: btn.dataset.mood }));
-        state.moodsRendered = true;
-      }
-      host.querySelectorAll("button").forEach((btn) => btn.classList.toggle("active", btn.dataset.mood === current));
-    }
-
-    async function refreshMood() {
-      const chip = $("#mood-chip");
-      try {
-        const m = await api("/mood");
-        if (!m.enabled) {
-          chip.textContent = "no satellite"; chip.className = "chip warn";
-          $("#moods").innerHTML = ""; state.moodsRendered = false;
-          $("#pick-apply").disabled = true;
-          $("#mood-name").textContent = "—";
-          $("#mood-detail").textContent = "SATELLITE_HOST not set (or MOOD_ENABLED=false)";
-          return;
-        }
-        chip.textContent = m.lastError ? "satellite not answering" : `${m.sets} sets`;
-        chip.className = "chip " + (m.lastError ? "bad" : "on");
-        chip.title = m.lastError || "";
-        $("#pick-apply").disabled = false;
-        const c = m.color;
-        const level = c.brightness / 255;
-        const sw = $("#swatch");
-        sw.style.background = c.effect === "off" ? "#222" : c.effect === "rainbow" ? MOOD_PREVIEW.rainbow :
-            `rgb(${Math.round(c.r * level)}, ${Math.round(c.g * level)}, ${Math.round(c.b * level)})`;
-        sw.className = "swatch " + (c.effect === "pulse" || c.effect === "blink" ? c.effect : "");
-        sw.style.animationDuration = `${c.periodMs}ms`;
-        $("#mood-name").textContent = m.mood.replace("_", " ");
-        $("#mood-detail").textContent =
-            (m.flash ? `flash, ${m.flash.remainingS}s left, then back to ${m.base} · ` : "") +
-            `${c.effect}${c.effect === "pulse" || c.effect === "blink" ? ` ${c.periodMs} ms` : ""}` +
-            (m.lastEvent ? ` · last event ${m.lastEvent}` : "");
-        renderMoodButtons(m.moods, m.base);
-      } catch (err) {
-        chip.textContent = "mood unavailable"; chip.className = "chip bad";
-      }
-    }
-
-    async function setMood(body) {
-      try {
-        await api("/mood", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body) });
-      } catch (err) { hlToast(err.message, true); }
-      refreshMood();
-    }
-
-    $("#pick-apply").onclick = () => {
-      const hex = $("#pick-color").value;
-      setMood({ r: parseInt(hex.slice(1, 3), 16), g: parseInt(hex.slice(3, 5), 16),
-                b: parseInt(hex.slice(5, 7), 16), effect: $("#pick-effect").value,
-                brightness: Number($("#pick-brightness").value) });
-    };
+    $("#eyes-fresh").onclick = () => loadFrame(`${state.base}/eyes/snap?fresh=1&t=${Date.now()}`);
 
     // ---- ultrasonic ranger ---------------------------------------------------------
 
@@ -370,33 +209,7 @@
       }
     }
 
-    // ---- boot --------------------------------------------------------------------
-
-    async function boot() {
-      let robots;
-      try {
-        robots = await hlApi("", "/api/fleet/robots");
-      } catch (err) {
-        $("#sat-chip").textContent = "orchestrator unreachable";
-        return;
-      }
-      $("#robot-select").innerHTML = robots.map((r) =>
-          `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
-      const wanted = hlRobotParam(null);
-      state.robotId = robots.some((r) => r.robotId === wanted) ? wanted : robots[0]?.robotId;
-      if (!state.robotId) return;
-      $("#robot-select").value = state.robotId;
-      $("#robot-select").onchange = (e) => {
-        state.robotId = e.target.value; state.moodsRendered = false;
-        $("#cam").hidden = true; $("#cam-empty").hidden = false;
-        refreshEyes(); refreshMood();
-      };
-      hlPoll(refreshSatellite, 15000);
-      hlPoll(refreshEyes, 1000);
-      hlPoll(refreshMood, 2000);
-      hlPoll(refreshFrame, 300);
-      hlPoll(refreshRange, 350);
-    }
+    // ---- satellite ---------------------------------------------------------------
 
     async function refreshSatellite() {
       const chip = $("#sat-chip");
@@ -410,6 +223,31 @@
         chip.textContent = err.status === 409 ? "no satellite configured" : `satellite offline (${err.message})`;
         chip.className = "chip " + (err.status === 409 ? "warn" : "bad");
       }
+    }
+
+    // ---- boot --------------------------------------------------------------------
+
+    async function boot() {
+      let page;
+      try {
+        page = await hlPage({ onRobotChange: (id) => {
+          state.robotId = id; state.base = `/api/robots/${id}`;
+          $("#cam").hidden = true; $("#cam-empty").hidden = false;
+          rangeState.unconfigured = false;
+          refreshEyes(); refreshSatellite();
+        } });
+      } catch (err) {
+        $("#sat-chip").textContent = "orchestrator unreachable";
+        return;
+      }
+      if (!page.robotId) return;
+      state.robotId = page.robotId;
+      state.base = page.base;
+      await hlLoadBadgePalette(state.base);
+      hlPoll(refreshSatellite, 15000);
+      hlPoll(refreshEyes, 1000);
+      hlPoll(refreshFrame, 300);
+      hlPoll(refreshRange, 350);
     }
     boot();
   </script>

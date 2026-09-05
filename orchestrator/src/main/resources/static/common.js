@@ -12,6 +12,8 @@
  *                                 (auto-mounted into .topbar on load)
  *  hlLoadBadgePalette(base)       fetch the adapter's mood palette + badge enum
  *  hlBadge(kind, label)           a badge coloured like the LED mood it stands for
+ *  hlPage(opts)                   fleet fetch + robot resolution + the robot
+ *                                 selector (removed when embedded in a tab)
  */
 "use strict";
 
@@ -161,13 +163,30 @@ function hlBadge(kind, label) {
       ` title="LED mood: ${esc(mood || kind)}">${esc(label ?? kind)}</span>`;
 }
 
-(function () {
-  const style = document.createElement("style");
-  style.textContent = `
-    .hl-badge { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.55rem;
-      border-radius: 999px; background: var(--hl-badge); color: #1b2631; white-space: nowrap; }
-    .hl-pulse { animation: hlPulse 0.7s ease-in-out infinite alternate; }
-    @keyframes hlPulse { from { opacity: 1; } to { opacity: 0.35; } }
-  `;
-  document.head.appendChild(style);
-})();
+// ---- page boot: every sub-page starts the same way ----
+// Fetches the fleet, resolves the robot from ?robot= (the parent tab names
+// it) or the first robot, fills the #robot-select when the page stands
+// alone and removes it when embedded (the robot header already says who).
+async function hlPage({ onRobotChange } = {}) {
+  const embedded = new URLSearchParams(location.search).has("embedded");
+  const robots = await hlApi("", "/api/fleet/robots");
+  const wanted = hlRobotParam(null);
+  const robotId = robots.some((r) => r.robotId === wanted) ? wanted : robots[0]?.robotId;
+  const select = document.getElementById("robot-select");
+  if (select) {
+    if (embedded) {
+      select.remove();
+    } else {
+      select.innerHTML = robots.map((r) =>
+          `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
+      select.value = robotId ?? "";
+      select.onchange = (e) => onRobotChange?.(e.target.value);
+    }
+  }
+  const name = robots.find((r) => r.robotId === robotId)?.name;
+  if (!embedded && name) {
+    const h1 = document.querySelector("h1");
+    if (h1 && !h1.dataset.named) { h1.dataset.named = "1"; h1.textContent += ` — ${name}`; }
+  }
+  return { robots, robotId, embedded, base: `/api/robots/${robotId}` };
+}

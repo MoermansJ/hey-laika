@@ -5,35 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Map</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
+  <link rel="stylesheet" href="console.css">
   <style>
-    :root {
-      color-scheme: light;
-      --page: #ecf0f1; --surface: #ffffff; --ink: #2c3e50; --ink-2: #46627f;
-      --muted: #7f8c8d; --ring: #d5dbdb; --good: #27ae60; --critical: #e74c3c;
-      --warn: #f39c12; --seq: #3498db;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem; }
-    h1 { font-size: 1.15rem; margin: 0; }
-    h2 { font-size: 0.95rem; margin: 0 0 0.5rem; color: var(--ink-2); }
-    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
-    .topbar .spacer { flex: 1; }
-    button, input, select {
-      font: inherit; color: var(--ink); background: var(--surface);
-      border: 1px solid var(--ring); border-radius: 6px; padding: 0.35rem 0.6rem;
-    }
-    button { cursor: pointer; }
-    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
-    button.danger { border-color: var(--critical); color: var(--critical); }
-    input[type=number] { width: 5.2rem; }
+    .topbar { margin-bottom: 0.8rem; }
     input[type=datetime-local] { width: 12.5rem; }
-    .card { background: var(--surface); border: 1px solid var(--ring);
-      border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.9rem; }
     .filters { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: end; }
-    .filters label { display: flex; flex-direction: column; gap: 0.2rem;
-      font-size: 0.78rem; color: var(--ink-2); }
-    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0.9rem; }
+    .filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; color: var(--ink-2); }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0.9rem; margin-top: 0.9rem; }
     @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
     .mapwrap { position: relative; }
     svg#map { width: 100%; height: min(70vh, 640px); display: block;
@@ -47,16 +25,11 @@
     .legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--ink-2);
       margin-top: 0.5rem; align-items: center; }
     .legend .swatch { display: inline-block; width: 60px; height: 8px; border-radius: 4px;
-      vertical-align: middle; margin: 0 0.3rem; }
-    .stat { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.82rem;
-      padding: 0.2rem 0; border-bottom: 1px dashed var(--ring); }
-    .stat span:last-child { color: var(--ink-2); text-align: right; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
-    th, td { text-align: left; padding: 0.25rem 0.35rem; border-bottom: 1px solid var(--ring); white-space: nowrap; }
+      vertical-align: middle; margin: 0 0.3rem; box-shadow: none; border: none; }
+    .card table { font-size: 0.78rem; }
+    .card th, .card td { white-space: nowrap; }
     tr.pick { cursor: pointer; }
     tr.pick:hover, tr.active { background: rgba(52, 152, 219, 0.1); }
-    .muted { color: var(--muted); font-size: 0.78rem; }
-    .empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
     .scroll { max-height: 260px; overflow: auto; }
     #detail dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; font-size: 0.8rem; }
     #detail dt { color: var(--ink-2); }
@@ -66,7 +39,8 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>Map</h1>
+    <h1>Map — where she has been</h1>
+    <select id="robot-select" title="Robot"></select>
     <span class="state" id="state"></span>
     <div class="spacer"></div>
     <label class="muted"><input type="checkbox" id="live" checked> live (10 s)</label>
@@ -120,15 +94,12 @@
       <div class="legend" id="legend"></div>
     </div>
     <div>
-      <div class="card">
-        <h2>Laika</h2>
-        <div id="where" class="empty">…</div>
-      </div>
-      <div class="card">
+      <div class="card" id="pose-card"></div>
+      <div class="card" style="margin-top:0.9rem">
         <h2>Selected sample</h2>
         <div id="detail" class="empty">Hover a point for a quick look, click to pin it here.</div>
       </div>
-      <div class="card">
+      <div class="card" style="margin-top:0.9rem">
         <h2>Collected</h2>
         <div id="summary"></div>
         <div class="scroll" style="margin-top:0.5rem">
@@ -140,11 +111,11 @@
   </div>
 
   <script src="common.js"></script>
+  <script src="cards.js"></script>
   <script src="nav.js" defer></script>
   <script>
-    const ROBOT = hlRobotParam("bittle-1");
-    const BASE = `/api/robots/${ROBOT}`;
-    document.querySelector("h1").textContent = `Map — ${ROBOT}`;
+    let BASE = "";           // set by boot() from hlPage
+    let poseCard = null;
 
     const $ = (id) => document.getElementById(id);
     const W = 800, H = 600, PAD = 40;
@@ -395,22 +366,6 @@
       return n ? `${n} (${bssid})` : bssid;
     }
 
-    function renderWhere() {
-      const el = $("where");
-      if (!pose) { el.className = "empty"; el.textContent = "no pose yet"; return; }
-      el.className = "";
-      const last = status && status.lastSample;
-      const age = status && status.lastSniffAgeS != null ? `${Math.round(status.lastSniffAgeS)} s ago` : "not yet this session";
-      el.innerHTML =
-        `<div class="stat"><span>Last known position</span><span>${pose.x}, ${pose.y} m</span></div>` +
-        `<div class="stat"><span>Heading</span><span>${pose.heading}°</span></div>` +
-        `<div class="stat"><span>Dead-reckoning uncertainty</span><span>±${pose.driftM} m</span></div>` +
-        `<div class="stat"><span>Last sniff</span><span>${esc(age)}</span></div>` +
-        `<div class="stat"><span>Last sample</span><span>${last ? esc(new Date(last.t * 1000).toLocaleString()) : "—"}</span></div>` +
-        `<div class="stat"><span>Sniffer</span><span>${status ? (status.away ? "suppressed (away)" : status.enabled ? "listening for motion gaps" : "off") : "—"}</span></div>` +
-        `<div class="stat"><span>Stored samples</span><span>${status ? status.sampleCount ?? 0 : "—"}</span></div>`;
-    }
-
     function renderSummary(meta) {
       const agg = new Map();
       samples.forEach((s) => s.aps.forEach((a) => {
@@ -470,7 +425,7 @@
         pose = page.pose || st.pose || null;
         status = st;
         if (pinned != null && !samples.some((s) => s.id === pinned)) pinned = null;
-        renderWhere();
+        if (poseCard) poseCard.render(st);
         renderSummary(page);
         renderDetail();
         draw();
@@ -498,8 +453,27 @@
       } catch (err) { setState(`reset failed: ${err.message}`, true); }
     });
 
-    const poller = hlPoll(async () => { if ($("live").checked) await refresh(); }, 10000);
-    $("live").addEventListener("change", () => { if ($("live").checked) poller.tick(); });
+    let poller = null;
+
+    function mount(base) {
+      BASE = base;
+      samples = []; pose = null; status = null; pinned = null;
+      if (poseCard) poseCard.stop();
+      poseCard = hlPoseCard($("pose-card"), BASE, { title: "Where she thinks she is" });
+      if (poller) poller.tick(); else {
+        poller = hlPoll(async () => { if ($("live").checked) await refresh(); }, 10000);
+        $("live").addEventListener("change", () => { if ($("live").checked) poller.tick(); });
+      }
+    }
+
+    (async function boot() {
+      let page;
+      try {
+        page = await hlPage({ onRobotChange: (id) => mount(`/api/robots/${id}`) });
+      } catch (err) { setState(`orchestrator unreachable: ${err.message}`, true); return; }
+      if (!page.robotId) return;
+      mount(page.base);
+    })();
   </script>
 </body>
 </html>

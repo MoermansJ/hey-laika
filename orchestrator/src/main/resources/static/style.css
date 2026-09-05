@@ -266,8 +266,11 @@ body.nav-collapsed .nav-link { justify-content: center; padding: 0.55rem 0.4rem;
   padding: 0.2rem 0.7rem;
   background: rgba(0,0,0,0.06);
 }
-.chip.ok { background: rgba(39,174,96,0.15); color: var(--success); }
-.chip.err { background: rgba(231,76,60,0.15); color: var(--danger); }
+.chip.ok, .chip.on { background: rgba(39,174,96,0.15); color: var(--success); }
+.chip.err, .chip.bad { background: rgba(231,76,60,0.15); color: var(--danger); }
+.chip.warn { background: rgba(243,156,18,0.15); color: var(--warning); }
+.empty { color: var(--text-light); font-style: italic; font-size: 0.85rem; }
+.panel h2 { font-size: 1rem; margin: 0.25rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
 
 /* ---------- bars ---------- */
 

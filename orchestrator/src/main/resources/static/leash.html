@@ -5,31 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Leash</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
+  <link rel="stylesheet" href="console.css">
   <style>
-    :root {
-      color-scheme: light;
-      --page: #ecf0f1; --surface: #ffffff; --ink: #2c3e50; --ink-2: #46627f;
-      --muted: #7f8c8d; --ring: #d5dbdb; --good: #27ae60; --critical: #e74c3c;
-      --warn: #f39c12; --seq: #3498db;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem; }
-    h1 { font-size: 1.15rem; margin: 0; }
-    h2 { font-size: 0.95rem; margin: 1.2rem 0 0.5rem; color: var(--ink-2); }
-    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    .topbar .spacer { flex: 1; }
-    button, input {
-      font: inherit; color: var(--ink); background: var(--surface);
-      border: 1px solid var(--ring); border-radius: 6px; padding: 0.35rem 0.7rem;
-    }
-    button { cursor: pointer; }
-    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
-    input[type=number] { width: 5.2rem; }
-    .zone-banner {
-      border-radius: 12px; padding: 1rem 1.25rem; color: #fff;
-      display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem;
-    }
+    .zone-banner { border-radius: 12px; padding: 1rem 1.25rem; color: #fff;
+      display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem; }
     .zone-banner .zone { font-size: 1.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
     .zone-banner .rssi { font-size: 1.1rem; opacity: 0.9; }
     .zone-near { background: var(--good); }
@@ -37,19 +16,16 @@
     .zone-far  { background: #e67e22; }
     .zone-lost { background: var(--critical); }
     .zone-disabled, .zone-unknown { background: var(--muted); }
-    .card { background: var(--surface); border: 1px solid var(--ring);
-      border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.9rem; }
-    .row { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin: 0.35rem 0; }
+    .card { margin-bottom: 0.9rem; }
     .row label { min-width: 11rem; color: var(--ink-2); font-size: 0.85rem; }
+    .row { margin: 0.35rem 0; gap: 0.8rem; }
     svg { width: 100%; height: 120px; display: block; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-    th, td { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--ring); }
-    .muted { color: var(--muted); font-size: 0.8rem; }
   </style>
 </head>
 <body>
   <div class="topbar">
-    <h1>Leash</h1>
+    <h1>Leash — signal to the router or phone</h1>
+    <select id="robot-select" title="Robot"></select>
     <div class="spacer"></div>
     <button id="toggle" class="primary">…</button>
   </div>
@@ -61,13 +37,13 @@
   </div>
 
   <div class="card">
-    <h2 style="margin-top:0">Signal (last 2 min)</h2>
+    <h2>Signal (last 2 min)</h2>
     <svg id="chart" viewBox="0 0 600 120" preserveAspectRatio="none"></svg>
     <div class="muted">Threshold lines: warn / far / lost. The leash maps signal to zones, never to meters — set thresholds from walk-test marks.</div>
   </div>
 
   <div class="card">
-    <h2 style="margin-top:0">Signal source</h2>
+    <h2>Signal source</h2>
     <div class="row"><label>Mode</label>
       <select id="mode">
         <option value="ap">Connected AP (away mode — hotspot IS the phone)</option>
@@ -79,7 +55,7 @@
   </div>
 
   <div class="card">
-    <h2 style="margin-top:0">Thresholds</h2>
+    <h2>Thresholds</h2>
     <div class="row"><label>Warn at (dBm)</label><input type="number" id="warnDbm"></div>
     <div class="row"><label>Far at (dBm)</label><input type="number" id="farDbm"></div>
     <div class="row"><label>Lost at (dBm)</label><input type="number" id="lostDbm"></div>
@@ -90,7 +66,7 @@
   </div>
 
   <div class="card">
-    <h2 style="margin-top:0">Walk-test marks</h2>
+    <h2>Walk-test marks</h2>
     <div class="row">
       <input type="text" id="markLabel" placeholder="e.g. leash boundary, front door">
       <button id="markBtn">Mark current signal</button>
@@ -101,9 +77,7 @@
   <script src="common.js"></script>
   <script src="nav.js" defer></script>
   <script>
-    const ROBOT = new URLSearchParams(location.search).get("robot") || "bittle-1";
-    const BASE = `/api/robots/${ROBOT}/leash`;
-    document.querySelector("h1").textContent = `Leash — ${ROBOT}`;
+    let BASE = "";           // `/api/robots/<id>/leash`, set by boot()
     const CFG_KEYS = ["warnDbm", "farDbm", "lostDbm", "hysteresisDb", "dwellS", "deadManS"];
     const samples = [];  // {t, rssi}
     let latest = null;
@@ -202,9 +176,17 @@
       } catch (err) { showError(err); }
     });
 
-    // 1 s cadence, but never two requests in flight and nothing while
-    // the tab is hidden (a hung adapter used to pile up ~30 requests).
-    hlPoll(refresh, 1000);
+    (async function boot() {
+      let page;
+      try {
+        page = await hlPage({ onRobotChange: (id) => { BASE = `/api/robots/${id}/leash`; samples.length = 0; latest = null; } });
+      } catch (err) { document.getElementById("zone").textContent = "orchestrator unreachable"; return; }
+      if (!page.robotId) return;
+      BASE = `${page.base}/leash`;
+      // 1 s cadence, but never two requests in flight and nothing while
+      // the tab is hidden (a hung adapter used to pile up ~30 requests).
+      hlPoll(refresh, 1000);
+    })();
   </script>
 </body>
 </html>

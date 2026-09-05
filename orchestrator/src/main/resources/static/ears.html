@@ -5,67 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Audio input</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%2327ae60%22/></svg>">
+  <link rel="stylesheet" href="console.css">
   <style>
-    /* Console design system (style.css palette) — fixed light. */
-    :root {
-      color-scheme: light;
-      --page:     #ecf0f1;
-      --surface:  #ffffff;
-      --ink:      #2c3e50;
-      --ink-2:    #46627f;
-      --muted:    #7f8c8d;
-      --ring:     #d5dbdb;
-      --good:     #27ae60;
-      --critical: #e74c3c;
-      --warn:     #f39c12;
-      --seq:      #3498db;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem;
-    }
-    h1 { font-size: 1.15rem; margin: 0; }
-    h2 { font-size: 0.95rem; margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
-    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    select, button, textarea, input {
-      font: inherit; color: var(--ink); background: var(--surface);
-      border: 1px solid var(--ring); border-radius: 6px;
-      padding: 0.35rem 0.7rem;
-    }
-    button { cursor: pointer; }
-    button:hover { border-color: var(--muted); }
-    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
-    button:disabled { opacity: 0.45; cursor: default; }
-    .chip {
-      font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
-      border: 1px solid var(--ring); color: var(--ink-2);
-    }
-    .chip.on   { color: var(--good); border-color: var(--good); }
-    .chip.warn { color: var(--warn); border-color: var(--warn); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 0.9rem; }
-    .card {
-      background: var(--surface); border: 1px solid var(--ring);
-      border-radius: 8px; padding: 0.8rem 0.9rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
-    }
-    .card.wide { grid-column: 1 / -1; }
-    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
-    .muted { color: var(--muted); }
-    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     .meter { position: relative; height: 18px; border-radius: 9px; background: var(--page);
       border: 1px solid var(--ring); overflow: hidden; margin: 0.4rem 0 0.2rem; }
-    .meter .rms  { position: absolute; left: 0; top: 0; bottom: 0; background: var(--good);
-      transition: width 0.15s linear; }
+    .meter .rms  { position: absolute; left: 0; top: 0; bottom: 0; background: var(--good); transition: width 0.15s linear; }
     .meter .peak { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); }
     .meter .floor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--critical); }
     .meter.open .rms { background: var(--warn); }
     .scale { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--muted); }
-    table.data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-    table.data-table th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 0.72rem;
-      padding: 0.25rem 0.4rem; border-bottom: 1px solid var(--ring); }
-    table.data-table td { padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--page); vertical-align: top; }
-    textarea { width: 100%; min-height: 6.5rem; resize: vertical; font-size: 0.82rem; }
     .result { margin-top: 0.6rem; padding: 0.6rem 0.7rem; border: 1px solid var(--ring);
       border-radius: 8px; background: var(--page); font-size: 0.88rem; }
     .result .text { font-size: 1.05rem; margin: 0.2rem 0 0.4rem; }
@@ -115,7 +63,7 @@
         the voice event. Say “hey Laika, sit” at your normal distance.</div>
     </section>
 
-    <section class="card wide">
+    <section class="card" style="grid-column: 1 / -1">
       <h2>Custom vocabulary <span id="vocab-chip" class="chip">…</span></h2>
       <div class="row" style="margin-bottom:0.6rem">
         <label class="hint" for="vocab-wake" style="margin:0">Wake phrase</label>
@@ -142,7 +90,7 @@
       <div class="hint" id="vocab-prompt"></div>
     </section>
 
-    <section class="card wide">
+    <section class="card" style="grid-column: 1 / -1">
       <h2>Transcripts <span class="hint" style="margin:0">everything whisper turned into text, newest first</span></h2>
       <table class="data-table" id="ears-transcripts"></table>
     </section>
@@ -312,25 +260,20 @@
     }
 
     async function boot() {
-      let robots;
+      let page;
       try {
-        robots = await hlApi("", "/api/fleet/robots");
+        page = await hlPage({ onRobotChange: (id) => {
+          state.robotId = id;
+          state.vocabularyLoaded = false;
+          hlLoadBadgePalette(base());
+          refresh();
+        } });
       } catch (err) {
         $("#ears-chip").textContent = "orchestrator unreachable";
         return;
       }
-      $("#robot-select").innerHTML = robots.map((r) =>
-          `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
-      const wanted = hlRobotParam(null);
-      state.robotId = robots.some((r) => r.robotId === wanted) ? wanted : robots[0]?.robotId;
-      if (!state.robotId) return;
-      $("#robot-select").value = state.robotId;
-      $("#robot-select").onchange = (e) => {
-        state.robotId = e.target.value;
-        state.vocabularyLoaded = false;
-        hlLoadBadgePalette(base());
-        refresh();
-      };
+      if (!page.robotId) return;
+      state.robotId = page.robotId;
       ["#vocab-wake", "#vocab-phrases", "#vocab-variants"].forEach((sel) =>
           $(sel).addEventListener("input", () => { state.dirty = true; }));
       $("#vocab-save").onclick = () => saveVocabulary();

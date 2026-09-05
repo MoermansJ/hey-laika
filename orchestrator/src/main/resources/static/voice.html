@@ -5,65 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Audio output</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
+  <link rel="stylesheet" href="console.css">
   <style>
-    /* Console design system (style.css palette) — fixed light. */
-    :root {
-      color-scheme: light;
-      --page:     #ecf0f1;
-      --surface:  #ffffff;
-      --ink:      #2c3e50;
-      --ink-2:    #46627f;
-      --muted:    #7f8c8d;
-      --ring:     #d5dbdb;
-      --good:     #27ae60;
-      --critical: #e74c3c;
-      --warn:     #f39c12;
-      --seq:      #3498db;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem;
-    }
-    h1 { font-size: 1.15rem; margin: 0; }
-    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    .topbar .spacer { flex: 1; }
-    select, button {
-      font: inherit; color: var(--ink); background: var(--surface);
-      border: 1px solid var(--ring); border-radius: 6px;
-      padding: 0.35rem 0.7rem; cursor: pointer;
-    }
-    button:hover { border-color: var(--muted); }
-    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
-    button:disabled { opacity: 0.45; cursor: default; }
-    .chip {
-      font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
-      border: 1px solid var(--ring); color: var(--ink-2);
-    }
-    .chip.on   { color: var(--good); border-color: var(--good); }
-    .chip.warn { color: var(--warn); border-color: var(--warn); }
-    .card {
-      background: var(--surface); border: 1px solid var(--ring);
-      border-radius: 8px; padding: 0.8rem 0.9rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
-    }
-    .voice-row { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
-    .voice-row input { flex: 1; font: inherit; color: var(--ink);
-      background: var(--surface); border: 1px solid var(--ring);
-      border-radius: 6px; padding: 0.45rem 0.7rem; }
-    .voice-log { display: flex; flex-direction: column; gap: 0.45rem;
-      max-height: 55vh; overflow-y: auto; }
+    .voice-log { display: flex; flex-direction: column; gap: 0.45rem; max-height: 55vh; overflow-y: auto; }
     .voice-msg { max-width: 72ch; padding: 0.45rem 0.7rem; border-radius: 10px;
       font-size: 0.85rem; border: 1px solid var(--ring); }
     .voice-msg.user  { align-self: flex-end; background: var(--page); }
     .voice-msg.laika { align-self: flex-start; background: var(--surface); }
     .voice-msg.error { align-self: flex-start; color: var(--critical); }
-    .voice-msg .who { font-size: 0.65rem; color: var(--muted); display: block;
-      margin-bottom: 0.15rem; }
+    .voice-msg .who { font-size: 0.65rem; color: var(--muted); display: block; margin-bottom: 0.15rem; }
     .voice-msg .lat { font-size: 0.65rem; color: var(--muted); margin-left: 0.5rem; }
-    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
   </style>
   <script src="common.js"></script>
+  <script src="cards.js"></script>
   <script src="nav.js" defer></script>
 </head>
 <body>
@@ -73,50 +27,28 @@
     <span id="voice-chip" class="chip">checking…</span>
   </div>
 
-  <section class="card">
-    <div class="voice-row">
-      <input type="text" id="voice-input"
-             placeholder="Simulate speech — e.g. “who’s a good dog?”" autocomplete="off">
-      <button id="voice-send" class="primary">Send</button>
-    </div>
-    <div id="voice-log" class="voice-log"></div>
-    <div class="hint">Types a phrase in place of the microphone: the reply comes from the local
-      LLM. The live microphone, transcripts and wake phrase live on the Audio input tab.
-      <label style="margin-left:0.5rem"><input type="checkbox" id="bark-on-reply" checked> bark on the dog after a reply</label>
-    </div>
-  </section>
+  <div class="stack">
+    <section class="card" id="speaker-card"></section>
 
-  <section class="card" style="margin-top:0.9rem">
-    <h2>Mouth <span id="mouth-chip" class="chip">…</span></h2>
-    <div class="voice-row" style="margin-bottom:0">
-      <input type="text" id="mouth-input" placeholder="Say it on the dog (Grove Speaker Plus)" autocomplete="off">
-      <button id="mouth-say">Speak</button>
-    </div>
-    <div class="voice-row" id="mouth-sounds" style="margin:0.5rem 0 0; flex-wrap:wrap"></div>
-    <div class="hint" id="mouth-detail"></div>
-    <div class="hint">Clips play on the Grove Speaker Plus on the dog. The volume pot on the speaker
-      is the first thing to check when it sounds wrong.</div>
-  </section>
+    <section class="card">
+      <h2>Conversation</h2>
+      <div class="row" style="margin-bottom:0.6rem">
+        <input type="text" id="voice-input" style="flex:1"
+               placeholder="Type a phrase in place of the microphone — e.g. “who’s a good dog?”" autocomplete="off">
+        <button id="voice-send" class="primary">Send</button>
+      </div>
+      <div id="voice-log" class="voice-log"></div>
+      <div class="hint">The reply comes from the local LLM. The live microphone, transcripts and wake
+        phrase are on the Audio input tab.
+        <label style="margin-left:0.5rem"><input type="checkbox" id="bark-on-reply" checked> bark on the dog after a reply</label>
+      </div>
+    </section>
+  </div>
 
   <script>
     const $ = (sel) => document.querySelector(sel);
-    const state = { robotId: null };
-
-    async function api(path, options) {
-      const res = await fetch(`/api/robots/${state.robotId}${path}`, options);
-      const body = await res.json().catch(() => null);
-      if (!res.ok) {
-        const message = body?.message || body?.error || `HTTP ${res.status}`;
-        throw Object.assign(new Error(message), { status: res.status });
-      }
-      return body;
-    }
-
-    // Barks play on the dog's speaker, never on this device.
-    function playSound(name) {
-      api("/mouth/play", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sound: name }) }).catch(() => {});
-    }
+    const state = { robotId: null, base: "", speaker: null };
+    const api = (path, options) => hlApi(state.base, path, options);
 
     function voiceLogAppend(kind, text, latencySec) {
       const log = $("#voice-log");
@@ -141,8 +73,7 @@
           chip.title = "Local LLM reachable";
           return;
         }
-        chip.textContent = health.ollama?.reachable
-            ? "model not pulled" : "LLM offline";
+        chip.textContent = health.ollama?.reachable ? "model not pulled" : "LLM offline";
         chip.className = "chip warn";
         chip.title = health.ollama?.reachable
             ? `Pull it on the Ollama host: ollama pull ${health.ollama.configuredModel}`
@@ -164,16 +95,15 @@
       button.textContent = "…";
       try {
         const result = await api("/voice/demo", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ input: text }),
         });
         voiceLogAppend("laika", result.response, result.latencySec?.ollama);
-        if ($("#bark-on-reply").checked)
-          playSound(Math.random() < 0.5 ? "positive_bark" : "positive_bark2");
+        if ($("#bark-on-reply").checked && state.speaker)
+          state.speaker.play(Math.random() < 0.5 ? "positive_bark" : "positive_bark2");
       } catch (err) {
         voiceLogAppend("error", err.message);
-        if ($("#bark-on-reply").checked) playSound("negative_bark");
+        if ($("#bark-on-reply").checked && state.speaker) state.speaker.play("negative_bark");
       } finally {
         button.disabled = false;
         button.textContent = "Send";
@@ -181,76 +111,27 @@
       }
     }
 
-    async function refreshMouth() {
-      const chip = $("#mouth-chip");
-      try {
-        const m = await api("/mouth");
-        chip.textContent = m.enabled ? `pin ${m.pin} · ${m.ttsEngine}` : "SPEAKER_PIN not set";
-        chip.className = "chip " + (m.enabled ? "on" : "warn");
-        $("#mouth-detail").textContent = m.text
-            ? `last: "${m.text}" (${m.seconds}s, ${m.chunks} chunks)` : "";
-        $("#mouth-say").disabled = !m.enabled;
-        renderMouthSounds(m.sounds || [], m.enabled);
-      } catch { chip.textContent = "mouth unavailable"; chip.className = "chip warn"; }
+    function mount() {
+      if (state.speaker) state.speaker.stop();
+      state.speaker = hlSpeakerCard($("#speaker-card"), state.base, { title: "Speaker", say: true });
+      refreshVoiceHealth();
     }
-
-    function renderMouthSounds(sounds, enabled) {
-      const host = $("#mouth-sounds");
-      if (host.dataset.rendered !== sounds.join(",")) {
-        host.dataset.rendered = sounds.join(",");
-        host.innerHTML = sounds.length
-            ? `<span class="hint" style="margin:auto 0">on the dog:</span>` + sounds.map((s) =>
-                `<button data-dog-sound="${esc(s)}">${esc(s.replace(/_/g, " "))}</button>`).join("")
-            : "";
-        host.querySelectorAll("[data-dog-sound]").forEach((btn) => btn.onclick = async () => {
-          btn.disabled = true;
-          try {
-            await api("/mouth/play", { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sound: btn.dataset.dogSound }) });
-          } catch (err) { $("#mouth-detail").textContent = `failed: ${err.message}`; }
-          finally { btn.disabled = false; refreshMouth(); }
-        });
-      }
-      host.querySelectorAll("[data-dog-sound]").forEach((btn) => btn.disabled = !enabled);
-    }
-
-    $("#mouth-say").onclick = async () => {
-      const text = $("#mouth-input").value.trim();
-      if (!text) return;
-      $("#mouth-say").disabled = true;
-      try {
-        await api("/mouth/say", { method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }) });
-        $("#mouth-input").value = "";
-      } catch (err) {
-        $("#mouth-detail").textContent = `failed: ${err.message}`;
-      } finally { $("#mouth-say").disabled = false; refreshMouth(); }
-    };
 
     async function boot() {
-      let robots;
+      let page;
       try {
-        robots = await hlApi("", "/api/fleet/robots");
+        page = await hlPage({ onRobotChange: (id) => { state.robotId = id; state.base = `/api/robots/${id}`; mount(); } });
       } catch (err) {
         $("#voice-chip").textContent = "orchestrator unreachable";
         return;
       }
-      $("#robot-select").innerHTML = robots.map((r) =>
-          `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
-      // Embedded tab: honour the parent's robot; never default to robots[0].
-      const wanted = hlRobotParam(null);
-      state.robotId = robots.some((r) => r.robotId === wanted)
-          ? wanted : robots[0]?.robotId;
-      if (!state.robotId) return;
-      $("#robot-select").value = state.robotId;
-      $("#robot-select").onchange = (e) => { state.robotId = e.target.value; refreshVoiceHealth(); };
+      if (!page.robotId) return;
+      state.robotId = page.robotId;
+      state.base = page.base;
       $("#voice-send").onclick = sendVoiceInput;
-      $("#voice-input").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") sendVoiceInput();
-      });
-      hlPoll(refreshVoiceHealth, 15000);
-      hlPoll(refreshMouth, 5000);
+      $("#voice-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendVoiceInput(); });
+      mount();
+      hlPoll(refreshVoiceHealth, 15000, { immediate: false });
     }
     boot();
   </script>

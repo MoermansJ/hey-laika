@@ -89,6 +89,45 @@ Docker env equivalent: `BITTLE_ROBOTS_0_ID`, `BITTLE_ROBOTS_0_NAME`,
 `BITTLE_ROBOTS_0_TYPE`, `BITTLE_ROBOTS_0_SERVICEURL` (increment the index for
 additional robots, and add a matching Python service to `docker-compose.yml`).
 
+## Web console
+
+Static files under `src/main/resources/static`, served by Spring with
+`Cache-Control: no-cache` so a rebuilt image never pairs with a stale
+script. `index.html` is the shell: sidebar, dashboard and the robot page,
+whose tabs come from one registry (`TABS` in `app.js`) that generates both
+the tab bar and the iframe per tab. Every tab is its own page, embedded with
+`?embedded=1&robot=<id>`:
+
+| Tab | Page | Owns |
+|---|---|---|
+| Activity | `index.html` | the arbiter card and the activity feed |
+| Control | `control.html` | servos, actions, a live-readings strip, the mood light |
+| Behavior | `behavior.html` | the personality loop: chart, interact, lifecycle editors, personality decisions |
+| Audio input | `ears.html` | microphone level, phrase recorder, vocabulary, transcripts |
+| Audio output | `voice.html` | the speaker (text-to-speech and clips) and the conversation demo |
+| Vision | `eyes.html` | camera with detections, ultrasonic range |
+| Mind | `mind.html` | the arbiter card with its cause chain, agent thoughts |
+| Leash | `leash.html` | signal zones, thresholds, walk-test marks |
+| Map | `map.html` | WiFi fingerprints, the pose card |
+| Metrics | `metrics.html` | adapter and orchestrator counters |
+| Specs | `index.html` | hardware specs and the polling policy |
+
+Shared code, loaded by every page:
+
+- `console.css` — the one palette plus cards, chips, tables, controls, badges.
+  Pages keep only the CSS for what is unique to them.
+- `common.js` — `hlApi` (fetch + JSON + timeout), `hlPoll` (overlap-guarded,
+  pauses when the tab is hidden), `hlPage` (fleet fetch, robot resolution,
+  the robot selector when standalone), the top-bar clock, `hlBadge`
+  (badges coloured from the adapter's mood palette), toasts.
+- `cards.js` — reusable cards, one implementation per concern, mounted where
+  wanted: `hlMoodCard`, `hlSpeakerCard`, `hlArbiterCard` (with an optional
+  event → binding → behavior cause chain), `hlPoseCard`, `hlSensesStrip`.
+  A card renders into a `.card` element, polls itself and returns
+  `{ refresh, stop }`.
+
+`builder.html` (the sequence builder) is unlisted and keeps its own theme.
+
 ## REST API
 
 Generated from the inbound web adapters in
@@ -150,7 +189,7 @@ adapter without a typed DTO.
 | `/ears/record` | POST | *relay* — Audio input tab's phrase recorder: `{"seconds"}` captures the live microphone, returns the transcript and whether it matched the wake phrase; never fires the voice event |
 | `/ears/vocabulary` | GET / POST | *relay* — extra phrases whisper is primed with and extra accepted spellings of the name |
 | `/mouth`, `/mouth/say`, `/mouth/stop` | GET/POST | *relay* — speaker status, speak text on the dog, stop playback |
-| `/mouth/sounds`, `/mouth/play` | GET/POST | *relay* — clip library on the dog's speaker; `{"sound"}` plays one (Control tab Speaker card, Audio output tab Mouth card) |
+| `/mouth/sounds`, `/mouth/play` | GET/POST | *relay* — clip library on the dog's speaker; `{"sound"}` plays one (Audio output tab, Speaker card) |
 | `/satellite` | GET | *relay* — the XIAO's own status JSON (mic, camera, rssi, led) |
 | `/eyes`, `/eyes/config` | GET/POST | *relay* — camera/person-detection status; pause or resume frame grabbing |
 | `/eyes/snap` | GET | *binary relay* — latest cached camera frame as `image/jpeg` (`?fresh=1` grabs a new one) |

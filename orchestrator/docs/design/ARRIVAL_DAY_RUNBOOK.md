@@ -148,7 +148,7 @@ the dog was off (LED power comes from analog socket B).
 ## 4c. Speaker firmware flash and first sound (2026-09-04, night)
 
 Outcome: the speaker fork (`XWp/XWa/XWq`) is on Laika and a bark clip
-played through the Grove Speaker Plus from the Control tab; six 1 KB frames
+played through the Grove Speaker Plus from the console (Speaker card, now on the Audio output tab); six 1 KB frames
 acknowledged, ring buffer draining at 8 kHz. Three things cost the evening
 and are worth knowing:
 
