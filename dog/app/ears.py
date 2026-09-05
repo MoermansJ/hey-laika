@@ -222,6 +222,20 @@ class EarsService:
     def init(self) -> None:
         Base.metadata.create_all(engine)
         self._load_vocabulary()
+        threading.Thread(target=self.warm_up, daemon=True).start()
+
+    def warm_up(self) -> None:
+        """Load both whisper models now: the first request of a conversation
+        waited 17.7 s for base.en to download and load."""
+        for engine in (self.wake_transcriber, self.transcriber):
+            load = getattr(engine, "_load", None)
+            if load is None:
+                continue
+            try:
+                load()
+            except Exception as exc:
+                self.stats["lastError"] = f"whisper load: {exc}"
+                logger.exception("Ears: whisper model failed to load")
         threading.Thread(target=self._transcribe_loop, daemon=True).start()
         threading.Thread(target=self._udp_loop, daemon=True).start()
 

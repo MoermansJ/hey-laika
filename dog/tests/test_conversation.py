@@ -7,7 +7,7 @@ import time
 import pytest
 
 from app.conversation import (ANSWER_TOOL, SAY_NO_LLM, SAY_NOT_HEARD, ConversationService,
-                              cap_reply, parse_router_reply)
+                              InfoTool, battery_sentence, cap_reply, parse_router_reply)
 from app.models import init_db
 
 
@@ -92,12 +92,20 @@ class FakeLlm:
         return (None, self.error) if self.error else (self.reply, None)
 
 
-def _service(ears=None, mouth=None, llm=None, beeps=None):
+def _battery_tool(pct=54.2, minutes=124):
+    return InfoTool("battery", "say the battery level",
+                    lambda: battery_sentence(lambda: {"battery": pct, "minutesLeft": minutes}),
+                    keywords=r"\bbatter(y|ies)\b")
+
+
+def _service(ears=None, mouth=None, llm=None, beeps=None, info_tools=None):
     init_db()
     binder = FakeBinder()
     svc = ConversationService(ears or FakeEars(), FakeMood(), mouth or FakeMouth(), binder,
                               FakeStore(), llm or FakeLlm(),
-                              beep=(beeps.append if beeps is not None else None))
+                              beep=(beeps.append if beeps is not None else None),
+                              info_tools=info_tools)
+    svc.warm_up = lambda: None            # tests count LLM calls; no warm-up call
     svc.init()
     return svc, binder
 
@@ -125,7 +133,7 @@ def test_wake_without_command_listens_routes_and_speaks():
     # The sound contract: one bark on pick-up, two before the terminal step.
     assert svc.mouth.played == ["positive_bark"] * 3 and beeps == []
     prompt, system, as_json = llm.calls[0]
-    assert as_json is True and "User message: what is the capital of France" in prompt
+    assert as_json is True and 'The user said: "what is the capital of France"' in prompt
     assert '"sit"' in system and '"greet"' in system and f'"{ANSWER_TOOL}"' in system
     holds = [m for kind, m in svc.mood.calls if kind == "hold"]
     assert holds == ["listening", "thinking", "speaking"] and svc.mood.calls[-1][0] == "release"
@@ -223,9 +231,7 @@ def test_prompt_setting_persists_and_validates():
         svc.set_prompt("   ")
     with pytest.raises(ValueError):
         svc.set_prompt(reply_chars=5)
-    svc.set_prompt("You are a helpful assistant, the user wants help with the message "
-                   "appended at the end of this prompt. Instructions: Be concise and "
-                   "brief --- User message: %s", 320)
+    svc.set_prompt('The user said: "%s"\nRespond to exactly what the user said. Be concise and brief.', 320)
 
 
 def test_busy_service_ignores_a_second_wake_but_cancel_stops_speech():
@@ -248,6 +254,34 @@ def test_busy_service_ignores_a_second_wake_but_cancel_stops_speech():
     svc.start("another", source="text")
     _finish(svc)
     assert svc.cancel()["state"] == "idle"
+
+
+def test_battery_question_is_answered_from_live_state_without_the_llm():
+    llm = FakeLlm()
+    svc, binder = _service(llm=llm, info_tools=[_battery_tool()])
+    svc.start("what's your battery level", source="text")
+    _finish(svc)
+    assert llm.calls == [] and svc.mouth.said == ["My battery level is 54 percent. About 2 hours and 4 minutes left."]
+    assert svc.mouth.played == ["positive_bark"] * 3
+    turn = svc.turns(1)[0]
+    assert turn["tool"] == "battery" and turn["llmS"] == 0.0 and svc.stats["infoAnswers"] == 1
+    assert not any(e == "voice.intent" for e, _ in binder.events)
+    assert any(t["name"] == "battery" and t["kind"] == "info" for t in svc.status()["tools"])
+
+
+def test_llm_may_pick_an_info_tool_too():
+    llm = FakeLlm('{"tool": "battery", "say": "Let me check."}')
+    svc, _ = _service(llm=llm, info_tools=[_battery_tool(pct=9, minutes=None)])
+    svc.start("how much juice have you got left", source="text")
+    _finish(svc)
+    assert len(llm.calls) == 1 and '"battery"' in llm.calls[0][1]
+    assert svc.mouth.said == ["My battery level is 9 percent."]
+
+
+def test_battery_sentence_handles_missing_readings():
+    assert battery_sentence(lambda: {"battery": None}) == "I don't know my battery level right now."
+    assert battery_sentence(lambda: {"battery": 80, "minutesLeft": 45}) == "My battery level is 80 percent. About 45 minutes left."
+    assert battery_sentence(lambda: {"battery": 100, "minutesLeft": 250}) == "My battery level is 100 percent. About 4 hours left."
 
 
 def test_cap_reply_cuts_at_a_sentence():

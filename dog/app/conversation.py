@@ -12,6 +12,11 @@ also the voice command vocabulary: add a binding, and the next "Hey Laika"
 can pick it. When no tool fits, the tool is "answer" and the reply is spoken.
 A future planning agent replaces `route()` and keeps the same contract.
 
+Information tools are the second kind of tool: instead of running a behavior
+they read something the adapter knows (the battery level) and speak it. Each
+has an optional keyword pattern; a request that matches skips the LLM and is
+answered at once.
+
 Sound contract: one bark when she starts taking the request (recording, or a
 same-utterance request accepted), two barks before the terminal step, which
 is running the chosen behavior or speaking the answer. Barks are speaker
@@ -32,17 +37,24 @@ from app.models import Base, SessionLocal, Setting, engine, iso_utc, utcnow
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PROMPT = ("You are a helpful assistant, the user wants help with the message "
-                  "appended at the end of this prompt. Instructions: Be concise and "
-                  "brief --- User message: %s")
+# The template is a setting; %s is the transcript. A small model echoes
+# instructions that talk about "the message appended below", so the default
+# quotes the user's words and asks for the answer to those words directly.
+DEFAULT_PROMPT = ('The user said: "%s"\n'
+                  "Respond to exactly what the user said. Be concise and brief.")
 BREVITY = " Answer in one or two short spoken sentences, no lists, no markdown."
 ROUTER_SYSTEM = (
-    "You route a spoken request addressed to a small robot dog. Choose exactly one "
-    "tool from the list and reply with JSON only, no prose: "
-    '{{"tool": "<name>", "say": "<one short spoken sentence>"}}.\n'
+    "You are the voice of a small robot dog. The user's words are quoted in the "
+    "message. Reply with JSON only, no prose: "
+    '{{"tool": "<name>", "say": "<what to say aloud>"}}.\n'
     "Tools:\n{tools}\n"
-    "Use \"answer\" when no tool fits and put the whole answer in \"say\": "
-    "one or two short spoken sentences, no lists, no markdown."
+    "Rules: pick a behavior tool only when the user asks the dog to do that action. "
+    "For any question or remark, use \"answer\" and put the actual answer in "
+    "\"say\": one or two short spoken sentences, no lists, no markdown, never a "
+    "greeting or a promise to help.\n"
+    'Example: user says "what is the capital of France" -> '
+    '{{"tool": "answer", "say": "The capital of France is Paris."}}\n'
+    'Example: user says "sit down please" -> {{"tool": "sit", "say": "Sitting down."}}'
 )
 ANSWER_TOOL = "answer"
 SETTINGS_KEY = "conversation.prompt"
@@ -115,10 +127,44 @@ def parse_router_reply(raw: str, tools: set) -> tuple[str, str]:
     return ANSWER_TOOL, text.strip("`").strip()
 
 
+class InfoTool:
+    """A spoken answer from live adapter state. `answer()` returns the
+    sentence to say, or None when the reading is unavailable."""
+
+    def __init__(self, name: str, description: str, answer, keywords: str | None = None):
+        self.name = name
+        self.description = description
+        self.answer = answer
+        self.pattern = re.compile(keywords, re.I) if keywords else None
+
+    def matches(self, text: str) -> bool:
+        return bool(self.pattern and self.pattern.search(text or ""))
+
+
+def battery_sentence(reading) -> str:
+    """`reading` is a callable returning {"battery": pct|None, "minutesLeft": n|None}."""
+    data = reading() or {}
+    pct = data.get("battery")
+    if pct is None:
+        return "I don't know my battery level right now."
+    sentence = f"My battery level is {round(pct)} percent."
+    minutes = data.get("minutesLeft")
+    if minutes:
+        hours, rest = divmod(int(minutes), 60)
+        left = f"{hours} hour{'s' if hours != 1 else ''}" if hours else ""
+        if rest and hours < 3:
+            left += f"{' and ' if left else ''}{rest} minute{'s' if rest != 1 else ''}"
+        if left:
+            sentence += f" About {left} left."
+    return sentence
+
+
 class ConversationService:
     def __init__(self, ears, mood, mouth, binder, store, llm, beep=None,
+                 info_tools: list | None = None,
                  enabled: bool = True, listen_s: float = DEFAULT_LISTEN_S,
                  reply_chars: int = DEFAULT_REPLY_CHARS, clock=time.time):
+        self.info_tools = {t.name: t for t in (info_tools or [])}
         self.ears = ears
         self.mood = mood
         self.mouth = mouth
@@ -137,8 +183,8 @@ class ConversationService:
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_turn_at = 0.0
-        self.stats = {"turns": 0, "toolRuns": 0, "answers": 0, "failures": 0,
-                      "lastError": None}
+        self.stats = {"turns": 0, "toolRuns": 0, "answers": 0, "infoAnswers": 0,
+                      "failures": 0, "lastError": None}
 
     # -- lifecycle --
 
@@ -146,6 +192,15 @@ class ConversationService:
         Base.metadata.create_all(engine)
         self._load_prompt()
         self.binder.listeners.append(self.on_event)
+        threading.Thread(target=self.warm_up, daemon=True).start()
+
+    def warm_up(self) -> None:
+        """Load the model into Ollama now rather than on the first turn: a cold
+        load cost 8 to 13 s of thinking on the first question."""
+        try:
+            self.llm("Reply with the single word: ready", "You answer in one word.", False)
+        except Exception as exc:
+            logger.info("Conversation: LLM warm-up skipped (%s)", exc)
 
     # -- entry points --
 
@@ -207,6 +262,17 @@ class ConversationService:
                 question = heard
             self._set_state("thinking")
             self.mood.hold("thinking")
+            quick = next((t for t in self.info_tools.values() if t.matches(question)), None)
+            if quick is not None:
+                # A keyword match answers without the LLM: "what's your battery".
+                turn["tool"] = quick.name
+                turn["llmS"] = 0.0
+                self.stats["infoAnswers"] += 1
+                self._bark(2, turn)
+                if self._cancel.is_set():
+                    return
+                self._speak(cap_reply(quick.answer(), self.reply_chars), turn)
+                return
             tools = self._tools()
             started = self._clock()
             raw, error = self.llm(self._router_prompt(question), self._router_system(tools), True)
@@ -225,7 +291,10 @@ class ConversationService:
             self._bark(2, turn)                        # terminal step reached
             if self._cancel.is_set():
                 return
-            if tool != ANSWER_TOOL:
+            if tool in self.info_tools:
+                self.stats["infoAnswers"] += 1
+                say = self.info_tools[tool].answer() or say
+            elif tool != ANSWER_TOOL:
                 self.stats["toolRuns"] += 1
                 self.binder.trigger("voice.intent", {"intent": tool, "text": question})
                 say = say or SAY_ACK
@@ -304,14 +373,16 @@ class ConversationService:
     # -- the router --
 
     def _tools(self) -> list[dict]:
-        tools = []
+        tools = [{"name": t.name, "behavior": None, "description": t.description, "kind": "info"}
+                 for t in self.info_tools.values()]
         for binding in self.store.bindings(event="voice.intent", enabled_only=True):
             name = (binding.get("filter") or {}).get("intent")
             if not name:
                 continue
             behavior = self.store.behavior(binding["behavior"]) or {}
             tools.append({"name": str(name).lower(), "behavior": binding["behavior"],
-                          "description": behavior.get("description") or binding["behavior"]})
+                          "description": behavior.get("description") or binding["behavior"],
+                          "kind": "behavior"})
         return tools
 
     def _router_system(self, tools: list[dict]) -> str:

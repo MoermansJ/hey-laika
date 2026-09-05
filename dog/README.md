@@ -118,7 +118,7 @@ proxies and scheduled for removal (audit fix #11).
 | `/ears` | GET | Ears status: satellite PCM stream, whisper model, wake/utterance counters, `level` (DC-free RMS of the last packet, 1 s peak and median, the gate floor, whether the gate is open) |
 | `/ears/transcripts` | GET | Recent transcripts (`?limit=`), wake flag and detected intent |
 | `/ears/clip` | POST | Bench test: run an uploaded 16-bit mono WAV through the ears pipeline |
-| `/conversation` | GET | "Hey Laika" turns: `state` (idle / listening / thinking / speaking), the current turn, recent `turns` (`?limit=`), the prompt template and the `tools` menu built from the bindings on `voice.intent` |
+| `/conversation` | GET | "Hey Laika" turns: `state` (idle / listening / thinking / speaking), the current turn, recent `turns` (`?limit=`), the prompt template and the `tools` menu: information tools (`battery`, answered from live state, keyword-matched requests skip the LLM) plus the bindings on `voice.intent` |
 | `/conversation/say` | POST | `{"text"}` starts a turn from typed text in place of the microphone: same router, behaviors and speaker |
 | `/conversation/listen` | POST | Starts a turn as if the wake phrase had been heard: sit, listen, answer |
 | `/conversation/cancel` | POST | Stop speaking, back to idle |

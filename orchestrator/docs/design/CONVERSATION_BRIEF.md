@@ -79,6 +79,17 @@ and a planning agent later replaces the router with the same contract.
 Seeded tools: sit, lie_down, stop, greet, acknowledge. The listening posture
 is itself a binding, `conversation.listen` to `idle_sit`.
 
+Information tools are the second kind: they answer from live adapter state
+instead of running a behavior. `battery` says "My battery level is 54
+percent. About 2 hours left." and is wired in `app.py` from the telemetry
+cache and the power tracker's prediction. Each information tool may carry a
+keyword pattern; a request that matches ("what's your battery level") skips
+the LLM and is answered at once, so the whole turn is the two barks plus
+speech. The LLM can still pick it for phrasings the pattern misses ("how much
+juice have you got"). Adding one is an `InfoTool(name, description,
+answer, keywords)` in `app.py`; candidates: range ahead, WiFi signal, uptime,
+the time.
+
 ### Sound contract
 
 One bark when the request is picked up (recording starts, or a same-utterance
@@ -97,9 +108,17 @@ it as the question and skip LISTENING; if it is empty, enter LISTENING.
 
 ### The prompt
 
-The template above becomes the system prompt, with the transcript as the user
-message, through the existing `query_ollama(prompt, system=...)`. Two additions
-the ask does not state but speech needs:
+The template is the user message with `%s` replaced by the transcript; the
+router's own instructions are the system prompt. The ask's original wording
+("the message appended at the end of this prompt") made the 1b model parrot
+the instruction back ("I'm happy to help you with that, message appended"),
+so the default became `The user said: "%s"` followed by "Respond to exactly
+what the user said", and the router prompt carries two worked examples and
+the rule that behavior tools are for requests to act, never for questions.
+Routing runs at temperature 0.2. Both the LLM and the two whisper models are
+warmed up at adapter start; a cold base.en cost the first request 17.7 s and a
+cold Ollama the first answer 8 to 13 s. Two additions the ask does not state
+but speech needs:
 
 - a length instruction: "one or two spoken sentences, no lists, no markdown",
   because every sentence costs seconds of playback;

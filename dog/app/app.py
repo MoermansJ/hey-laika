@@ -26,7 +26,7 @@ from app.choreography import ChoreographyLibrary
 from app.arbiter import Arbiter
 from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
                                 PRIORITY_MANUAL, BehaviorStore)
-from app.conversation import ConversationService
+from app.conversation import ConversationService, InfoTool, battery_sentence
 from app.ears import EarsService, build_transcriber
 from app.event_binder import EventBinder
 from app.eyes import EyesService, build_detector
@@ -116,10 +116,23 @@ mood = MoodService(satellite, enabled=Config.MOOD_ENABLED)
 mood.init()
 event_binder.listeners.append(mood.on_event)
 # Conversation: wake -> sit and listen -> LLM router -> behavior and/or speech.
+def _battery_reading() -> dict:
+    try:
+        battery = bittle.get_telemetry().get("battery")
+    except Exception:
+        battery = None
+    summary = power.summary()
+    return {"battery": battery, "minutesLeft": summary.get("predictedMinutesLeft")}
+
+
 conversation = ConversationService(
     ears, mood, mouth, event_binder, behavior_store,
+    info_tools=[InfoTool("battery", "say the battery level and how long it will last",
+                         lambda: battery_sentence(_battery_reading),
+                         keywords=r"\bbatter(y|ies)\b|\bcharge\b|\bpower level\b")],
     llm=lambda prompt, system, as_json: query_ollama(prompt, system=system,
-                                                     format_json=as_json, max_tokens=160),
+                                                     format_json=as_json, max_tokens=160,
+                                                     temperature=0.2),
     beep=lambda pattern: play_beep(bittle, pattern),
     enabled=Config.CONVERSATION_ENABLED, listen_s=Config.CONVERSATION_LISTEN_S,
     reply_chars=Config.CONVERSATION_REPLY_CHARS)
