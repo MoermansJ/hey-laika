@@ -27,6 +27,7 @@ from app.arbiter import Arbiter
 from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
                                 PRIORITY_MANUAL, BehaviorStore)
 from app.conversation import ConversationService, InfoTool, battery_sentence
+from app.power_saver import PowerSaver
 from app.ears import EarsService, build_transcriber
 from app.event_binder import EventBinder
 from app.eyes import EyesService, build_detector
@@ -137,6 +138,15 @@ conversation = ConversationService(
     enabled=Config.CONVERSATION_ENABLED, listen_s=Config.CONVERSATION_LISTEN_S,
     reply_chars=Config.CONVERSATION_REPLY_CHARS)
 conversation.init()
+# Battery saver: eco / doze / critical tiers from battery level and quiet time.
+power_saver = PowerSaver(
+    event_binder, eyes, mood, senses,
+    battery_reader=lambda: _battery_reading().get("battery"),
+    idle_seconds=event_binder.idle_seconds,
+    speak=lambda text: mouth.say(text) if mouth.enabled else None,
+    enabled=Config.POWER_SAVER_ENABLED)
+power_saver.init()
+conversation.motion_allowed = power_saver.motion_allowed
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -184,6 +194,7 @@ def _observe_for_poll_policy(original_send):
         ok = original_send(command)
         if ok:
             poll_policy.observe_command(command)
+            power_saver.note_activity("command")
         return ok
     return wrapped
 
@@ -871,6 +882,39 @@ def mouth_voice_set(robot_id: str):
 @robot_scoped
 def mouth_stop(robot_id: str):
     return jsonify({"robotId": robot_id, "stopped": mouth.stop()})
+
+
+# ---- Battery saver ----
+
+@app.get("/api/robots/<robot_id>/power/saver")
+@robot_scoped
+def power_saver_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **power_saver.status()})
+
+
+@app.post("/api/robots/<robot_id>/power/saver")
+@robot_scoped
+def power_saver_override(robot_id: str):
+    """{"tier": "active"|"eco"|"doze"|"critical"} pins a tier; {"tier": null}
+    returns to automatic."""
+    body = request.get_json(silent=True) or {}
+    try:
+        status = power_saver.override(body.get("tier"))
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    log_activity("power", f"Battery saver: {status['tier']}"
+                          f"{' (manual)' if status['manual'] else ' (automatic)'}")
+    return jsonify({"robotId": robot_id, **status})
+
+
+@app.post("/api/robots/<robot_id>/power/saver/config")
+@robot_scoped
+def power_saver_config(robot_id: str):
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"robotId": robot_id, **power_saver.configure(body)})
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
 
 
 # ---- Conversation ("Hey Laika" -> listen -> LLM router -> speak) ----

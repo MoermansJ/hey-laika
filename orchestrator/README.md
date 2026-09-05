@@ -100,7 +100,7 @@ the tab bar and the iframe per tab. Every tab is its own page, embedded with
 
 | Tab | Page | Owns |
 |---|---|---|
-| Activity | `index.html` | the arbiter card and the activity feed |
+| Activity | `index.html` | the arbiter card, the battery saver card and the activity feed |
 | Control | `control.html` | servos, actions, a live-readings strip, the mood light |
 | Behavior | `behavior.html` | the personality loop: chart, interact, lifecycle editors, personality decisions |
 | Audio input | `ears.html` | the conversation card (state, turns, prompt, tools), microphone level, phrase recorder, vocabulary, transcripts |
@@ -123,7 +123,7 @@ Shared code, loaded by every page:
 - `cards.js` — reusable cards, one implementation per concern, mounted where
   wanted: `hlMoodCard`, `hlSpeakerCard`, `hlArbiterCard` (with an optional
   event → binding → behavior cause chain), `hlPoseCard`, `hlSensesStrip`,
-  `hlConversationCard`.
+  `hlConversationCard`, `hlPowerCard`.
   A card renders into a `.card` element, polls itself and returns
   `{ refresh, stop }`.
 
@@ -181,6 +181,7 @@ adapter without a typed DTO.
 | `/idle` | GET | *relay* — idle-ladder status |
 | `/idle/{enable\|disable}` | POST | *relay* — whitelisted idle actions |
 | `/power` | GET | *relay* — power-session tracker |
+| `/power/saver`, `/power/saver/config` | GET / POST | *relay* — the battery saver's tier, overrides and thresholds (Activity tab card) |
 | `/polling` | GET / POST | *relay* — adaptive telemetry polling policy (read / configure) |
 | `/senses` | GET | *relay* — senses layer status (WiFi sniffer, dead-reckoned pose) |
 | `/senses/samples` | GET | *relay* — recent sense samples |

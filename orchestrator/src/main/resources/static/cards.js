@@ -11,6 +11,7 @@
  *  hlSensesStrip   one row of live readings: battery, range, signal, mic, satellite
  *  hlConversationCard  "Hey Laika" turns: live state, the last turn, typed input,
  *                  the prompt template and the tool menu (option full)
+ *  hlPowerCard     the battery saver: tier, reasons, overrides, thresholds
  */
 "use strict";
 
@@ -463,6 +464,90 @@ function hlConversationCard(host, base, { title = "Conversation", full = false, 
       refresh();
     };
   }
+  const poller = hlPoll(refresh, intervalMs);
+  return { refresh, stop: poller.stop };
+}
+
+// -------------------------------------------------------------- battery saver
+
+function hlPowerCard(host, base, { title = "Battery saver", intervalMs = 5000 } = {}) {
+  const TIER_HELP = {
+    active: "everything on",
+    eco: "camera 1 fps, LED dimmed, WiFi sniffer off",
+    doze: "lying down, servos off, camera paused, LED at 10 %",
+    critical: "servos off at safety priority, motion refused until charged",
+  };
+  const FIELDS = [
+    ["ecoPct", "eco below %"], ["dozePct", "doze below %"], ["criticalPct", "critical below %"],
+    ["hysteresisPct", "hysteresis %"], ["ecoIdleS", "eco after quiet s"], ["dozeIdleS", "doze after quiet s"],
+    ["ecoFps", "eco camera fps"], ["ecoLedDim", "eco LED (0-1)"], ["dozeLedDim", "doze LED (0-1)"],
+  ];
+  host.innerHTML =
+      `<h2>${esc(title)} <span class="pw-tier"></span><span class="hint pw-since" style="margin:0"></span>` +
+      `<span class="row" style="margin-left:auto">` +
+      `<button class="pw-auto" title="Let the saver decide from battery and quiet time">Auto</button>` +
+      `<button class="pw-active" title="Wake her up and hold active">Wake</button>` +
+      `<button class="pw-eco" title="Hold eco">Eco</button>` +
+      `<button class="pw-doze" title="Hold doze: lie down, servos off">Doze</button></span></h2>` +
+      `<div class="hint pw-detail"></div>` +
+      `<div class="strip pw-tiers" style="margin-top:0.5rem"></div>` +
+      `<details style="margin-top:0.6rem"><summary class="hint" style="cursor:pointer;margin:0">Thresholds</summary>` +
+      `<div class="row pw-fields" style="margin-top:0.4rem"></div>` +
+      `<div class="row" style="margin-top:0.4rem"><button class="pw-save">Save</button><span class="hint pw-saved" style="margin:0"></span></div></details>` +
+      `<div class="hint">Anything that shows someone is there wakes her: a wake phrase, a person in view, a leash event,` +
+      ` being lifted, a command from the console. A battery-forced tier lifts only once the level climbs back above the` +
+      ` threshold plus the hysteresis band, or on Wake.</div>`;
+  const q = (sel) => host.querySelector(sel);
+  q(".pw-fields").innerHTML = FIELDS.map(([key, label]) =>
+      `<label class="small">${esc(label)} <input type="number" step="any" data-key="${key}" style="width:5.5rem"></label>`).join("");
+  let fieldsLoaded = false, dirty = false;
+  host.querySelectorAll(".pw-fields input").forEach((el) => el.addEventListener("input", () => { dirty = true; }));
+
+  const TIER_BADGE = { active: "online", eco: "warn", doze: "person", critical: "lowBattery" };
+
+  async function post(path, body) {
+    try { await hlJsonPost(base, path, body); } catch (err) { hlToast(err.message, true); }
+    refresh();
+  }
+
+  async function refresh() {
+    try {
+      const p = await hlApi(base, "/power/saver");
+      q(".pw-tier").innerHTML = hlBadge(TIER_BADGE[p.tier] || "warn", p.tier + (p.manual ? " · held" : ""));
+      q(".pw-since").textContent = `for ${Math.round(p.sinceS)} s` + (p.reasons.length ? ` · ${p.reasons.join(", ")}` : "");
+      q(".pw-detail").textContent =
+          `${TIER_HELP[p.tier] || ""} · battery ${p.battery != null ? Math.round(p.battery) + " %" : "unknown"}` +
+          ` · quiet ${Math.round(p.idleS)} s (last activity: ${p.lastActivity})` +
+          ` · ${p.transitions} transitions, ${p.wakes} wakes${p.enabled ? "" : " · DISABLED (POWER_SAVER_ENABLED)"}`;
+      q(".pw-tiers").innerHTML = p.tiers.map((t) =>
+          `<div class="sensor${t === p.tier ? "" : " na"}"><div class="name">${esc(t)}</div>` +
+          `<div class="value" style="font-size:0.75rem">${esc(TIER_HELP[t] || "")}</div></div>`).join("");
+      ["auto", "active", "eco", "doze"].forEach((k) => {
+        const btn = q(`.pw-${k}`);
+        btn.classList.toggle("active", k === "auto" ? !p.manual : p.manual === k);
+      });
+      if (!fieldsLoaded || !dirty) {
+        host.querySelectorAll(".pw-fields input").forEach((el) => { el.value = p.config[el.dataset.key]; });
+        fieldsLoaded = true;
+      }
+    } catch (err) {
+      q(".pw-tier").innerHTML = `<span class="chip warn" title="${esc(err.message)}">unavailable</span>`;
+    }
+  }
+
+  q(".pw-auto").onclick = () => post("/power/saver", { tier: null });
+  q(".pw-active").onclick = () => post("/power/saver", { tier: "active" });
+  q(".pw-eco").onclick = () => post("/power/saver", { tier: "eco" });
+  q(".pw-doze").onclick = () => post("/power/saver", { tier: "doze" });
+  q(".pw-save").onclick = async () => {
+    const body = {};
+    host.querySelectorAll(".pw-fields input").forEach((el) => { body[el.dataset.key] = Number(el.value); });
+    try {
+      await hlJsonPost(base, "/power/saver/config", body);
+      dirty = false; q(".pw-saved").textContent = `saved ${new Date().toLocaleTimeString()}`;
+    } catch (err) { q(".pw-saved").textContent = `failed: ${err.message}`; }
+    refresh();
+  };
   const poller = hlPoll(refresh, intervalMs);
   return { refresh, stop: poller.stop };
 }

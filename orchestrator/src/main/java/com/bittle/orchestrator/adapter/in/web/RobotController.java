@@ -269,6 +269,23 @@ public class RobotController {
         return relayGet.execute(robotId, "/power");
     }
 
+    @GetMapping("/power/saver")
+    public Map<String, Object> powerSaver(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/power/saver");
+    }
+
+    @PostMapping("/power/saver")
+    public Map<String, Object> powerSaverOverride(@PathVariable String robotId,
+                                                  @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/power/saver", body);
+    }
+
+    @PostMapping("/power/saver/config")
+    public Map<String, Object> powerSaverConfig(@PathVariable String robotId,
+                                                @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/power/saver/config", body);
+    }
+
     @GetMapping("/polling")
     public Map<String, Object> polling(@PathVariable String robotId) {
         return relayGet.execute(robotId, "/polling");

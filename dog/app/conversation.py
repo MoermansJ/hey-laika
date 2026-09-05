@@ -165,6 +165,7 @@ class ConversationService:
                  enabled: bool = True, listen_s: float = DEFAULT_LISTEN_S,
                  reply_chars: int = DEFAULT_REPLY_CHARS, clock=time.time):
         self.info_tools = {t.name: t for t in (info_tools or [])}
+        self.motion_allowed = lambda: None   # battery saver: a refusal sentence, or None
         self.ears = ears
         self.mood = mood
         self.mouth = mouth
@@ -295,9 +296,14 @@ class ConversationService:
                 self.stats["infoAnswers"] += 1
                 say = self.info_tools[tool].answer() or say
             elif tool != ANSWER_TOOL:
-                self.stats["toolRuns"] += 1
-                self.binder.trigger("voice.intent", {"intent": tool, "text": question})
-                say = say or SAY_ACK
+                refusal = self.motion_allowed()
+                if refusal:
+                    turn["tool"] = f"{tool} (refused)"
+                    say = refusal
+                else:
+                    self.stats["toolRuns"] += 1
+                    self.binder.trigger("voice.intent", {"intent": tool, "text": question})
+                    say = say or SAY_ACK
             else:
                 self.stats["answers"] += 1
             self._speak(cap_reply(say, self.reply_chars), turn)

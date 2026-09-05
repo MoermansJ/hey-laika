@@ -188,6 +188,10 @@ class EyesService:
     def enabled(self) -> bool:
         return self._enabled and self._running.is_set()
 
+    def set_fps(self, fps: float) -> None:
+        """Change the grab rate at run time (the battery saver drops it)."""
+        self.fps = max(0.2, min(10.0, float(fps)))
+
     def set_enabled(self, enabled: bool) -> None:
         """Pause/resume frame grabbing (the satellite stays reachable)."""
         if not self._enabled:
@@ -266,11 +270,11 @@ class EyesService:
     # -- internals --
 
     def _loop(self) -> None:
-        period = 1.0 / self.fps
         while not self._stop.is_set():
             if not self._running.is_set():
                 self._sleep(0.25)
                 continue
+            period = 1.0 / self.fps            # re-read: set_fps changes it live
             started = self._clock()
             try:
                 self.capture()

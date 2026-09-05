@@ -89,6 +89,7 @@ class MoodService:
         self._hold: dict | None = None
         self._flash_timer: threading.Timer | None = None
         self._manual_until = 0.0
+        self.dim = 1.0                      # battery saver scales every brightness
         self._stop = threading.Event()
         self.stats = {"sets": 0, "failures": 0, "lastError": None,
                       "lastEvent": None, "lastSetAt": None}
@@ -206,6 +207,7 @@ class MoodService:
                 "effects": list(LED_EFFECTS),
                 "mood": current["name"], "base": base["name"],
                 "hold": hold["name"] if hold else None,
+                "dim": self.dim,
                 "flash": ({"name": flash["name"],
                            "remainingS": round(max(0.0, flash["until"] - self._clock()), 1)}
                           if flash else None),
@@ -240,7 +242,15 @@ class MoodService:
         return self._send(spec["r"], spec["g"], spec["b"], spec["effect"],
                           spec["periodMs"], spec["brightness"])
 
+    def set_dim(self, factor: float) -> dict:
+        """Scale all brightness by 0..1 without touching the moods themselves."""
+        self.dim = max(0.0, min(1.0, float(factor)))
+        self._apply(self._current())
+        return self.status()
+
     def _send(self, r, g, b, effect, period_ms, brightness) -> bool:
+        if self.dim < 1.0 and brightness:
+            brightness = max(1, int(round(brightness * self.dim)))
         try:
             self.satellite.set_led(r, g, b, effect, period_ms, brightness)
         except SatelliteError as exc:

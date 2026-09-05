@@ -47,6 +47,10 @@ class EventBinder:
     def on_online(self) -> None:
         self.trigger("robot.online")
 
+    def idle_seconds(self) -> float:
+        """Seconds since the last external motion (the idle ladder's clock)."""
+        return max(0.0, self._clock() - self._idle_anchor)
+
     def handle_output_line(self, line: str) -> None:
         """Unsolicited firmware output (controller hook)."""
         if line.startswith("EXCEPTION_REPORT"):

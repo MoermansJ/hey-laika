@@ -131,6 +131,13 @@ SEED_BEHAVIORS = [
         "interruptible": False, "cooldownS": 120,
     },
     {
+        "name": "power_nap",
+        "description": "Battery saver: lie down and switch the servos off",
+        "steps": [{"command": "krest", "settleS": 3.0},
+                  {"command": "d", "settleS": 1.0}],
+        "interruptible": True, "cooldownS": 0,
+    },
+    {
         "name": "acknowledgment",
         "description": "Quick chirp + attentive stand (wake-word ack)",
         "steps": [{"command": "b 21 8 26 8", "settleS": 0.5},
@@ -183,6 +190,12 @@ SEED_BINDINGS = [
      "behavior": "rest_now", "priority": PRIORITY_SAFETY, "enabled": True},
     {"event": "voice.phrase", "filter": {"intent": "greet"},
      "behavior": "startup_greeting", "priority": PRIORITY_MANUAL, "enabled": True},
+    # Battery saver (power_saver.py): doze after a long quiet spell or on a low
+    # battery; critical at safety priority.
+    {"event": "power.doze", "filter": None,
+     "behavior": "power_nap", "priority": PRIORITY_LIFECYCLE, "enabled": True},
+    {"event": "power.critical", "filter": None,
+     "behavior": "power_nap", "priority": PRIORITY_SAFETY, "enabled": True},
     # Conversation (conversation.py): the listening posture, and the tool menu
     # the LLM router chooses from. Every voice.intent binding is one tool the
     # next "Hey Laika" can pick; the filter's intent is the tool's name.
@@ -231,7 +244,7 @@ class BehaviorStore:
                 # completely and a later new tool lands on an existing table.
                 if not fresh_db:
                     is_new_family = seed["event"].startswith(
-                        ("leash.", "voice.", "vision.", "conversation."))
+                        ("leash.", "voice.", "vision.", "conversation.", "power."))
                     if not is_new_family or (seed["event"], json.dumps(seed["filter"])) in present:
                         continue
                 session.add(Binding(

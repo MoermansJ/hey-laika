@@ -27,6 +27,7 @@ const state = {
   wsGaveUp: false,
   wsFailures: 0,
   arbiterCard: null,       // hlArbiterCard mounted on the Activity tab
+  powerCard: null,         // hlPowerCard mounted on the Activity tab
 };
 
 // ---------- helpers ----------
@@ -305,7 +306,9 @@ function clearFrames() {
 
 function resetRobotPanels() {
   if (state.arbiterCard) { state.arbiterCard.stop(); state.arbiterCard = null; }
+  if (state.powerCard) { state.powerCard.stop(); state.powerCard = null; }
   $("#arbiter-card").innerHTML = "";
+  $("#power-card").innerHTML = "";
   $("#activity").innerHTML = "";
   $("#activity-age").textContent = "";
   ["#poll-ttl", "#poll-batt", "#poll-mult", "#poll-postures"].forEach((sel) => {
@@ -374,6 +377,8 @@ function showRobotPage(robotId) {
   if (!state.arbiterCard) {
     state.arbiterCard = hlArbiterCard($("#arbiter-card"), `/api/robots/${robotId}`,
         { title: "Current behavior", runs: 6 });
+    hlLoadBadgePalette(`/api/robots/${robotId}`);
+    state.powerCard = hlPowerCard($("#power-card"), `/api/robots/${robotId}`);
   }
   refreshRobotDetail(robotId);
   renderSidebarRobots();

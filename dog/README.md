@@ -71,6 +71,8 @@ proxies and scheduled for removal (audit fix #11).
 |---|---|---|
 | `/status` | GET | Hardware status: connection, battery, posture, current arbiter behavior |
 | `/power` | GET | Power-session tracker (on/off sessions, last snapshot) |
+| `/power/saver` | GET / POST | Battery saver: current tier (active / eco / doze / critical), why, quiet time, thresholds; `{"tier"}` holds a tier, `{"tier": null}` returns to automatic |
+| `/power/saver/config` | POST | Thresholds: `ecoPct`, `dozePct`, `criticalPct`, `hysteresisPct`, `ecoIdleS`, `dozeIdleS`, `ecoFps`, `ecoLedDim`, `dozeLedDim`; persisted in `settings` |
 | `/polling` | GET / POST | Adaptive telemetry polling policy (read / configure) |
 | `/schema` | GET | Capability schema (servos, actions, moves, transport) for UIs |
 | `/activity` | GET | Recent activity log |
