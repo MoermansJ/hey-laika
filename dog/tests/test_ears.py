@@ -48,6 +48,7 @@ def setup_module(module):
     ("hey leica lie down", "lie down"),
     ("Laika come here", "come here"),
     ("Okay Lycra, stop!", "stop"),
+    ("Hey, like up, sit down.", "sit down"),
     ("The weather is nice today.", None),
     ("I like a good dog", None),
     ("", None),

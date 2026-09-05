@@ -43,8 +43,9 @@ LEVEL_WINDOW_PACKETS = 50
 
 # Spellings whisper produces for "Laika" (owner's accent + tiny model).
 WAKE_VARIANTS = ("laika", "laker", "lika", "leica", "lycra", "lyca", "like a",
-                 "laca", "lika", "lakea", "leika", "lyka")
+                 "like up", "laca", "lakea", "leika", "lyka")
 WAKE_LEADERS = ("hey", "hi", "ok", "okay", "yo", "")
+WHISPER_PROMPT = "Hey Laika, sit. Hey Laika, come here. Hey Laika, lie down."
 
 INTENTS = [
     ("sit", ("sit",)),
@@ -140,7 +141,8 @@ class WhisperTranscriber:
             idx = (np.arange(int(len(audio) / step)) * step).astype(np.int64)
             audio = audio[idx]
         segments, _info = self._load().transcribe(
-            audio, language="en", beam_size=1, vad_filter=True)
+            audio, language="en", beam_size=1, vad_filter=True,
+            initial_prompt=WHISPER_PROMPT)
         return " ".join(s.text.strip() for s in segments).strip()
 
 
