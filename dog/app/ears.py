@@ -134,6 +134,7 @@ class WhisperTranscriber:
         import numpy as np
 
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        audio -= audio.mean()
         if sample_rate != 16000:
             step = sample_rate / 16000.0
             idx = (np.arange(int(len(audio) / step)) * step).astype(np.int64)
