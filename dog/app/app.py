@@ -835,6 +835,40 @@ def ears_transcripts(robot_id: str):
     return jsonify({"robotId": robot_id, "transcripts": ears.transcripts(limit)})
 
 
+@app.post("/api/robots/<robot_id>/ears/record")
+@robot_scoped
+def ears_record(robot_id: str):
+    """Console recorder: {"seconds": 3} captures the live mic for that long,
+    transcribes it and reports the wake match without firing voice.phrase."""
+    body = request.get_json(silent=True) or {}
+    try:
+        seconds = float(body.get("seconds", 3))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request", "message": "'seconds' must be a number"}), 400
+    result = ears.record(seconds)
+    log_activity("voice", f"Ears recorder: {result.get('text') or 'silence'}")
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.get("/api/robots/<robot_id>/ears/vocabulary")
+@robot_scoped
+def ears_vocabulary(robot_id: str):
+    return jsonify({"robotId": robot_id, **ears.vocabulary_view()})
+
+
+@app.post("/api/robots/<robot_id>/ears/vocabulary")
+@robot_scoped
+def ears_vocabulary_set(robot_id: str):
+    """{"phrases": [...]} extra text whisper is primed with; {"variants": [...]}
+    extra spellings accepted as the name after a leader ("hey", "okay", ...)."""
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"robotId": robot_id,
+                        **ears.set_vocabulary(body.get("phrases"), body.get("variants"))})
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+
+
 @app.post("/api/robots/<robot_id>/ears/clip")
 @robot_scoped
 def ears_clip(robot_id: str):

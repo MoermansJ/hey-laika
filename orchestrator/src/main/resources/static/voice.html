@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voice</title>
+  <title>Audio output</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
   <style>
     /* Console design system (style.css palette) — fixed light. */
@@ -68,7 +68,7 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>Voice — “Hey Laika”</h1>
+    <h1>Audio output — speaker and conversation</h1>
     <select id="robot-select" title="Robot"></select>
     <span id="voice-chip" class="chip">checking…</span>
   </div>
@@ -80,16 +80,10 @@
       <button id="voice-send" class="primary">Send</button>
     </div>
     <div id="voice-log" class="voice-log"></div>
-    <div class="hint">Simulates the wake-word → record → respond chain: the dog beeps at
-      each stage and the reply comes from the local LLM. Microphone and speaker are
-      stubbed until the XIAO microphone and Grove speaker are installed — until
-      then, bark sounds play through THIS device's speakers as Laika's voice.</div>
-  </section>
-
-  <section class="card" style="margin-top:0.9rem">
-    <h2>Ears <span id="ears-chip" class="chip">…</span></h2>
-    <div class="hint" id="ears-detail">Microphone stream from the XIAO satellite → whisper → voice.phrase events.</div>
-    <table class="data-table" id="ears-transcripts" style="margin-top:0.5rem;width:100%"></table>
+    <div class="hint">Types a phrase in place of the microphone: the reply comes from the local
+      LLM. The live microphone, transcripts and wake phrase live on the Audio input tab.
+      <label style="margin-left:0.5rem"><input type="checkbox" id="bark-on-reply" checked> bark on the dog after a reply</label>
+    </div>
   </section>
 
   <section class="card" style="margin-top:0.9rem">
@@ -100,18 +94,8 @@
     </div>
     <div class="voice-row" id="mouth-sounds" style="margin:0.5rem 0 0; flex-wrap:wrap"></div>
     <div class="hint" id="mouth-detail"></div>
-  </section>
-
-  <section class="card" style="margin-top:0.9rem">
-    <h2>Sounds <span class="chip">host speakers (robot has buzzer only)</span></h2>
-    <div class="voice-row" style="margin-bottom:0">
-      <button data-sound="positive_bark">Positive bark</button>
-      <button data-sound="positive_bark2">Positive bark 2</button>
-      <button data-sound="negative_bark">Negative bark</button>
-      <label class="hint" style="margin:auto 0 auto auto">
-        <input type="checkbox" id="bark-on-reply" checked> bark on replies
-      </label>
-    </div>
+    <div class="hint">Clips play on the Grove Speaker Plus on the dog. The volume pot on the speaker
+      is the first thing to check when it sounds wrong.</div>
   </section>
 
   <script>
@@ -128,11 +112,11 @@
       return body;
     }
 
+    // Barks play on the dog's speaker, never on this device.
     function playSound(name) {
-      new Audio(`audio/${name}.mp3`).play().catch(() => {});
+      api("/mouth/play", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sound: name }) }).catch(() => {});
     }
-    document.querySelectorAll("[data-sound]").forEach((btn) =>
-        btn.addEventListener("click", () => playSound(btn.dataset.sound)));
 
     function voiceLogAppend(kind, text, latencySec) {
       const log = $("#voice-log");
@@ -154,7 +138,7 @@
         if (health.ollama?.reachable && health.ollama?.modelAvailable) {
           chip.textContent = `${health.ollama.configuredModel} ready`;
           chip.className = "chip on";
-          chip.title = "Local LLM reachable; mic/speaker stubbed";
+          chip.title = "Local LLM reachable";
           return;
         }
         chip.textContent = health.ollama?.reachable
@@ -194,29 +178,6 @@
         button.disabled = false;
         button.textContent = "Send";
         input.focus();
-      }
-    }
-
-    async function refreshEars() {
-      const chip = $("#ears-chip");
-      try {
-        const [ears, log] = await Promise.all([api("/ears"), api("/ears/transcripts?limit=8")]);
-        chip.textContent = ears.streaming ? `streaming · ${ears.packets} pkts` :
-            (ears.enabled === false ? "disabled" : "no stream");
-        chip.className = "chip " + (ears.streaming ? "on" : "warn");
-        chip.title = ears.lastError ? `last error: ${ears.lastError}` : "";
-        $("#ears-detail").textContent =
-            `wake "${ears.wakePhrase}" · model ${ears.model ?? "—"}${ears.modelLoaded ? "" : " (loads on first utterance)"}` +
-            ` · ${ears.utterances} utterances, ${ears.wakes} wakes, ${ears.dropped} dropped packets`;
-        const rows = (log.transcripts || []).map((t) =>
-            `<tr><td class="muted">${new Date(t.at).toLocaleTimeString()}</td>` +
-            `<td>${esc(t.text)}</td><td>${t.wake ? "wake" : ""}</td>` +
-            `<td>${esc(t.intent ?? "")}</td><td class="muted">${t.latencyS}s</td></tr>`).join("");
-        $("#ears-transcripts").innerHTML = rows
-            ? "<tr><th>When</th><th>Heard</th><th></th><th>Intent</th><th>Latency</th></tr>" + rows : "";
-      } catch (err) {
-        chip.textContent = "ears unavailable";
-        chip.className = "chip warn";
       }
     }
 
@@ -289,8 +250,7 @@
         if (e.key === "Enter") sendVoiceInput();
       });
       hlPoll(refreshVoiceHealth, 15000);
-      hlPoll(refreshEars, 3000);
-      hlPoll(refreshMouth, 15000);
+      hlPoll(refreshMouth, 5000);
     }
     boot();
   </script>

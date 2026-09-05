@@ -56,14 +56,16 @@
         <span id="robot-chip-mood" class="chip"></span>
         <span id="robot-chip-mode" class="chip"></span>
         <span id="robot-chip-uptime" class="chip" title="Smooth uptime derived from the adapter's boot epoch"></span>
+        <span id="sys-clock" class="chip" title="This browser's clock, to compare with the timestamps below"></span>
       </div>
 
       <div class="tab-bar" role="tablist" aria-label="Robot sections">
         <button class="tab active" role="tab" aria-selected="true" data-tab="activity">Activity</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="control">Control</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="behavior">Behavior</button>
-        <button class="tab" role="tab" aria-selected="false" data-tab="voice">Voice</button>
-        <button class="tab" role="tab" aria-selected="false" data-tab="eyes">Eyes</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="ears">Audio input</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="voice">Audio output</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="eyes">Vision</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="specs">Specs</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="mind">Mind</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="leash">Leash</button>
@@ -108,13 +110,17 @@
                 title="Behavior Lab"></iframe>
       </div>
 
+      <div id="robot-tab-ears" class="robot-tab hidden">
+        <iframe id="ears-frame" class="control-frame" title="Audio input"></iframe>
+      </div>
+
       <div id="robot-tab-voice" class="robot-tab hidden">
         <iframe id="voice-frame" class="control-frame"
-                title="Voice"></iframe>
+                title="Audio output"></iframe>
       </div>
 
       <div id="robot-tab-eyes" class="robot-tab hidden">
-        <iframe id="eyes-frame" class="control-frame" title="Eyes"></iframe>
+        <iframe id="eyes-frame" class="control-frame" title="Vision"></iframe>
       </div>
 
       <div id="robot-tab-specs" class="robot-tab hidden">

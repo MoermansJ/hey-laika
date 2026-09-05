@@ -146,13 +146,15 @@ adapter without a typed DTO.
 | `/senses/samples` | GET | *relay* — recent sense samples |
 | `/senses/sniff` | POST | *relay* — trigger one WiFi scan now |
 | `/senses/range` | GET | *relay* — one-shot ultrasonic read (`?pin=`) |
-| `/ears`, `/ears/transcripts` | GET | *relay* — satellite microphone status and recent transcripts |
+| `/ears`, `/ears/transcripts` | GET | *relay* — satellite microphone status (with the live `level` and the custom `vocabulary`) and recent transcripts |
+| `/ears/record` | POST | *relay* — Audio input tab's phrase recorder: `{"seconds"}` captures the live microphone, returns the transcript and whether it matched the wake phrase; never fires the voice event |
+| `/ears/vocabulary` | GET / POST | *relay* — extra phrases whisper is primed with and extra accepted spellings of the name |
 | `/mouth`, `/mouth/say`, `/mouth/stop` | GET/POST | *relay* — speaker status, speak text on the dog, stop playback |
-| `/mouth/sounds`, `/mouth/play` | GET/POST | *relay* — clip library on the dog's speaker; `{"sound"}` plays one (Control tab Speaker card, Voice tab Mouth card) |
+| `/mouth/sounds`, `/mouth/play` | GET/POST | *relay* — clip library on the dog's speaker; `{"sound"}` plays one (Control tab Speaker card, Audio output tab Mouth card) |
 | `/satellite` | GET | *relay* — the XIAO's own status JSON (mic, camera, rssi, led) |
 | `/eyes`, `/eyes/config` | GET/POST | *relay* — camera/person-detection status; pause or resume frame grabbing |
 | `/eyes/snap` | GET | *binary relay* — latest cached camera frame as `image/jpeg` (`?fresh=1` grabs a new one) |
-| `/mood` | GET / POST | *relay* — mood light state; `{"mood"}` pins a named mood, `{"mood","seconds"}` flashes it, `{"r","g","b","effect",…}` a custom colour |
+| `/mood` | GET / POST | *relay* — mood light state, plus `palette` (every mood's colour and effect) and `badges` (which mood each console badge kind shares its colour with); `{"mood"}` pins a named mood, `{"mood","seconds"}` flashes it, `{"r","g","b","effect",…}` a custom colour |
 | `/leash` | GET | *relay* — proximity-leash state (RSSI, zone, dead-man) |
 | `/leash/config` | POST | *relay* — leash thresholds / enable |
 | `/leash/mark` | POST | *relay* — record a labelled RSSI mark |

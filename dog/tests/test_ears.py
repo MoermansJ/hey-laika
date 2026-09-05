@@ -4,6 +4,8 @@ faked so no model download is needed; one opt-in test runs real whisper on
 the synthesized fixtures (EARS_REAL_MODEL=1)."""
 import os
 import struct
+import threading
+import time
 import wave
 from pathlib import Path
 
@@ -120,6 +122,51 @@ def test_non_wake_utterance_persists_without_event():
     assert binder.events == []
 
 
+def test_record_captures_the_live_stream_without_firing_the_event():
+    init_db()
+    binder = CapturingBinder()
+    ears = EarsService(binder, transcriber=FakeTranscriber("Hey Laika, hello."),
+                       energy_floor=200)
+
+    def feed():
+        for seq in range(20):
+            ears.feed_packet(_tone_packet(seq, 50))
+            time.sleep(0.02)
+
+    feeder = threading.Thread(target=feed)
+    feeder.start()
+    result = ears.record(0.5)
+    feeder.join()
+    assert result["wake"] is True and result["intent"] == "greet"
+    assert result["text"] == "Hey Laika, hello." and result["durationS"] > 0
+    assert result["peak"] == 50 and result["floor"] == 200
+    assert binder.events == []
+    assert ears.transcripts(1)[0]["at"].endswith("+00:00")
+
+
+def test_record_without_audio_reports_it():
+    ears = EarsService(CapturingBinder(), transcriber=FakeTranscriber("x"))
+    result = ears.record(0.5)
+    assert result["text"] == "" and "no audio" in result["error"]
+
+
+def test_vocabulary_extends_prompt_and_name_spellings_and_persists():
+    init_db()
+    transcriber = FakeTranscriber("Hey lake up, sit")
+    ears = EarsService(CapturingBinder(), transcriber=transcriber)
+    view = ears.set_vocabulary(phrases=["Laika", "sit down"], variants=["Lake up", "lake up"])
+    assert view["prompt"].endswith("Laika. sit down.") and transcriber.prompt == view["prompt"]
+    assert view["variants"] == ["lake up"]
+    assert match_wake("Hey lake up, sit", variants=view["variants"]) == "sit"
+    row = ears._process(b"\x00\x00" * 16000, 16000, 1.0)
+    assert row["wake"] is True and row["intent"] == "sit"
+    fresh = EarsService(CapturingBinder(), transcriber=FakeTranscriber("x"))
+    fresh._load_vocabulary()
+    assert fresh.vocabulary == {"phrases": ["Laika", "sit down"], "variants": ["lake up"]}
+    with pytest.raises(ValueError):
+        ears.set_vocabulary(variants="nope")
+
+
 def test_feed_wav_rejects_stereo(tmp_path):
     path = tmp_path / "stereo.wav"
     with wave.open(str(path), "wb") as w:
@@ -136,7 +183,7 @@ def test_status_shape():
     assert status["udpPort"] == 5555 and status["streaming"] is False
     assert status["wakePhrase"] == "hey laika" and status["model"] == "fake"
     assert status["level"] == {"rms": 0, "peak": 0, "median": 0,
-                               "floor": 200, "speaking": False}
+                               "floor": 300, "speaking": False}
 
 
 def test_dc_offset_is_not_loudness():

@@ -18,6 +18,7 @@ works today; openWakeWord can be slotted in front of the transcriber later
 as a cheaper first gate. The transcriber is injectable so tests run without
 downloading a model.
 """
+import json
 import logging
 import re
 import socket
@@ -33,7 +34,7 @@ from sqlalchemy import Boolean, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.config import Config
-from app.models import Base, SessionLocal, engine, utcnow
+from app.models import Base, SessionLocal, Setting, engine, iso_utc, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,9 @@ WAKE_VARIANTS = ("laika", "laker", "lika", "leica", "lycra", "lyca", "like a",
                  "like up", "laca", "lakea", "leika", "lyka")
 WAKE_LEADERS = ("hey", "hi", "ok", "okay", "yo", "")
 WHISPER_PROMPT = "Hey Laika, sit. Hey Laika, come here. Hey Laika, lie down."
+VOCABULARY_KEY = "ears.vocabulary"
+MAX_VOCABULARY = 40
+RECORD_MAX_S = 10.0
 
 INTENTS = [
     ("sit", ("sit",)),
@@ -69,7 +73,7 @@ class Transcript(Base):
     latency_s: Mapped[float] = mapped_column(Float, default=0.0)
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "at": self.at.isoformat() if self.at else None,
+        return {"id": self.id, "at": iso_utc(self.at),
                 "text": self.text, "wake": self.wake, "intent": self.intent,
                 "durationS": round(self.duration_s, 2),
                 "latencyS": round(self.latency_s, 2)}
@@ -99,7 +103,8 @@ def _normalize(text: str) -> str:
     return " ".join(re.sub(r"[^a-z' ]+", " ", text.lower()).split())
 
 
-def match_wake(text: str, phrase: str = "hey laika") -> str | None:
+def match_wake(text: str, phrase: str = "hey laika",
+               variants: tuple | list = ()) -> str | None:
     """Return the command part after the wake phrase, or None if the
     utterance did not start with it. Tolerates whisper's spellings."""
     words = _normalize(text)
@@ -111,7 +116,7 @@ def match_wake(text: str, phrase: str = "hey laika") -> str | None:
     if words == exact or words.startswith(exact + " "):
         return words[len(exact):].strip(" ,.")
     for lead in WAKE_LEADERS:
-        for variant in WAKE_VARIANTS:
+        for variant in (*WAKE_VARIANTS, *variants):
             head = f"{lead} {variant}".strip()
             if words == head or words.startswith(head + " "):
                 return words[len(head):].strip(" ,.")
@@ -133,6 +138,7 @@ class WhisperTranscriber:
     def __init__(self, model_name: str, download_root: str | None = None):
         self.model_name = model_name
         self.download_root = download_root
+        self.prompt = WHISPER_PROMPT
         self._model = None
         self.loaded = False
 
@@ -160,7 +166,7 @@ class WhisperTranscriber:
             audio = audio[idx]
         segments, _info = self._load().transcribe(
             audio, language="en", beam_size=1, vad_filter=True,
-            initial_prompt=WHISPER_PROMPT, condition_on_previous_text=False)
+            initial_prompt=self.prompt, condition_on_previous_text=False)
         return collapse_repeats(" ".join(s.text.strip() for s in segments).strip())
 
 
@@ -169,7 +175,7 @@ class WhisperTranscriber:
 class EarsService:
     def __init__(self, event_binder, transcriber=None,
                  sample_rate: int = 16000, udp_port: int = 5005,
-                 wake_phrase: str = "hey laika", energy_floor: int = 200,
+                 wake_phrase: str = "hey laika", energy_floor: int = 300,
                  silence_s: float = 0.8, max_utterance_s: float = 8.0,
                  min_utterance_s: float = 0.4, clock=time.time):
         self.binder = event_binder
@@ -191,6 +197,8 @@ class EarsService:
         self._queue: deque = deque()
         self._levels: deque = deque(maxlen=LEVEL_WINDOW_PACKETS)
         self._level_rms = 0.0
+        self._record: bytearray | None = None
+        self.vocabulary = {"phrases": [], "variants": []}
         self._work = threading.Condition()
         self._stop = threading.Event()
         self.stats = {"packets": 0, "dropped": 0, "lastSeq": None,
@@ -201,6 +209,7 @@ class EarsService:
 
     def init(self) -> None:
         Base.metadata.create_all(engine)
+        self._load_vocabulary()
         threading.Thread(target=self._transcribe_loop, daemon=True).start()
         threading.Thread(target=self._udp_loop, daemon=True).start()
 
@@ -232,6 +241,9 @@ class EarsService:
         self._levels.append(rms)
         self._level_rms = rms
         with self._lock:
+            if self._record is not None:
+                self._record += pcm
+                return
             if loud:
                 if not self._speaking:
                     self._speaking = True
@@ -258,6 +270,95 @@ class EarsService:
         with self._lock:
             if self._speaking:
                 self._finish_utterance_locked()
+
+    def record(self, seconds: float) -> dict:
+        """Console bench tool: capture the next `seconds` of the live stream
+        regardless of the gate, transcribe it, persist the transcript and
+        report whether the wake phrase matched. Never fires voice.phrase."""
+        seconds = max(0.5, min(float(seconds), RECORD_MAX_S))
+        with self._lock:
+            if self._speaking:
+                self._finish_utterance_locked()
+            self._record = bytearray()
+        deadline = self._clock() + seconds
+        while self._clock() < deadline:
+            time.sleep(0.05)
+        with self._lock:
+            pcm = bytes(self._record or b"")
+            self._record = None
+        duration = len(pcm) / 2 / self.sample_rate
+        peak = max((_rms(pcm[i:i + 640]) for i in range(0, len(pcm), 640)), default=0.0)
+        result = {"seconds": seconds, "durationS": round(duration, 2),
+                  "peak": round(peak), "floor": self.energy_floor}
+        if duration < 0.2:
+            return {**result, "text": "", "wake": False,
+                    "error": "no audio arrived from the satellite"}
+        row = self._process(pcm, self.sample_rate, duration, trigger=False) or {}
+        text = self.stats["lastText"] or ""
+        command = match_wake(text, self.wake_phrase, self.vocabulary["variants"])
+        return {**result, "text": text, "wake": command is not None,
+                "command": command, "intent": row.get("intent"),
+                "latencyS": row.get("latencyS"), "transcriptId": row.get("id")}
+
+    # -- vocabulary: extra prompt phrases for whisper, extra spellings of the name --
+
+    def vocabulary_view(self) -> dict:
+        return {"phrases": list(self.vocabulary["phrases"]),
+                "variants": list(self.vocabulary["variants"]),
+                "builtinVariants": list(WAKE_VARIANTS),
+                "prompt": self._prompt()}
+
+    def set_vocabulary(self, phrases=None, variants=None) -> dict:
+        def clean(items, label):
+            if items is None:
+                return None
+            if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
+                raise ValueError(f"{label} must be a list of strings")
+            out: list[str] = []
+            for item in items:
+                item = " ".join(item.split())
+                if item and item.lower() not in {o.lower() for o in out}:
+                    out.append(item)
+            if len(out) > MAX_VOCABULARY:
+                raise ValueError(f"at most {MAX_VOCABULARY} {label}")
+            return out
+
+        new_phrases = clean(phrases, "phrases")
+        new_variants = clean(variants, "variants")
+        if new_phrases is not None:
+            self.vocabulary["phrases"] = new_phrases
+        if new_variants is not None:
+            self.vocabulary["variants"] = [v for v in (_normalize(x) for x in new_variants) if v]
+        self._save_vocabulary()
+        self._apply_vocabulary()
+        return self.vocabulary_view()
+
+    def _prompt(self) -> str:
+        extra = [p if p.endswith((".", "!", "?")) else p + "." for p in self.vocabulary["phrases"]]
+        return " ".join([WHISPER_PROMPT, *extra])
+
+    def _apply_vocabulary(self) -> None:
+        if self.transcriber is not None:
+            self.transcriber.prompt = self._prompt()
+
+    def _load_vocabulary(self) -> None:
+        with SessionLocal() as session:
+            row = session.get(Setting, VOCABULARY_KEY)
+        if row is not None:
+            try:
+                data = json.loads(row.value or "{}")
+            except ValueError:
+                data = {}
+            self.vocabulary = {"phrases": list(data.get("phrases", [])),
+                               "variants": list(data.get("variants", []))}
+        self._apply_vocabulary()
+
+    def _save_vocabulary(self) -> None:
+        with SessionLocal() as session:
+            row = session.get(Setting, VOCABULARY_KEY) or Setting(key=VOCABULARY_KEY)
+            row.value = json.dumps(self.vocabulary)
+            session.add(row)
+            session.commit()
 
     # -- internals --
 
@@ -289,7 +390,8 @@ class EarsService:
                 self.stats["lastError"] = str(exc)
                 logger.exception("Ears: transcription failed")
 
-    def _process(self, pcm: bytes, rate: int, duration: float) -> dict | None:
+    def _process(self, pcm: bytes, rate: int, duration: float,
+                 trigger: bool = True) -> dict | None:
         if self.transcriber is None:
             self.stats["lastError"] = "no transcriber configured"
             return None
@@ -300,13 +402,14 @@ class EarsService:
         self.stats["lastText"] = text
         if not text:
             return None
-        command = match_wake(text, self.wake_phrase)
+        command = match_wake(text, self.wake_phrase, self.vocabulary["variants"])
         wake = command is not None
         intent = detect_intent(command) if wake else None
         row = self._persist(text, wake, intent, duration, latency)
         logger.info("Ears: %r wake=%s intent=%s (%.2fs)", text, wake, intent, latency)
         if wake:
             self.stats["wakes"] += 1
+        if wake and trigger:
             self.binder.trigger("voice.phrase", {
                 "text": text, "command": command, "intent": intent or "unknown",
                 "transcriptId": row.get("id")})
@@ -369,6 +472,7 @@ class EarsService:
             "modelLoaded": bool(getattr(self.transcriber, "loaded", False)),
             "model": getattr(self.transcriber, "model_name", None),
             "level": self._level(),
+            "vocabulary": self.vocabulary_view(),
             **self.stats,
         }
 

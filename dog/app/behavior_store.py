@@ -16,7 +16,7 @@ from sqlalchemy import String, Text, inspect, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.config import Config
-from app.models import Base, SessionLocal, engine, utcnow
+from app.models import Base, SessionLocal, engine, iso_utc, utcnow
 
 PRIORITY_SAFETY = 1
 PRIORITY_MANUAL = 2
@@ -91,8 +91,8 @@ class BehaviorRun(Base):
             "priority": self.priority, "status": self.status, "detail": self.detail,
             "cause": json.loads(self.cause_json or "null"),
             "preemptedBy": self.preempted_by,
-            "startedAt": self.started_at.isoformat() if self.started_at else None,
-            "endedAt": self.ended_at.isoformat() if self.ended_at else None,
+            "startedAt": iso_utc(self.started_at),
+            "endedAt": iso_utc(self.ended_at),
         }
 
 

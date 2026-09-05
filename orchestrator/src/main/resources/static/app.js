@@ -593,7 +593,8 @@ document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     selectTab(tab.dataset.tab);
     const frames = {
-      control: "control.html", behavior: "behavior.html", voice: "voice.html",
+      control: "control.html", behavior: "behavior.html", ears: "ears.html",
+      voice: "voice.html",
       eyes: "eyes.html", mind: "mind.html", leash: "leash.html", map: "map.html",
       metrics: "metrics.html",
     };
@@ -644,3 +645,10 @@ boot();
     apply(collapsed);
   });
 })();
+
+// The robot header carries "now" so the timestamps in the feeds below can be
+// read against it (the adapter stamps in UTC, the browser renders local).
+setInterval(() => {
+  const clock = $("#sys-clock");
+  if (clock) clock.textContent = new Date().toLocaleTimeString();
+}, 1000);

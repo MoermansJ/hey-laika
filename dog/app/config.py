@@ -80,7 +80,7 @@ class Config:
     EARS_ENABLED = _bool("EARS_ENABLED", True)
     EARS_UDP_PORT = int(os.getenv("EARS_UDP_PORT", "5005"))
     EARS_SAMPLE_RATE = int(os.getenv("EARS_SAMPLE_RATE", "16000"))
-    EARS_ENERGY_FLOOR = int(os.getenv("EARS_ENERGY_FLOOR", "200"))
+    EARS_ENERGY_FLOOR = int(os.getenv("EARS_ENERGY_FLOOR", "300"))
     WAKE_PHRASE = os.getenv("WAKE_PHRASE", "hey laika")
     WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
     WHISPER_CACHE = os.getenv("WHISPER_CACHE", "")

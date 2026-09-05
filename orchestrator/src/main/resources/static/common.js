@@ -8,6 +8,10 @@
  *  hlPoll(fn, intervalMs)         overlap-guarded interval that pauses while
  *                                 the tab is hidden or the parent says so
  *  hlToast(message, isError)      toast that works with either markup style
+ *  hlMountClock(container)        live "now" next to a page's timestamps
+ *                                 (auto-mounted into .topbar on load)
+ *  hlLoadBadgePalette(base)       fetch the adapter's mood palette + badge enum
+ *  hlBadge(kind, label)           a badge coloured like the LED mood it stands for
  */
 "use strict";
 
@@ -108,3 +112,62 @@ function hlRetryBlock(container, message, retry) {
       `<button type="button" class="hl-retry">Retry</button>`;
   container.querySelector(".hl-retry").onclick = retry;
 }
+
+
+// ---- clock: every page that shows timestamps also shows "now" ----
+function hlMountClock(container) {
+  const el = document.createElement("span");
+  el.className = "chip hl-clock";
+  el.title = "This browser's clock, to compare with the timestamps on this page";
+  el.style.marginLeft = "auto";
+  const tick = () => { el.textContent = new Date().toLocaleTimeString(); };
+  tick();
+  setInterval(tick, 1000);
+  container.appendChild(el);
+  return el;
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const bar = document.querySelector(".topbar");
+  if (bar && !bar.querySelector(".hl-clock")) hlMountClock(bar);
+});
+
+// ---- badges share the LED palette ----
+// The adapter's /mood answers with `palette` (mood -> r,g,b,effect) and
+// `badges` (badge kind -> mood). A badge on screen and the LED on the head
+// therefore always agree; the fallback below only covers an unreachable
+// adapter and mirrors dog/app/mood.py.
+const hlBadgeState = { palette: null, badges: null };
+const HL_BADGE_FALLBACK = {
+  wake:      { r: 0, g: 255, b: 40, effect: "solid" },
+  wakeGreet: { r: 0, g: 255, b: 40, effect: "pulse" },
+  person:    { r: 0, g: 210, b: 255, effect: "solid" },
+  online:    { r: 0, g: 255, b: 40, effect: "solid" },
+};
+
+async function hlLoadBadgePalette(base) {
+  try {
+    const mood = await hlApi(base, "/mood");
+    hlBadgeState.palette = mood.palette || null;
+    hlBadgeState.badges = mood.badges || null;
+  } catch { /* fallback palette stays */ }
+}
+
+function hlBadge(kind, label) {
+  const mood = hlBadgeState.badges?.[kind];
+  const spec = (mood && hlBadgeState.palette?.[mood]) || HL_BADGE_FALLBACK[kind]
+      || { r: 127, g: 140, b: 141, effect: "solid" };
+  const pulse = spec.effect === "pulse" ? " hl-pulse" : "";
+  return `<span class="hl-badge${pulse}" style="--hl-badge:rgb(${spec.r},${spec.g},${spec.b})"` +
+      ` title="LED mood: ${esc(mood || kind)}">${esc(label ?? kind)}</span>`;
+}
+
+(function () {
+  const style = document.createElement("style");
+  style.textContent = `
+    .hl-badge { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.55rem;
+      border-radius: 999px; background: var(--hl-badge); color: #1b2631; white-space: nowrap; }
+    .hl-pulse { animation: hlPulse 0.7s ease-in-out infinite alternate; }
+    @keyframes hlPulse { from { opacity: 1; } to { opacity: 0.35; } }
+  `;
+  document.head.appendChild(style);
+})();

@@ -228,6 +228,30 @@ class RobotControllerTest {
     }
 
     @Test
+    void givenRecorderPostedWithoutBody_whenRelayed_thenEmptyBodyIsSent() {
+        when(relayPostWithBody.execute("bittle-1", "/ears/record", Map.of()))
+                .thenReturn(Map.of("text", "Hey Laika, hello."));
+
+        var result = mvc.post().uri("/api/robots/bittle-1/ears/record").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.text").isEqualTo("Hey Laika, hello.");
+    }
+
+    @Test
+    void givenVocabularyPosted_whenRelayed_thenBodyPassesThrough() {
+        when(relayPostWithBody.execute("bittle-1", "/ears/vocabulary", Map.of("variants", List.of("lake up"))))
+                .thenReturn(Map.of("variants", List.of("lake up")));
+
+        var result = mvc.post().uri("/api/robots/bittle-1/ears/vocabulary")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"variants\":[\"lake up\"]}").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.variants[0]").isEqualTo("lake up");
+    }
+
+    @Test
     void givenUnknownGreetingAction_whenPosted_thenBadRequestWithoutTouchingTheAdapter() {
         var result = mvc.post().uri("/api/robots/bittle-1/greeting/explode").exchange();
 

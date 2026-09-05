@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 MOODS = {
     "off":         (0,   0,   0,   "off",   1500, 255),
     "idle":        (255, 140, 40,  "solid", 1500, 40),    # warm, dim
-    "heard":       (0,   120, 255, "pulse", 900,  255),   # wake phrase heard
+    "heard":       (0,   120, 255, "pulse", 900,  255),   # legacy blue; wake is green now
+    "wake":        (0,   255, 40,  "solid", 1500, 255),   # wake phrase heard
+    "wake_greet":  (0,   255, 40,  "pulse", 700,  255),   # ...and it was a greeting
     "thinking":    (160, 0,   255, "pulse", 700,  255),
     "speaking":    (0,   255, 170, "pulse", 450,  255),
     "happy":       (0,   255, 40,  "solid", 1500, 255),
@@ -49,7 +51,7 @@ RAINBOW = ((255, 0, 0), (255, 110, 0), (255, 220, 0), (0, 200, 0),
 # event -> (mood, seconds); None seconds = becomes the base mood
 EVENT_MOODS = {
     "robot.online":     ("happy", 4.0),
-    "voice.phrase":     ("heard", 2.5),
+    "voice.phrase":     ("wake", 2.5),
     "vision.person":    ("person", 1.5),
     "vision.clear":     (None, None),
     "exception.report": ("alert", 3.0),
@@ -60,6 +62,15 @@ EVENT_MOODS = {
     "battery.low":      ("low_battery", None),
     "idle.timeout":     ("idle", None),
 }
+
+# voice.phrase picks its mood from the intent; anything not listed is "wake".
+INTENT_MOODS = {"greet": "wake_greet"}
+
+# GUI badge kinds -> the mood whose colour and effect they must share, so a
+# badge on screen and the LED on the head always agree (single source).
+BADGES = {"wake": "wake", "wakeGreet": "wake_greet", "person": "person",
+          "online": "happy", "alert": "alert", "warn": "warn", "lost": "lost",
+          "lowBattery": "low_battery"}
 
 
 class MoodService:
@@ -144,6 +155,8 @@ class MoodService:
         if not self.enabled or event not in EVENT_MOODS:
             return
         mood, seconds = EVENT_MOODS[event]
+        if event == "voice.phrase":
+            mood = INTENT_MOODS.get((payload or {}).get("intent"), mood)
         self.stats["lastEvent"] = event
         if self._clock() < self._manual_until:
             return
@@ -168,6 +181,8 @@ class MoodService:
             flash = dict(self._flash) if self._flash else None
         current = flash or base
         return {"enabled": self.enabled, "moods": list(MOODS),
+                "palette": {name: _mood_spec(name) for name in MOODS},
+                "badges": dict(BADGES),
                 "effects": list(LED_EFFECTS),
                 "mood": current["name"], "base": base["name"],
                 "flash": ({"name": flash["name"],

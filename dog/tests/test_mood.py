@@ -74,7 +74,11 @@ def test_events_map_to_base_or_flash():
     mood.on_event("leash.warn", {})
     assert mood.status()["base"] == "warn"
     mood.on_event("voice.phrase", {"intent": "sit"})
-    assert mood.status()["mood"] == "heard" and mood.status()["base"] == "warn"
+    assert mood.status()["mood"] == "wake" and mood.status()["base"] == "warn"
+    mood.on_event("voice.phrase", {"intent": "greet"})
+    assert mood.status()["mood"] == "wake_greet"
+    assert mood.status()["palette"]["wake_greet"]["effect"] == "pulse"
+    assert mood.status()["badges"]["wakeGreet"] == "wake_greet"
     mood.on_event("vision.clear", {})
     assert mood.status()["mood"] == "warn"
     mood.on_event("nothing.known", {})

@@ -21,7 +21,7 @@ unchanged by the orchestrator.
 | WiFi fingerprint scans | BiBoard (`XWs`) | one scan per quiet minute, ~2 s blocking | `/senses`, `/senses/samples` | none yet |
 | Dead-reckoned pose | adapter (from commands) | per bounded move | `/senses`, `/senses/samples` | none yet |
 | Servo positions | BiBoard (`j`) | on demand | `/servo` | none |
-| Satellite health | XIAO status JSON | on demand (Eyes tab every 15 s) | `/satellite` | none |
+| Satellite health | XIAO status JSON | on demand (Vision tab every 15 s) | `/satellite` | none |
 | Mood light (actuator, but stateful) | XIAO, D2/D3 | on change, resync every 30 s | `/mood` | consumes events |
 | Speaker (actuator) | UART socket, GPIO 10 | on demand | `/mouth` | none |
 | Bittle X voice module | BiBoard Serial1 | pushes `X…` lines when it hears its phrases | dormant | none |
@@ -77,10 +77,19 @@ faster-whisper `base` on CPU, and gates on the wake phrase.
 | `utterances`, `wakes`, `lastText`, `lastError` | pipeline counters |
 | `model`, `modelLoaded`, `wakePhrase`, `udpPort`, `sampleRate` | configuration |
 | `level` → `rms, peak, median, floor, speaking` | live loudness: DC-free RMS of the last 20 ms packet, peak and median over the last second, the gate floor (`EARS_ENERGY_FLOOR`), and whether the gate is open |
+| `vocabulary` → `phrases, variants, builtinVariants, prompt` | the custom vocabulary (`/ears/vocabulary`): phrases whisper is primed with, extra accepted spellings of the name, and the effective prompt |
 
 `/ears/transcripts`: every utterance whisper turned into text, wake or not:
 `at, text, wake, intent, durationS, latencyS`. Stored in `transcripts`,
 last 500 rows kept.
+
+The Audio input tab polls `/ears` and the transcripts once a second, and
+its phrase recorder (`POST /ears/record`) captures the microphone for a
+few seconds regardless of the gate and prints what whisper heard, so a
+mis-spelling of the name can be adopted into the vocabulary on the spot.
+On the mood light a wake is steady green and a wake that carried the
+greet intent pulses green; the console's badges take their colours from
+the same table (`/mood` → `palette`, `badges`).
 
 Event payload (`voice.phrase`, only after the wake phrase): `text`,
 `command` (the part after the wake phrase), `intent` (`sit, rest, stand,
@@ -126,7 +135,7 @@ Stored: nothing. Events: none.
 
 **Left on the table**
 
-- Nothing polls it when the Eyes tab is closed. A background sampler at
+- Nothing polls it when the Vision tab is closed. A background sampler at
   2–5 Hz would give a continuous trend (closing speed, cm/s) and the
   `nav.blocked` / `person.approaching` events the navigation brief wants.
 - Range + head pan (joint 0, −90..90°) = a cheap sweep: a polar occupancy

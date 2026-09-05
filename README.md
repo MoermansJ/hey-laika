@@ -27,7 +27,8 @@ hypothetical second robot, and the docs say so wherever it matters.
 - **Senses and map** — WiFi fingerprint sniffing, ultrasonic ranging, and a
   dead-reckoned pose with calibrated stride and turn constants.
 - **Web console** — dashboard, control panel with live servo writes, sequence
-  builder, Mind, Voice, Eyes, Leash, Map and Metrics tabs, pushed over STOMP.
+  builder, Mind, Audio input, Audio output, Vision, Leash, Map and Metrics
+  tabs, pushed over STOMP.
 - **Gait learner** — supervised stride/turn calibration sessions.
 
 ## Hardware

@@ -118,6 +118,8 @@ proxies and scheduled for removal (audit fix #11).
 | `/ears` | GET | Ears status: satellite PCM stream, whisper model, wake/utterance counters, `level` (DC-free RMS of the last packet, 1 s peak and median, the gate floor, whether the gate is open) |
 | `/ears/transcripts` | GET | Recent transcripts (`?limit=`), wake flag and detected intent |
 | `/ears/clip` | POST | Bench test: run an uploaded 16-bit mono WAV through the ears pipeline |
+| `/ears/record` | POST | `{"seconds": 3}` captures the live microphone for that long regardless of the gate, transcribes it, persists the transcript and returns `text`, `wake`, `command`, `intent`, `peak` vs `floor`; never fires `voice.phrase` |
+| `/ears/vocabulary` | GET / POST | `{"phrases": [...]}` extra text whisper is primed with (`initial_prompt`), `{"variants": [...]}` extra spellings accepted as the name after hey / hi / okay; persisted in the `settings` table |
 | `/mouth` | GET | Mouth status: speaker pin, TTS engine, last utterance |
 | `/mouth/say` | POST | `{"text"}` → host TTS → 8 kHz PCM → firmware PWM on the Grove Speaker Plus |
 | `/mouth/wav` | POST | Play an uploaded PCM WAV on the speaker (wiring check without TTS) |
@@ -129,7 +131,7 @@ proxies and scheduled for removal (audit fix #11).
 | `/eyes/snap` | GET | Latest cached camera frame as `image/jpeg` (`?fresh=1` fetches a new one first) |
 | `/eyes/config` | POST | `{"enabled"}` pauses/resumes frame grabbing |
 | `/eyes/detect` | POST | Bench test: run an uploaded JPEG through the detector (events included) |
-| `/mood` | GET | Mood light state: current/base mood, running flash, colour, satellite reachability |
+| `/mood` | GET | Mood light state: current/base mood, running flash, colour, satellite reachability, `palette` (colour and effect of every mood) and `badges` (console badge kind → mood, the single source for badge colours) |
 | `/mood` | POST | `{"mood"}` pins a named mood; `{"mood","seconds"}` flashes it; `{"r","g","b","effect","periodMs","brightness"}` pins a custom colour |
 
 The eyes need `models/yolov8n.onnx`; export it once with `tools/export_yolo.py`

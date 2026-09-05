@@ -11,8 +11,26 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def iso_utc(moment: datetime | None) -> str | None:
+    """ISO-8601 with an explicit offset. SQLite hands naive datetimes back
+    for the UTC values written by utcnow(); without the offset a browser
+    would read them as local time."""
+    if moment is None:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.isoformat()
+
+
 class Base(DeclarativeBase):
     pass
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="{}")
 
 
 class Robot(Base):

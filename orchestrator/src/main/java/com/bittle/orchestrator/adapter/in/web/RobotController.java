@@ -370,6 +370,23 @@ public class RobotController {
         return relayGet.execute(robotId, "/ears/transcripts?limit=" + Math.max(1, Math.min(limit, 200)));
     }
 
+    @PostMapping("/ears/record")
+    public Map<String, Object> earsRecord(@PathVariable String robotId,
+                                          @RequestBody(required = false) Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/ears/record", body == null ? Map.of() : body);
+    }
+
+    @GetMapping("/ears/vocabulary")
+    public Map<String, Object> earsVocabulary(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/ears/vocabulary");
+    }
+
+    @PostMapping("/ears/vocabulary")
+    public Map<String, Object> earsVocabularySet(@PathVariable String robotId,
+                                                 @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/ears/vocabulary", body);
+    }
+
     @GetMapping("/mouth")
     public Map<String, Object> mouth(@PathVariable String robotId) {
         return relayGet.execute(robotId, "/mouth");

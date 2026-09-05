@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio input</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%2327ae60%22/></svg>">
+  <style>
+    /* Console design system (style.css palette) — fixed light. */
+    :root {
+      color-scheme: light;
+      --page:     #ecf0f1;
+      --surface:  #ffffff;
+      --ink:      #2c3e50;
+      --ink-2:    #46627f;
+      --muted:    #7f8c8d;
+      --ring:     #d5dbdb;
+      --good:     #27ae60;
+      --critical: #e74c3c;
+      --warn:     #f39c12;
+      --seq:      #3498db;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page); color: var(--ink); padding: 1rem 1.25rem 2rem;
+    }
+    h1 { font-size: 1.15rem; margin: 0; }
+    h2 { font-size: 0.95rem; margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    .topbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    select, button, textarea, input {
+      font: inherit; color: var(--ink); background: var(--surface);
+      border: 1px solid var(--ring); border-radius: 6px;
+      padding: 0.35rem 0.7rem;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--muted); }
+    button.primary { border-color: var(--seq); color: var(--seq); font-weight: 600; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    .chip {
+      font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px;
+      border: 1px solid var(--ring); color: var(--ink-2);
+    }
+    .chip.on   { color: var(--good); border-color: var(--good); }
+    .chip.warn { color: var(--warn); border-color: var(--warn); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 0.9rem; }
+    .card {
+      background: var(--surface); border: 1px solid var(--ring);
+      border-radius: 8px; padding: 0.8rem 0.9rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    }
+    .card.wide { grid-column: 1 / -1; }
+    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.5rem; }
+    .muted { color: var(--muted); }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .meter { position: relative; height: 18px; border-radius: 9px; background: var(--page);
+      border: 1px solid var(--ring); overflow: hidden; margin: 0.4rem 0 0.2rem; }
+    .meter .rms  { position: absolute; left: 0; top: 0; bottom: 0; background: var(--good);
+      transition: width 0.15s linear; }
+    .meter .peak { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); }
+    .meter .floor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--critical); }
+    .meter.open .rms { background: var(--warn); }
+    .scale { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--muted); }
+    table.data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    table.data-table th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 0.72rem;
+      padding: 0.25rem 0.4rem; border-bottom: 1px solid var(--ring); }
+    table.data-table td { padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--page); vertical-align: top; }
+    textarea { width: 100%; min-height: 6.5rem; resize: vertical; font-size: 0.82rem; }
+    .result { margin-top: 0.6rem; padding: 0.6rem 0.7rem; border: 1px solid var(--ring);
+      border-radius: 8px; background: var(--page); font-size: 0.88rem; }
+    .result .text { font-size: 1.05rem; margin: 0.2rem 0 0.4rem; }
+    .result.error { color: var(--critical); }
+    .rec { color: var(--critical); font-weight: 600; }
+    .rec::before { content: "●"; margin-right: 0.35rem; animation: hlPulse 0.7s ease-in-out infinite alternate; }
+  </style>
+  <script src="common.js"></script>
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <div class="topbar">
+    <h1>Audio input — microphone, transcripts, wake phrase</h1>
+    <select id="robot-select" title="Robot"></select>
+    <span id="ears-chip" class="chip">checking…</span>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Live level <span id="gate-chip" class="chip">…</span></h2>
+      <div class="meter" id="meter">
+        <div class="rms" id="meter-rms" style="width:0%"></div>
+        <div class="peak" id="meter-peak" style="left:0%"></div>
+        <div class="floor" id="meter-floor" style="left:0%"></div>
+      </div>
+      <div class="scale"><span>0</span><span id="scale-mid"></span><span id="scale-max"></span></div>
+      <div class="hint" id="level-detail">—</div>
+      <div class="hint" id="ears-detail">Microphone stream from the XIAO satellite → whisper → voice.phrase events.</div>
+    </section>
+
+    <section class="card">
+      <h2>Phrase recorder</h2>
+      <div class="row">
+        <label class="hint" style="margin:0">Record
+          <select id="rec-seconds">
+            <option value="3">3 s</option>
+            <option value="5" selected>5 s</option>
+            <option value="8">8 s</option>
+          </select>
+        </label>
+        <button id="rec-start" class="primary">Record</button>
+        <span id="rec-state" class="hint" style="margin:0"></span>
+      </div>
+      <div id="rec-result" class="result" hidden></div>
+      <div class="hint">Captures the microphone for that long regardless of the gate, then shows what
+        whisper heard and whether it counted as the wake phrase. Nothing moves: the recorder never fires
+        the voice event. Say “hey Laika, sit” at your normal distance.</div>
+    </section>
+
+    <section class="card wide">
+      <h2>Custom vocabulary <span id="vocab-chip" class="chip">…</span></h2>
+      <div class="grid" style="gap:0.7rem">
+        <div>
+          <label class="hint" for="vocab-phrases" style="margin:0 0 0.25rem;display:block">
+            Phrases whisper is primed with (one per line): names, commands, words it keeps getting wrong</label>
+          <textarea id="vocab-phrases" spellcheck="false"></textarea>
+        </div>
+        <div>
+          <label class="hint" for="vocab-variants" style="margin:0 0 0.25rem;display:block">
+            Extra spellings of “Laika” accepted after hey / hi / okay (one per line)</label>
+          <textarea id="vocab-variants" spellcheck="false"></textarea>
+        </div>
+      </div>
+      <div class="row" style="margin-top:0.5rem">
+        <button id="vocab-save" class="primary">Save</button>
+        <span id="vocab-state" class="hint" style="margin:0"></span>
+      </div>
+      <div class="hint" id="vocab-builtin"></div>
+      <div class="hint" id="vocab-prompt"></div>
+    </section>
+
+    <section class="card wide">
+      <h2>Transcripts <span class="hint" style="margin:0">everything whisper turned into text, newest first</span></h2>
+      <table class="data-table" id="ears-transcripts"></table>
+    </section>
+  </div>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const state = { robotId: null, vocabularyLoaded: false, dirty: false };
+    const METER_MAX = 3000;
+
+    const base = () => `/api/robots/${state.robotId}`;
+    const api = (path, options) => hlApi(base(), path, options);
+
+    function pct(value) {
+      return `${Math.max(0, Math.min(100, (value / METER_MAX) * 100)).toFixed(1)}%`;
+    }
+
+    function renderLevel(ears) {
+      const level = ears.level || {};
+      $("#meter-rms").style.width = pct(level.rms || 0);
+      $("#meter-peak").style.left = pct(level.peak || 0);
+      $("#meter-floor").style.left = pct(level.floor || 0);
+      $("#meter").classList.toggle("open", !!level.speaking);
+      $("#scale-mid").textContent = METER_MAX / 2;
+      $("#scale-max").textContent = METER_MAX;
+      $("#gate-chip").textContent = level.speaking ? "gate open" : "quiet";
+      $("#gate-chip").className = "chip " + (level.speaking ? "warn" : "on");
+      $("#level-detail").textContent =
+          `rms ${level.rms ?? "—"} · 1 s peak ${level.peak ?? "—"} · 1 s median ${level.median ?? "—"} · floor ${level.floor ?? "—"} (red mark)`;
+    }
+
+    function wakeBadge(t) {
+      if (!t.wake) return "";
+      return t.intent === "greet" ? hlBadge("wakeGreet", "wake · greet") : hlBadge("wake", "wake");
+    }
+
+    function renderTranscripts(log) {
+      const rows = (log.transcripts || []).map((t) =>
+          `<tr><td class="muted">${new Date(t.at).toLocaleTimeString()}</td>` +
+          `<td>${esc(t.text)}</td><td>${wakeBadge(t)}</td>` +
+          `<td>${esc(t.intent ?? "")}</td><td class="muted">${t.latencyS}s</td></tr>`).join("");
+      $("#ears-transcripts").innerHTML = rows
+          ? "<tr><th>When</th><th>Heard</th><th></th><th>Intent</th><th>Latency</th></tr>" + rows
+          : "<tr><td class='muted'>nothing transcribed yet</td></tr>";
+    }
+
+    function renderVocabulary(v) {
+      if (!v) return;
+      if (!state.vocabularyLoaded || !state.dirty) {
+        $("#vocab-phrases").value = (v.phrases || []).join("\n");
+        $("#vocab-variants").value = (v.variants || []).join("\n");
+        state.vocabularyLoaded = true;
+      }
+      $("#vocab-chip").textContent = `${(v.phrases || []).length} phrases · ${(v.variants || []).length} spellings`;
+      $("#vocab-chip").className = "chip on";
+      $("#vocab-builtin").textContent = `built-in spellings: ${(v.builtinVariants || []).join(", ")}`;
+      $("#vocab-prompt").textContent = `whisper prompt: “${v.prompt || ""}”`;
+    }
+
+    async function refresh() {
+      const chip = $("#ears-chip");
+      try {
+        const [ears, log] = await Promise.all([api("/ears"), api("/ears/transcripts?limit=12")]);
+        chip.textContent = ears.streaming ? `streaming · ${ears.packets} pkts` :
+            (ears.enabled === false ? "disabled" : "no stream");
+        chip.className = "chip " + (ears.streaming ? "on" : "warn");
+        chip.title = ears.lastError ? `last error: ${ears.lastError}` : "";
+        $("#ears-detail").textContent =
+            `wake "${ears.wakePhrase}" · model ${ears.model ?? "—"}${ears.modelLoaded ? "" : " (loads on first utterance)"}` +
+            ` · ${ears.utterances} utterances, ${ears.wakes} wakes, ${ears.dropped} dropped packets`;
+        renderLevel(ears);
+        renderTranscripts(log);
+        renderVocabulary(ears.vocabulary);
+      } catch (err) {
+        chip.textContent = "ears unavailable";
+        chip.className = "chip warn";
+        chip.title = err.message;
+      }
+    }
+
+    function suggestVariant(text) {
+      // "Hey like that, sit" -> "like that": the two words after a leader.
+      const words = text.toLowerCase().replace(/[^a-z' ]+/g, " ").split(/\s+/).filter(Boolean);
+      if (!words.length) return null;
+      if (["hey", "hi", "ok", "okay", "yo"].includes(words[0])) words.shift();
+      return words.slice(0, 2).join(" ") || null;
+    }
+
+    async function record() {
+      const seconds = Number($("#rec-seconds").value);
+      const button = $("#rec-start");
+      const result = $("#rec-result");
+      button.disabled = true;
+      $("#rec-state").innerHTML = `<span class="rec">recording ${seconds} s — speak now</span>`;
+      result.hidden = true;
+      try {
+        const r = await hlFetchJson(`${base()}/ears/record`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ seconds }),
+        }, (seconds + 30) * 1000);
+        if (!r.res.ok) throw new Error(r.body?.message || `HTTP ${r.res.status}`);
+        const d = r.body;
+        $("#rec-state").textContent = "";
+        result.hidden = false;
+        result.classList.toggle("error", !!d.error);
+        if (d.error) {
+          result.innerHTML = `<b>No audio.</b> ${esc(d.error)}`;
+          return;
+        }
+        const badge = d.wake ? (d.intent === "greet" ? hlBadge("wakeGreet", "wake · greet") : hlBadge("wake", "wake"))
+                             : `<span class="chip warn">not the wake phrase</span>`;
+        const suggestion = !d.wake && d.text ? suggestVariant(d.text) : null;
+        result.innerHTML =
+            `<div class="row">${badge}<span class="muted">peak ${d.peak} vs floor ${d.floor}` +
+            ` · ${d.durationS} s of audio · whisper ${d.latencyS ?? "—"} s</span></div>` +
+            `<div class="text">${d.text ? `“${esc(d.text)}”` : "<span class='muted'>whisper heard no words</span>"}</div>` +
+            (d.wake ? `<div class="muted">command “${esc(d.command || "")}” → intent ${esc(d.intent || "none")}</div>` : "") +
+            (suggestion ? `<div class="row"><span class="muted">If that was “Laika”:</span>` +
+                `<button id="rec-adopt" data-variant="${esc(suggestion)}">accept “${esc(suggestion)}” as a spelling</button></div>` : "") +
+            (!d.text && d.peak < d.floor ? `<div class="muted">The peak never reached the floor: speak closer or lower EARS_ENERGY_FLOOR.</div>` : "");
+        const adopt = $("#rec-adopt");
+        if (adopt) adopt.onclick = () => adoptVariant(adopt.dataset.variant);
+      } catch (err) {
+        $("#rec-state").textContent = "";
+        result.hidden = false;
+        result.classList.add("error");
+        result.textContent = `failed: ${err.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function linesOf(el) {
+      return el.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    }
+
+    async function saveVocabulary(overrides) {
+      const body = {
+        phrases: linesOf($("#vocab-phrases")),
+        variants: linesOf($("#vocab-variants")),
+        ...overrides,
+      };
+      $("#vocab-save").disabled = true;
+      try {
+        const v = await api("/ears/vocabulary", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        state.dirty = false;
+        state.vocabularyLoaded = false;
+        renderVocabulary(v);
+        $("#vocab-state").textContent = `saved ${new Date().toLocaleTimeString()}`;
+      } catch (err) {
+        $("#vocab-state").textContent = `failed: ${err.message}`;
+      } finally {
+        $("#vocab-save").disabled = false;
+      }
+    }
+
+    async function adoptVariant(variant) {
+      const current = linesOf($("#vocab-variants"));
+      if (!current.includes(variant)) current.push(variant);
+      await saveVocabulary({ variants: current });
+      $("#rec-adopt")?.remove();
+    }
+
+    async function boot() {
+      let robots;
+      try {
+        robots = await hlApi("", "/api/fleet/robots");
+      } catch (err) {
+        $("#ears-chip").textContent = "orchestrator unreachable";
+        return;
+      }
+      $("#robot-select").innerHTML = robots.map((r) =>
+          `<option value="${esc(r.robotId)}">${esc(r.name)}</option>`).join("");
+      const wanted = hlRobotParam(null);
+      state.robotId = robots.some((r) => r.robotId === wanted) ? wanted : robots[0]?.robotId;
+      if (!state.robotId) return;
+      $("#robot-select").value = state.robotId;
+      $("#robot-select").onchange = (e) => {
+        state.robotId = e.target.value;
+        state.vocabularyLoaded = false;
+        hlLoadBadgePalette(base());
+        refresh();
+      };
+      ["#vocab-phrases", "#vocab-variants"].forEach((sel) =>
+          $(sel).addEventListener("input", () => { state.dirty = true; }));
+      $("#vocab-save").onclick = () => saveVocabulary();
+      $("#rec-start").onclick = record;
+      await hlLoadBadgePalette(base());
+      hlPoll(refresh, 1000);
+    }
+    boot();
+  </script>
+</body>
+</html>

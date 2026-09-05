@@ -55,7 +55,7 @@ Volume pot on the Speaker Plus at a quarter turn to start.
    Expect intelligible walkie-talkie speech. If it buzzes at a constant tone:
    wrong pin (the firmware answered `XWp` but the wire goes elsewhere). If
    silent: check the speaker's power tap and pot.
-3. TTS: Voice tab → Mouth → "Speak". Inside Docker espeak-ng answers; with
+3. TTS: Audio output tab → Mouth → "Speak". Inside Docker espeak-ng answers; with
    `ELEVENLABS_API_KEY` set the Eleven Labs voice is used instead.
 4. Firmware serial log during playback should stay quiet; the ISR runs at
    8 kHz. If a gait stutters while speaking, note it — pacing knobs are
@@ -72,12 +72,13 @@ Volume pot on the Speaker Plus at a quarter turn to start.
 2. Serial 115200: `WiFi: <ip>`, `Mic: PDM @16 kHz`, `Camera: OV2640 ready`.
 3. `GET http://<xiao-ip>/` → status JSON; `http://<xiao-ip>/stream` in a browser.
 4. Adapter: `GET /api/robots/bittle-1/ears` → `streaming: true`, `packets`
-   climbing, `dropped` ≈ 0. Voice tab → Ears card shows the same.
+   climbing, `dropped` ≈ 0. Audio input tab shows the same, with a live
+   level meter and a phrase recorder that prints what whisper heard.
 5. Say "Hey Laika, sit down" at arm's length. First utterance loads whisper
    (~15 s once), then transcripts appear within ~2 s. Expect `wake: true,
    intent: sit` and Laika sits (binding `voice.phrase` → `idle_sit`).
    - Nothing heard: watch `GET /ears` → `level` while speaking; `peak`
-     must clear `floor` (fan noise idles at ~50 rms, ~160 peak). Lower
+     must clear `floor` (fan noise idles at ~50-100 rms, peaks to ~290; normal speech peaks 1000-2400). Lower
      `EARS_ENERGY_FLOOR` in `.env` or raise `MIC_GAIN_SHIFT` in the sketch.
    - Heard but no wake: read the transcript text; add the spelling whisper
      used to `WAKE_VARIANTS` in `ears.py`.
@@ -128,13 +129,13 @@ the dog was off (LED power comes from analog socket B).
    - Wrong colours: `GET http://<xiao-ip>/led?r=255&g=0&b=0` must be red;
      if it is blue the P9813 byte order is off (report it, don't guess).
 3. `GET /api/robots/bittle-1/mood` → `enabled: true`, `sets` ≥ 1 within
-   30 s (the resync loop paints the base mood). Eyes tab → Mood light card:
+   30 s (the resync loop paints the base mood). Vision tab → Mood light card:
    click **happy** (green), **lost** (red blink); the colour picker pins any
    colour. Say "Hey Laika, sit" → the LED pulses blue for 2.5 s (`heard`),
    then returns. Speak from the Mouth card → teal pulse while it talks.
 4. `GET /api/robots/bittle-1/eyes` → `streaming: true`, `fps` ≈ 4,
    `detector.loaded: true` after the first frame (first inference ~1 s).
-   Eyes tab → Camera card shows the picture at ~3 fps with green boxes on
+   Vision tab → Camera card shows the picture at ~3 fps with green boxes on
    people; the chip says `1 in view · left/centre/right`.
    - `detector.available: false`: run `dog/tools/export_yolo.py`.
    - `lastError` mentions `/snap`: the satellite is up but the camera is not
