@@ -197,6 +197,11 @@ fails the build on any violation. Rules enforced:
   use `MockMvcTester`; loops are replaced by streams and ranges where that reads better.
 - `RobotControllerTest` declares every use case the controller injects with a class-level
   `@MockitoBean(types = ...)` and autowires only the ones it stubs.
+- `OpenApiSpecTest` is a `@WebMvcTest` over every controller with springdoc's configuration
+  imported by hand, since the slice does not include it. A registry post-processor mocks every
+  `*UseCase` class found by scanning, so a new use case needs no test change. It writes the
+  generated spec to `docs/api/openapi.json` and fails when that differs from the committed
+  copy: one run updates the file, the diff is reviewed and committed, the next run passes.
 - `LeaseRepositoryAdapterTest` is a `@DataJpaTest` slice on H2 with
   `@Transactional(propagation = NOT_SUPPORTED)`, so each adapter call commits on its own
   exactly as in production and the constraint-violation path is real.

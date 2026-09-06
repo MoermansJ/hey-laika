@@ -128,105 +128,20 @@ Shared code, loaded by every page:
   `{ refresh, stop }`.
 
 `builder.html` (the sequence builder) is unlisted and keeps its own theme.
-
 ## REST API
 
-Generated from the inbound web adapters in
-`src/main/java/com/bittle/orchestrator/adapter/in/web/` (2026-09-02). Routes
-marked *deprecated* belong to the adapter's old brain and are scheduled for
-removal (audit fix #11). Routes marked *relay* forward to the same path on the
-adapter without a typed DTO.
+The spec is generated from the controllers in
+`src/main/java/com/bittle/orchestrator/adapter/in/web/` by springdoc. A running
+orchestrator serves it at `/v3/api-docs` (JSON) and browsable at
+`/swagger-ui.html`; a committed copy lives in [docs/api/openapi.json](docs/api/openapi.json).
+`OpenApiSpecTest` regenerates that file on every test run and fails when it
+differs from the committed one, so a route change shows up as a reviewable diff
+and the spec cannot drift.
 
-### `HealthController`
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/health` | GET | Aggregated health: `{"status": "healthy\|degraded\|down", "service", "fleetSize", "robots": {id: {reachable, connected, name}}, "timestamp"}` — `degraded` when some adapters are unreachable, `down` when none are |
-
-### `FleetController` — `/api/fleet`
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/fleet/robots` | GET | Registered robots (`RobotInfo`) |
-| `/api/fleet/status` | GET | Status per robot; an unreachable adapter reports `connected: false` instead of an error |
-| `/api/fleet/stats` | GET | Fleet totals |
-| `/api/fleet/autonomous/start` | POST | *deprecated* — start the adapter's legacy autonomous loop on every robot; `{id: true/false}` |
-| `/api/fleet/autonomous/stop` | POST | *deprecated* — stop it on every robot |
-
-### `RobotController` — `/api/robots/{id}`
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/status` | GET | Proxied robot status (hardware, battery, connection) |
-| `/personality` | GET | *deprecated* — adapter-side personality state |
-| `/behavior` | GET | *deprecated* — one behavior decision from the adapter's own engine (Ollama by default, Claude opt-in) |
-| `/command` | POST | Raw controller command `{"command": "kbalance"}` |
-| `/interact/{type}` | POST | *deprecated* — log an interaction (`pet` / `play` / `talk` / `feed`) |
-| `/choreography/list` | GET | Available animations |
-| `/choreography/execute/{animation}` | POST | Run an animation |
-| `/autonomous/start` / `/autonomous/stop` | POST | *deprecated* — adapter's legacy autonomous loop |
-| `/autonomous/status` | GET | *deprecated* — its state |
-| `/activity` | GET | Recent activity log |
-| `/display` | GET | *deprecated* — what the robot is currently "saying" |
-| `/capabilities` | GET | Adapter capability schema (servos, actions, moves) used by the GUI |
-| `/servo` | GET | Commanded joint angles |
-| `/servo` | POST | Move joints (`ServoMoveRequest`) |
-| `/voice/demo` | POST | Text-in voice chain: LLM reply + buzzer feedback |
-| `/voice/health` | GET | Ollama reachability + model availability |
-| `/sound` | POST | Play a buzzer tone sequence |
-| `/execute_action` | POST | Execute a named high-level action; `409 behavior_loop_running` while the orchestrator loop drives this robot |
-| `/abort` | POST | Forward an abort to the adapter: stop the current motion immediately |
-| `/greeting` | GET | *relay* — boot-greeting status |
-| `/greeting/{run\|enable\|disable}` | POST | *relay* — whitelisted greeting actions; other names → `400 unknown_action` |
-| `/idle` | GET | *relay* — idle-ladder status |
-| `/idle/{enable\|disable}` | POST | *relay* — whitelisted idle actions |
-| `/power` | GET | *relay* — power-session tracker |
-| `/power/saver`, `/power/saver/config` | GET / POST | *relay* — the battery saver's tier, overrides and thresholds (Activity tab card) |
-| `/polling` | GET / POST | *relay* — adaptive telemetry polling policy (read / configure) |
-| `/senses` | GET | *relay* — senses layer status (WiFi sniffer, dead-reckoned pose) |
-| `/senses/samples` | GET | *relay* — recent sense samples |
-| `/senses/sniff` | POST | *relay* — trigger one WiFi scan now |
-| `/senses/range` | GET | *relay* — one-shot ultrasonic read (`?pin=`) |
-| `/ears`, `/ears/transcripts` | GET | *relay* — satellite microphone status (with the live `level` and the custom `vocabulary`) and recent transcripts |
-| `/conversation`, `/conversation/say`, `/conversation/listen`, `/conversation/cancel`, `/conversation/prompt` | GET / POST | *relay* — the "Hey Laika" conversation: state and recent turns, a typed turn, a console-started turn, cancel, the prompt template |
-| `/ears/record` | POST | *relay* — Audio input tab's phrase recorder: `{"seconds"}` captures the live microphone, returns the transcript and whether it matched the wake phrase; never fires the voice event |
-| `/ears/vocabulary` | GET / POST | *relay* — extra phrases whisper is primed with and extra accepted spellings of the name |
-| `/mouth`, `/mouth/say`, `/mouth/stop` | GET/POST | *relay* — speaker status, speak text on the dog, stop playback |
-| `/mouth/voices`, `/mouth/voice` | GET / POST | *relay* — the speaking voice: espeak-ng voices and variants, the current choice; the Speaker card's dropdowns |
-| `/mouth/sounds`, `/mouth/play` | GET/POST | *relay* — clip library on the dog's speaker; `{"sound"}` plays one (Audio output tab, Speaker card) |
-| `/satellite` | GET | *relay* — the XIAO's own status JSON (mic, camera, rssi, led) |
-| `/eyes`, `/eyes/config` | GET/POST | *relay* — camera/person-detection status; pause or resume frame grabbing |
-| `/eyes/snap` | GET | *binary relay* — latest cached camera frame as `image/jpeg` (`?fresh=1` grabs a new one) |
-| `/mood` | GET / POST | *relay* — mood light state, plus `palette` (every mood's colour and effect) and `badges` (which mood each console badge kind shares its colour with); `{"mood"}` pins a named mood, `{"mood","seconds"}` flashes it, `{"r","g","b","effect",…}` a custom colour |
-| `/leash` | GET | *relay* — proximity-leash state (RSSI, zone, dead-man) |
-| `/leash/config` | POST | *relay* — leash thresholds / enable |
-| `/leash/mark` | POST | *relay* — record a labelled RSSI mark |
-| `/behaviors` | GET / POST | *relay* — list / upsert stored behaviors |
-| `/behaviors/{name}` | GET | *relay* — one stored behavior |
-| `/bindings` | GET / POST | *relay* — list / upsert event bindings |
-| `/arbiter/status` | GET | *relay* — what the motion arbiter is running |
-| `/arbiter/invoke` | POST | *relay* — submit a behavior to the arbiter |
-| `/arbiter/stop` | POST | *relay* — stop the arbiter's current behavior |
-
-### `BehaviorController` — `/api/robots/{id}/behavior` (orchestrator-owned brain)
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/personality` | GET | Orchestrator personality snapshot (six dimensions, posture) |
-| `/status` | GET | Loop running, owning instance, personality, last decision |
-| `/history?limit=50` | GET | Recent decisions, newest first |
-| `/start` | POST | Start the behavior loop for this robot; `409 behavior_loop_held_elsewhere` while another instance holds its lease |
-| `/stop` | POST | Stop it |
-| `/event/{type}` | POST | Apply a personality event (`BehaviorEvent` name); unknown → 400 |
-| `/action/{action}` | POST | Queue a manual action through the loop (executes immediately when the loop is stopped) |
-
-### `MetricsController`
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/metrics` | GET | Merged live metrics (orchestrator + every adapter), with `estCostUsd` when Claude tokens are present |
-| `/api/metrics/history?robotId=&limit=168` | GET | Hourly rollups for one robot (or `orchestrator`); limit clamped |
-
-Adapter error responses (unknown animation, missing API key, ...) are
-forwarded verbatim; an unreachable adapter yields `502 adapter_unavailable`.
-STOMP push topics are listed in `docs/design/ARCHITECTURE.md` §6.
+Operation summaries and descriptions are `@Operation` annotations on the
+controller methods. Operations marked *deprecated* belong to the adapter's old
+brain and are scheduled for removal (audit fix #11). Most robot routes relay to
+the same path on the Python adapter without a typed DTO, so their bodies are
+documented as plain objects. Adapter error responses are forwarded verbatim; an
+unreachable adapter yields `502 adapter_unavailable`. STOMP push topics are
+listed in `docs/design/ARCHITECTURE.md` §6.

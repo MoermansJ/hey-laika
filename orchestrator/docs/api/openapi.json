@@ -1,0 +1,3435 @@
+{
+  "openapi" : "3.1.0",
+  "info" : {
+    "description" : "Fleet orchestrator for the Bittle robot dog. Routes under /api/robots/{robotId} address one robot; most of them relay to the same path on that robot's Python adapter, so their bodies are the adapter's JSON and are typed as plain objects.\n\nErrors use the envelope {\"error\": code, \"message\": text}: 404 robot_not_found, 400 bad_request, 409 behavior_loop_running or behavior_loop_held_elsewhere, and 502 adapter_unavailable when the adapter cannot be reached. Error responses from the adapter itself are forwarded verbatim with their status.\n\nOperations marked deprecated belong to the adapter's old brain and are scheduled for removal.",
+    "title" : "Bittle orchestrator API",
+    "version" : "v1"
+  },
+  "servers" : [ {
+    "url" : "http://localhost",
+    "description" : "Generated server url"
+  } ],
+  "tags" : [ {
+    "description" : "The orchestrator-owned brain: behavior loop and personality",
+    "name" : "Behavior"
+  }, {
+    "description" : "Every registered robot at once",
+    "name" : "Fleet"
+  }, {
+    "description" : "Aggregated fleet health",
+    "name" : "Health"
+  }, {
+    "description" : "Live metrics and hourly rollups",
+    "name" : "Metrics"
+  }, {
+    "description" : "One robot's hardware, brain relays and senses, addressed through its adapter",
+    "name" : "Robot"
+  } ],
+  "paths" : {
+    "/api/fleet/autonomous/start" : {
+      "post" : {
+        "deprecated" : true,
+        "operationId" : "startAllAutonomous",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "boolean"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Start the adapter's legacy autonomous loop on every robot",
+        "tags" : [ "Fleet" ]
+      }
+    },
+    "/api/fleet/autonomous/stop" : {
+      "post" : {
+        "deprecated" : true,
+        "operationId" : "stopAllAutonomous",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "boolean"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Stop the adapter's legacy autonomous loop on every robot",
+        "tags" : [ "Fleet" ]
+      }
+    },
+    "/api/fleet/robots" : {
+      "get" : {
+        "operationId" : "robots",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/RobotInfo"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Registered robots",
+        "tags" : [ "Fleet" ]
+      }
+    },
+    "/api/fleet/stats" : {
+      "get" : {
+        "operationId" : "stats",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FleetStats"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Fleet totals",
+        "tags" : [ "Fleet" ]
+      }
+    },
+    "/api/fleet/status" : {
+      "get" : {
+        "description" : "An unreachable adapter reports connected: false instead of an error.",
+        "operationId" : "status_2",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "$ref" : "#/components/schemas/RobotStatus"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Status per robot",
+        "tags" : [ "Fleet" ]
+      }
+    },
+    "/api/health" : {
+      "get" : {
+        "description" : "healthy, degraded when some adapters are unreachable, down when none are.",
+        "operationId" : "health",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FleetHealth"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Aggregated health",
+        "tags" : [ "Health" ]
+      }
+    },
+    "/api/metrics" : {
+      "get" : {
+        "description" : "Orchestrator plus every adapter, with estCostUsd when Claude tokens are present.",
+        "operationId" : "metrics",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Merged live metrics",
+        "tags" : [ "Metrics" ]
+      }
+    },
+    "/api/metrics/history" : {
+      "get" : {
+        "description" : "robotId may be a robot id or orchestrator; limit is clamped to 1..2000.",
+        "operationId" : "history_1",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 168
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "type" : "object",
+                    "additionalProperties" : {
+                      "type" : "object"
+                    }
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Hourly rollups for one robot",
+        "tags" : [ "Metrics" ]
+      }
+    },
+    "/api/robots/{robotId}/abort" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "abort",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Stop the current motion immediately",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/activity" : {
+      "get" : {
+        "operationId" : "activity",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ActivityLog"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Recent activity log",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/arbiter/invoke" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "arbiterInvoke",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Submit a behavior to the arbiter",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/arbiter/status" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "arbiterStatus",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "What the motion arbiter is running",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/arbiter/stop" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "arbiterStop",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Stop the arbiter's current behavior",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/autonomous/start" : {
+      "post" : {
+        "deprecated" : true,
+        "operationId" : "startAutonomous",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AutonomousState"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Start the adapter's legacy autonomous loop",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/autonomous/status" : {
+      "get" : {
+        "deprecated" : true,
+        "operationId" : "autonomousStatus",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AutonomousState"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "State of the adapter's legacy autonomous loop",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/autonomous/stop" : {
+      "post" : {
+        "deprecated" : true,
+        "operationId" : "stopAutonomous",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AutonomousState"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Stop the adapter's legacy autonomous loop",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/behavior" : {
+      "get" : {
+        "deprecated" : true,
+        "description" : "Ollama by default, Claude opt-in.",
+        "operationId" : "behavior_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RobotBehavior"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "One behavior decision from the adapter's own engine",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/behavior/action/{action}" : {
+      "post" : {
+        "description" : "Executes immediately when the loop is stopped.",
+        "operationId" : "manualAction",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "action",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ActionResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Queue a manual action through the loop",
+        "tags" : [ "Behavior" ]
+      }
+    },
+    "/api/robots/{robotId}/behavior/event/{type}" : {
+      "post" : {
+        "description" : "Unknown event names yield 400.",
+        "operationId" : "event",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "type",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Snapshot"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Apply a personality event",
+        "tags" : [ "Behavior" ]
+      }
+    },
+    "/api/robots/{robotId}/behavior/history" : {
+      "get" : {
+        "operationId" : "history",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 50
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/BehaviorDecision"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Recent decisions, newest first",
+        "tags" : [ "Behavior" ]
+      }
+    },
+    "/api/robots/{robotId}/behavior/personality" : {
+      "get" : {
+        "description" : "Six dimensions and posture.",
+        "operationId" : "personality_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Snapshot"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Orchestrator personality snapshot",
+        "tags" : [ "Behavior" ]
+      }
+    },
+    "/api/robots/{robotId}/behavior/start" : {
+      "post" : {
+        "description" : "409 behavior_loop_held_elsewhere while another instance holds its lease.",
+        "operationId" : "start",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BehaviorStatus"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Start the behavior loop",
+        "tags" : [ "Behavior" ]
+      }
+    },
+    "/api/robots/{robotId}/behavior/status" : {
+      "get" : {
+        "description" : "Loop running, owning instance, personality and last decision.",
+        "operationId" : "status_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BehaviorStatus"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Behavior loop status",
+        "tags" : [ "Behavior" ]
+      }
+    },
+    "/api/robots/{robotId}/behavior/stop" : {
+      "post" : {
+        "operationId" : "stop",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BehaviorStatus"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Stop the behavior loop",
+        "tags" : [ "Behavior" ]
+      }
+    },
+    "/api/robots/{robotId}/behaviors" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "behaviors",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "List stored behaviors",
+        "tags" : [ "Robot" ]
+      },
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "upsertBehavior",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Upsert a stored behavior",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/behaviors/{name}" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "behavior",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "name",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "One stored behavior",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/bindings" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "bindings",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "List event bindings",
+        "tags" : [ "Robot" ]
+      },
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "upsertBinding",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Upsert an event binding",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/capabilities" : {
+      "get" : {
+        "description" : "Servos, actions and moves; the console builds its controls from it.",
+        "operationId" : "capabilities",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Adapter capability schema",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/choreography/execute/{animation}" : {
+      "post" : {
+        "operationId" : "executeAnimation",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "animation",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AnimationResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Run an animation",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/choreography/list" : {
+      "get" : {
+        "operationId" : "animations",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AnimationList"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Available animations",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/command" : {
+      "post" : {
+        "operationId" : "command",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CommandRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CommandResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Send a raw controller command",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/conversation" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "conversation",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 10
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Conversation state and recent turns",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/conversation/cancel" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "conversationCancel",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Cancel the current conversation turn",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/conversation/listen" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "conversationListen",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Start a conversation turn from the console",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/conversation/prompt" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "conversationPrompt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The conversation prompt template",
+        "tags" : [ "Robot" ]
+      },
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "conversationPromptSet",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Replace the conversation prompt template",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/conversation/say" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "conversationSay",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A typed conversation turn",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/display" : {
+      "get" : {
+        "deprecated" : true,
+        "operationId" : "display",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DisplayContent"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "What the robot is currently saying",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/ears" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. Includes the live level and the custom vocabulary.",
+        "operationId" : "ears",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Satellite microphone status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/ears/record" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. Returns the transcript and whether it matched the wake phrase; never fires the voice event.",
+        "operationId" : "earsRecord",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Record a phrase from the live microphone",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/ears/transcripts" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "earsTranscripts",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 20
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Recent transcripts",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/ears/vocabulary" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "earsVocabulary",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Extra phrases whisper is primed with and accepted spellings of the name",
+        "tags" : [ "Robot" ]
+      },
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "earsVocabularySet",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Set the extra phrases and name spellings",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/execute_action" : {
+      "post" : {
+        "description" : "409 behavior_loop_running while the orchestrator loop drives this robot.",
+        "operationId" : "executeAction",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ExecuteActionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ActionResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Execute a named high-level action",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/eyes" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "eyes",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Camera and person-detection status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/eyes/config" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "eyesConfig",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Pause or resume frame grabbing",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/eyes/snap" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. fresh=1 grabs a new frame.",
+        "operationId" : "eyesSnap",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "fresh",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "image/jpeg" : {
+                "schema" : {
+                  "type" : "string",
+                  "format" : "binary"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Latest cached camera frame",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/greeting" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "greeting",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Boot-greeting status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/greeting/{action}" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. Other action names yield 400 unknown_action.",
+        "operationId" : "greetingAction",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "action",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Run, enable or disable the boot greeting",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/idle" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "idle",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Idle-ladder status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/idle/{action}" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. Other action names yield 400 unknown_action.",
+        "operationId" : "idleAction",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "action",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Enable or disable the idle ladder",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/interact/{type}" : {
+      "post" : {
+        "deprecated" : true,
+        "description" : "Types: pet, play, talk, feed.",
+        "operationId" : "interact",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "type",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/InteractionResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Log an interaction",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/leash" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. RSSI, zone and dead-man.",
+        "operationId" : "leash",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Proximity-leash state",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/leash/config" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "leashConfig",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Leash thresholds and enable",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/leash/mark" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "leashMark",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Record a labelled RSSI mark",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mood" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mood",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Mood light state, palette and badge colours",
+        "tags" : [ "Robot" ]
+      },
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "moodSet",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Pin, flash or set a custom mood colour",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouth",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Speaker status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth/play" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouthPlay",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Play a clip",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth/say" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouthSay",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Speak text on the dog",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth/sounds" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouthSounds",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Clip library on the dog's speaker",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth/stop" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouthStop",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Stop playback",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth/voice" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouthVoice",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Choose the speaking voice",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth/voices" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouthVoices",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "espeak-ng voices and variants",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/personality" : {
+      "get" : {
+        "deprecated" : true,
+        "operationId" : "personality",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RobotPersonality"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Adapter-side personality state",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/polling" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "polling",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Adaptive telemetry polling policy",
+        "tags" : [ "Robot" ]
+      },
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "pollingConfig",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Configure the adaptive telemetry polling policy",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/power" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "power",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Power-session tracker",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/power/saver" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "powerSaver",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Battery saver tier, overrides and thresholds",
+        "tags" : [ "Robot" ]
+      },
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "powerSaverOverride",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Override the battery saver tier",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/power/saver/config" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "powerSaverConfig",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Configure the battery saver thresholds",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/satellite" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. Mic, camera, rssi and led.",
+        "operationId" : "satellite",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The XIAO satellite's own status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. WiFi sniffer and dead-reckoned pose.",
+        "operationId" : "senses",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Senses layer status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses/pose/reset" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "sensesPoseReset",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Reset the dead-reckoned pose",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses/range" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "sensesRange",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pin",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "One-shot ultrasonic read",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses/samples" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. Filters: limit, since, until, source, minAps, every.",
+        "operationId" : "sensesSamples",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "filters",
+          "required" : true,
+          "schema" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Recent sense samples",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses/sniff" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "sensesSniff",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Trigger one WiFi scan now",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/servo" : {
+      "get" : {
+        "operationId" : "servoState",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ServoState"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Commanded joint angles",
+        "tags" : [ "Robot" ]
+      },
+      "post" : {
+        "operationId" : "moveServos",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ServoMoveRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ServoMoveResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Move joints",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/sound" : {
+      "post" : {
+        "operationId" : "sound",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Play a buzzer tone sequence",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/status" : {
+      "get" : {
+        "description" : "Hardware, battery and connection state as the adapter reports it.",
+        "operationId" : "status",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RobotStatus"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Robot status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/voice/demo" : {
+      "post" : {
+        "description" : "LLM reply plus buzzer feedback.",
+        "operationId" : "voiceDemo",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Text-in voice chain",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/voice/health" : {
+      "get" : {
+        "operationId" : "voiceHealth",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Ollama reachability and model availability",
+        "tags" : [ "Robot" ]
+      }
+    }
+  },
+  "components" : {
+    "schemas" : {
+      "ActionResult" : {
+        "type" : "object",
+        "properties" : {
+          "action" : {
+            "type" : "string"
+          },
+          "actualDurationMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ActivityEntry" : {
+        "type" : "object",
+        "properties" : {
+          "at" : {
+            "type" : "string"
+          },
+          "kind" : {
+            "type" : "string"
+          },
+          "message" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ActivityLog" : {
+        "type" : "object",
+        "properties" : {
+          "activity" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ActivityEntry"
+            }
+          },
+          "robotId" : {
+            "type" : "string"
+          }
+        }
+      },
+      "Animation" : {
+        "type" : "object",
+        "properties" : {
+          "description" : {
+            "type" : "string"
+          },
+          "frames" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        }
+      },
+      "AnimationList" : {
+        "type" : "object",
+        "properties" : {
+          "animations" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Animation"
+            }
+          },
+          "robotId" : {
+            "type" : "string"
+          }
+        }
+      },
+      "AnimationResult" : {
+        "type" : "object",
+        "properties" : {
+          "animation" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "AutonomousState" : {
+        "type" : "object",
+        "properties" : {
+          "changed" : {
+            "type" : "boolean"
+          },
+          "intervalSeconds" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "running" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "BehaviorDecision" : {
+        "type" : "object",
+        "properties" : {
+          "actualDurationMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "decidedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "reasoning" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "selectedAction" : {
+            "type" : "string"
+          },
+          "source" : {
+            "type" : "string",
+            "enum" : [ "RULE", "CLAUDE", "MANUAL" ]
+          },
+          "stateAtDecision" : {
+            "$ref" : "#/components/schemas/Snapshot"
+          },
+          "success" : {
+            "type" : "boolean"
+          },
+          "validActions" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }
+      },
+      "BehaviorStatus" : {
+        "type" : "object",
+        "properties" : {
+          "lastDecision" : {
+            "$ref" : "#/components/schemas/BehaviorDecision"
+          },
+          "owner" : {
+            "type" : "string"
+          },
+          "personality" : {
+            "$ref" : "#/components/schemas/Snapshot"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "running" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "CommandRequest" : {
+        "type" : "object",
+        "properties" : {
+          "command" : {
+            "type" : "string"
+          }
+        }
+      },
+      "CommandResult" : {
+        "type" : "object",
+        "properties" : {
+          "command" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "DisplayContent" : {
+        "type" : "object",
+        "properties" : {
+          "robotId" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "type" : "string"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ExecuteActionRequest" : {
+        "type" : "object",
+        "properties" : {
+          "action" : {
+            "type" : "string"
+          },
+          "durationMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "sequenceId" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "FleetHealth" : {
+        "type" : "object",
+        "properties" : {
+          "fleetSize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "robots" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "$ref" : "#/components/schemas/RobotHealth"
+            }
+          },
+          "service" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "timestamp" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "FleetStats" : {
+        "type" : "object",
+        "properties" : {
+          "autonomousRobots" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "connectedRobots" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "timestamp" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "totalRobots" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "InteractionResult" : {
+        "type" : "object",
+        "properties" : {
+          "interaction" : {
+            "type" : "string"
+          },
+          "personality" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "object"
+            }
+          },
+          "robotId" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RobotBehavior" : {
+        "type" : "object",
+        "properties" : {
+          "behavior" : {
+            "type" : "string"
+          },
+          "reason" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "source" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RobotHealth" : {
+        "type" : "object",
+        "properties" : {
+          "connected" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "reachable" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "RobotInfo" : {
+        "type" : "object",
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "serviceUrl" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RobotPersonality" : {
+        "type" : "object",
+        "properties" : {
+          "boredom" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "curiosity" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "energy" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "happiness" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "mood" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RobotStatus" : {
+        "type" : "object",
+        "properties" : {
+          "autonomous" : {
+            "type" : "boolean"
+          },
+          "battery" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "commandsSent" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "connected" : {
+            "type" : "boolean"
+          },
+          "lastCommand" : {
+            "type" : "string"
+          },
+          "mode" : {
+            "type" : "string"
+          },
+          "mood" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "signal" : {
+            "type" : "string"
+          },
+          "startedAt" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "uptimeSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "ServoJoint" : {
+        "type" : "object",
+        "properties" : {
+          "angle" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "index" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "ServoMoveRequest" : {
+        "type" : "object",
+        "properties" : {
+          "joints" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ServoJoint"
+            }
+          }
+        }
+      },
+      "ServoMoveResult" : {
+        "type" : "object",
+        "properties" : {
+          "clamped" : {
+            "type" : "boolean"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "movedJoints" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ServoJoint"
+            }
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ServoState" : {
+        "type" : "object",
+        "properties" : {
+          "joints" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ServoJoint"
+            }
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          },
+          "timestamp" : {
+            "type" : "string"
+          }
+        }
+      },
+      "Snapshot" : {
+        "type" : "object",
+        "properties" : {
+          "boredom" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "contentment" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "curiosity" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "energy" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "happiness" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "hunger" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "lastAction" : {
+            "type" : "string"
+          },
+          "lastActionAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "lastInteractionAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "posture" : {
+            "type" : "string",
+            "enum" : [ "STANDING", "SITTING", "LYING", "SLEEPING" ]
+          },
+          "robotId" : {
+            "type" : "string"
+          },
+          "totalActionsThisSession" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      }
+    }
+  }
+}

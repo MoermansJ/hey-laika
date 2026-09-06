@@ -30,6 +30,17 @@ spring:
           # so a rebuilt image is never paired with a stale app.js.
           no-cache: true
 
+# The REST API is documented from the controllers: /v3/api-docs (JSON) and
+# /swagger-ui.html. OpenApiSpecTest keeps docs/api/openapi.json in sync, so the
+# writer is deterministic (sorted keys, pretty-printed).
+springdoc:
+  paths-to-match: /api/**
+  writer-with-order-by-keys: true
+  writer-with-default-pretty-printer: true
+  swagger-ui:
+    operations-sorter: alpha
+    tags-sorter: alpha
+
 management:
   endpoints:
     web:
