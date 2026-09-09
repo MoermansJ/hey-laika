@@ -154,5 +154,10 @@ walking steps, since each of those now ends with a free scan.
    time at 320 px on this PC, measured in Phase C's first hour.
 3. Disk cap for frames and where it lives (the adapter's `/data` volume in
    compose is the natural place).
-4. Does the sitting posture tilt the head too far for a useful scan? If
-   not, sit-and-scan halves the holding load during long scans.
+4. ~~Does the sitting posture tilt the head too far for a useful scan?~~
+   Answered 2026-09-09 (owner): sitting pitches the head about 45° up.
+   The ranger then climbs a metre per metre of range and the camera's
+   lower edge sits ~20° above horizontal, so no floor or furniture is in
+   view. Scans are taken standing. A sitting frame is a ceiling view,
+   static and distinctive per room; kept in mind as an extra place
+   signature if wall views ever prove ambiguous, not planned.
