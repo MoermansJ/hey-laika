@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Senses</title>
+  <title>Dashboard</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
   <link rel="stylesheet" href="console.css">
   <style>
@@ -65,6 +65,15 @@
     .cam .play i { display: block; width: 0; height: 0; border-style: solid; border-width: 24px 0 24px 40px;
       border-color: transparent transparent transparent #ecf0f1; }
     .cam .play:hover i { border-left-color: #fff; }
+    .cam .ctl { position: absolute; right: 0.4rem; bottom: 0.3rem; z-index: 3; width: 28px; height: 24px; display: none;
+      align-items: center; justify-content: center; gap: 4px; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.35);
+      cursor: pointer; padding: 0; }
+    .cam .ctl i { display: block; width: 4px; height: 12px; background: #ecf0f1; }
+    .cam .ctl:hover { background: #ecf0f1; border-color: #ecf0f1; }
+    .cam .ctl:hover i { background: #111; }
+    .cam.running .ctl { display: flex; }
+    .batt.nodata .shell { stroke: #bdc3c7; } .batt.nodata .nub, .batt.nodata .seg { fill: #bdc3c7; }
+    .nodata-text { color: #bdc3c7; }
     .cam svg { position: absolute; inset: 0; width: 100%; height: 100%; }
     .cam .box { fill: none; stroke: #2ecc71; stroke-width: 0.6; }
     .cam .box-label { fill: #2ecc71; font-size: 3px; }
@@ -119,7 +128,7 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>Senses</h1>
+    <h1>Dashboard</h1>
     <button class="editbtn" id="edit" title="Edit the layout: drag widgets, show or hide them" aria-label="Edit layout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0 5 5l-7.4 7.4a2.1 2.1 0 0 1-3-3l7.4-7.4z"/><path d="M14.7 6.3 18 3l3 3-3.3 3.3"/></svg></button>
     <select id="robot-select" title="Robot"></select>
     <span class="state" id="state"></span>
@@ -338,14 +347,16 @@
       body("camera").innerHTML = `<div class="cam" id="cam"><canvas id="cam-fuzz" width="160" height="120"></canvas>` +
         `<img id="cam-img" alt="" hidden><svg id="cam-boxes" viewBox="0 0 100 75" preserveAspectRatio="none"></svg>` +
         `<span class="corner" id="cam-corner">no feed</span>` +
-        `<button class="play" id="cam-play" title="Resume the eyes" aria-label="Resume the camera"><i></i></button></div>`;
-      $("cam-play").addEventListener("click", async () => {
-        if (!camConfigured) { openTab("eyes"); return; }
+        `<button class="play" id="cam-play" title="Resume the eyes" aria-label="Resume the camera"><i></i></button>` +
+        `<button class="ctl" id="cam-pause" title="Pause the eyes" aria-label="Pause the camera"><i></i><i></i></button></div>`;
+      const setEyes = async (enabled) => {
         try {
-          await api("/eyes/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: true }) });
+          await api("/eyes/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) });
           await camStatus();
-        } catch (err) { setState(`resume failed: ${err.message}`, true); }
-      });
+        } catch (err) { setState(`${enabled ? "resume" : "pause"} failed: ${err.message}`, true); }
+      };
+      $("cam-play").addEventListener("click", () => { if (camConfigured) setEyes(true); else openTab("eyes"); });
+      $("cam-pause").addEventListener("click", () => setEyes(false));
       if (fuzzTimer) clearInterval(fuzzTimer);
       fuzzTimer = setInterval(fuzz, 80);
     }
@@ -354,6 +365,7 @@
       const cam = $("cam"), canvas = $("cam-fuzz"), img = $("cam-img");
       if (!cam) return;
       cam.classList.toggle("off", mode === "off");
+      cam.classList.toggle("running", mode !== "off");   // the pause control shows for feed and static alike
       canvas.hidden = mode !== "static";
       img.hidden = mode !== "feed";
     }
@@ -460,11 +472,12 @@
         }
         const emptyIn = drain && drain > 0 && pct != null ? Math.round((pct - 8) / drain * 60) : null;
         const cfg = batterySettings();
-        const low = pct != null && pct < cfg.redPct;
-        const blink = pct != null && pct < cfg.blinkPct;
+        const nodata = pct == null || s.connected === false;
+        const low = !nodata && pct < cfg.redPct;
+        const blink = !nodata && pct < cfg.blinkPct;
         body("battery").innerHTML =
-          `<div style="display:flex;gap:0.6rem;align-items:center"><div style="flex:0 0 46%">${batteryIcon(pct, low, blink)}</div>` +
-          `<div><div class="big">${pct == null ? "—" : Math.round(pct)}<small>%</small></div>` +
+          `<div style="display:flex;gap:0.6rem;align-items:center"><div style="flex:0 0 46%">${batteryIcon(nodata ? null : pct, low, blink).replace('class="batt', `class="batt${nodata ? " nodata" : ""}`)}</div>` +
+          `<div><div class="big${nodata ? " nodata-text" : ""}">${nodata ? "—" : Math.round(pct)}<small>%</small></div>` +
           `<span class="navstate ${saver.tier === "active" ? "arrived" : saver.tier === "critical" ? "error" : "blocked"}">${esc(saver.tier || "?")}</span></div></div>` +
           `<div class="sub">${drain != null ? `${drain.toFixed(1)} %/h${emptyIn != null ? ` · empty in ~${emptyIn} min` : ""}` : "drain: collecting…"}` +
           `${power.predictedMinutesLeft != null ? ` · tracker says ${Math.round(power.predictedMinutesLeft)} min` : ""}` +

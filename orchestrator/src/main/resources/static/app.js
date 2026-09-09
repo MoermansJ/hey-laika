@@ -274,7 +274,7 @@ function route() {
 // tabs without one (activity, specs) are panels in index.html itself.
 const TABS = [
   { id: "activity", label: "Activity" },
-  { id: "senses",   label: "Senses",       page: "senses.html" },
+  { id: "senses",   label: "Dashboard",    page: "dashboard.html" },
   { id: "control",  label: "Control",      page: "control.html" },
   { id: "behavior", label: "Behavior",     page: "behavior.html" },
   { id: "ears",     label: "Audio input",  page: "ears.html" },
