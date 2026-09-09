@@ -117,6 +117,25 @@ proxies and scheduled for removal (audit fix #11).
 | `/senses/samples` | GET | Fingerprint samples, newest first, with the live pose and `matched`/`total` counts. Filters: `?since=`/`?until=` (epoch s), `?source=auto|manual`, `?minAps=`, `?every=N` (keep one in N), `?limit=` (≤2000) |
 | `/senses/pose/reset` | POST | Re-anchor the dead-reckoned origin at the dog's current spot (`{"heading"}` optional) |
 | `/senses/range` | GET | Ultrasonic read (`?pin=9|10` to validate wiring; default `ULTRASONIC_PIN`), throttled to one firmware read per 150 ms, answered from the last reading with `gated: true` while the battery saver has the sensors paused, with `readMs`, `reads`/`misses` counters and the last 60 readings (`recent`, `null` = no echo) for the Eyes tab's live card |
+
+**Navigation** (`docs/design/NAVIGATION_PHASE1.md` in the orchestrator repo)
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/sensors/latest` | GET | Newest reading of the 6 Hz sensor loop (range ahead, pose, IMU yaw, battery, command in flight); `?fresh=1` reads now |
+| `/sensors/recent` | GET | Readings newest first from the ring buffer (`?limit=`, `?since=`), `?stored=1` from SQLite, `?format=csv` |
+| `/navigation` | GET | Route state, target, waypoints, avoidance, sensor loop, map counts, error summary, config, stats |
+| `/navigation/config` | POST | `stopCm`, `sensorHz`, `avoidanceEnabled`, `sweepAngles`, `maxCyclesPerBurst`, `yawDisagreeDeg`, … |
+| `/navigation/target` | POST | `{"x", "y"}` metres in the map frame: plan with A* and walk there through the arbiter; 409 while an error waits or in away mode |
+| `/navigation/cancel` | POST | Stop the route |
+| `/navigation/map` | GET | Occupancy grid (`cells` as `[cx, cy, f|o, logodds]`), bounds, counts, pose, target, route |
+| `/navigation/map/reset` | POST | Forget the grid |
+| `/navigation/map/cell` | POST | `{"cx", "cy", "state": free|occupied|unknown}` human correction |
+| `/navigation/sweep` | POST | Head-pan sonar sweep from where she stands (an arbiter behavior) |
+| `/navigation/override` | POST | `{"behavior"}` or `{"command": "kjmp", "settleS"}` with the reactive stop stood down until it ends |
+| `/navigation/errors` | GET | The error waiting for an answer, retry streaks, history (`?limit=`) |
+| `/navigation/errors/respond` | POST | `{"choice": trust_map|trust_sensor|manual, "note"}` |
+| `/navigation/data/export` | GET | Training data: `?kind=actions|readings`, `?format=csv|json`, `?since=`, `?limit=` |
 | `/ears` | GET | Ears status: satellite PCM stream, whisper model, wake/utterance counters, `level` (DC-free RMS of the last packet, 1 s peak and median, the gate floor, whether the gate is open) |
 | `/ears/transcripts` | GET | Recent transcripts (`?limit=`), wake flag and detected intent |
 | `/ears/clip` | POST | Bench test: run an uploaded 16-bit mono WAV through the ears pipeline |

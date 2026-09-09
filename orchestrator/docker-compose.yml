@@ -69,6 +69,9 @@ services:
       # 0 = not wired. Set in .env (ULTRASONIC_PIN=9 on Laika).
       - ULTRASONIC_PIN=${ULTRASONIC_PIN:-0}
       - SPEAKER_PIN=${SPEAKER_PIN:-0}
+      - NAV_STOP_CM=${NAV_STOP_CM:-25}
+      - NAV_RANGER_ON_HEAD=${NAV_RANGER_ON_HEAD:-True}
+      - NAV_SPEAK=${NAV_SPEAK:-True}
       # XIAO satellite (camera + mood light); empty = none.
       - SATELLITE_HOST=${SATELLITE_HOST:-}
     volumes:
@@ -94,6 +97,9 @@ services:
       - DECISION_ENGINE=mock
       - MOCK_MODE=True
       - MOCK_RICH=True
+      # The mock ray-casts a simulated room, so the Map tab has an
+      # occupancy layer and a working reactive stop on Mocha.
+      - ULTRASONIC_PIN=9
       - OLLAMA_URL=http://ollama:11434
       - ENVIRONMENT=development
       - SQLITE_DB_PATH=/data/bittle.db

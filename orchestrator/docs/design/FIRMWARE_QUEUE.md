@@ -47,6 +47,13 @@ Wanted next (not started):
 - Push the IMU pitch/roll and the exception direction/force angle to the
   host (SENSOR_DATA.md "left on the table").
 
+- A fused `event_nav` push frame (ranger distance + IMU yaw, 10-20 Hz while
+  a gait runs) so the host's navigation loop stops paying a locked round
+  trip per reading; today it samples at 6 Hz between commands
+  (NAVIGATION_PHASE1.md §1). Bench check: `GET /sensors/latest` rate
+  reaches the push rate during `kwkF 6` and the reactive stop fires within
+  one cycle of a box at 25 cm.
+
 ## Satellite (`satellite/xiao_sense`)
 
 Flashed now: the 2026-09-04 build (P9813 LED, `/led`, ESP-IDF I2S mic).

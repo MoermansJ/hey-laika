@@ -292,6 +292,74 @@ class RobotControllerTest {
     }
 
     @Test
+    void givenNavigationTarget_whenPosted_thenBodyReachesTheAdapter() {
+        when(relayPostWithBody.execute("bittle-1", "/navigation/target", Map.of("x", 1.5, "y", -0.2)))
+                .thenReturn(Map.of("status", "executing", "state", "planning"));
+
+        var result = mvc.post().uri("/api/robots/bittle-1/navigation/target")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"x\":1.5,\"y\":-0.2}")
+                .exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.state").isEqualTo("planning");
+    }
+
+    @Test
+    void givenReadingFilters_whenRecentSensorsRequested_thenOnlyKnownFiltersAreRelayed() {
+        when(relayGet.execute("bittle-1", "/sensors/recent?limit=20&stored=1"))
+                .thenReturn(Map.of("returned", 20));
+
+        var result = mvc.get()
+                .uri("/api/robots/bittle-1/sensors/recent?limit=20&stored=1&bogus=x&since=")
+                .exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.returned").isEqualTo(20);
+    }
+
+    @Test
+    void givenFreshFlag_whenLatestSensorsRequested_thenAdapterTakesAReading() {
+        when(relayGet.execute("bittle-1", "/sensors/latest?fresh=1")).thenReturn(Map.of("fresh", true));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/sensors/latest?fresh=1").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.fresh").isEqualTo(true);
+    }
+
+    @Test
+    void givenErrorAnswer_whenPosted_thenChoiceReachesTheAdapter() {
+        when(relayPostWithBody.execute("bittle-1", "/navigation/errors/respond",
+                Map.of("choice", "trust_sensor")))
+                .thenReturn(Map.of("choice", "trust_sensor", "errorId", 4));
+
+        var result = mvc.post().uri("/api/robots/bittle-1/navigation/errors/respond")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"choice\":\"trust_sensor\"}")
+                .exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.errorId").isEqualTo(4);
+    }
+
+    @Test
+    void givenCsvExport_whenRequested_thenTextIsRelayedWithItsContentType() {
+        byte[] csv = "id,t,command\n1,2,kwkF 3\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        when(relayGetBinary.execute("bittle-1", "/navigation/data/export?format=csv&kind=actions"))
+                .thenReturn(new BinaryContent(csv, "text/csv; charset=utf-8"));
+
+        var result = mvc.get()
+                .uri("/api/robots/bittle-1/navigation/data/export?format=csv&kind=actions&junk=1")
+                .exchange();
+
+        assertThat(result).hasStatusOk()
+                .hasHeader("Cache-Control", "no-store");
+        assertThat(result.getResponse().getContentType()).startsWith("text/csv");
+        assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(csv);
+    }
+
+    @Test
     void givenCachedFrame_whenSnapRequested_thenJpegBytesAreRelayedUncached() {
         byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, 1, 2, 3};
         when(relayGetBinary.execute("bittle-1", "/eyes/snap"))

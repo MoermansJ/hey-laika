@@ -99,9 +99,9 @@ class Config:
 
     # Ultrasonic ranger on the UART socket: which GPIO took the SIG wire
     # (9 or 10) is only known once wired; None disables range reads.
-    ULTRASONIC_PIN = int(os.getenv("ULTRASONIC_PIN", "0")) or None
+    ULTRASONIC_PIN = int(os.getenv("ULTRASONIC_PIN") or 0) or None
     # Grove Speaker Plus on the other UART-socket pin (firmware PWM playback).
-    SPEAKER_PIN = int(os.getenv("SPEAKER_PIN", "0")) or None
+    SPEAKER_PIN = int(os.getenv("SPEAKER_PIN") or 0) or None
     # Navigation (NAVIGATION_PHASE1.md): reactive stop distance, the
     # sensor/avoidance loop rate, grid resolution, whether the ranger pans
     # with the head (sonar sweeps), and whether the error state speaks.

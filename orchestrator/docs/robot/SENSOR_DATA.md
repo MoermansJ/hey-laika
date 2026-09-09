@@ -1,6 +1,6 @@
 # Laika's sensor data — what can be read today, and what is left on the table
 
-**Updated:** 2026-09-05 (ears `level`, DC-offset gate fix) · Reference for the perception work (one snapshot
+**Updated:** 2026-09-09 (navigation loop, occupancy grid, yaw fusion; before: 2026-09-05 ears `level`) · Reference for the perception work (one snapshot
 of the world for the GUI and the agent). Every sense listed here is
 installed and wired; "exposed" means it is readable from the adapter API
 right now, "stored" means it lands in `bittle.db`, "dormant" means the
@@ -14,12 +14,13 @@ unchanged by the orchestrator.
 |---|---|---|---|---|
 | Camera (OV2640, QVGA) | XIAO satellite, head | 4 fps polled by the adapter | `/eyes`, `/eyes/snap` | `vision.person`, `vision.clear` |
 | Microphone (PDM) | XIAO satellite, head | 16 kHz continuous, UDP | `/ears`, `/ears/transcripts` | `voice.phrase` |
-| Ultrasonic ranger | UART socket, GPIO 9 | on demand, ≤ 1 read / 150 ms | `/senses/range` | none yet |
-| IMU (ICM42670) | BiBoard | yaw read once per sniff; exceptions pushed | inside `/senses/samples`; `exception.report` | `exception.report` |
+| Ultrasonic ranger | UART socket, GPIO 9 | 6 Hz while moving (navigation loop), on demand otherwise, ≤ 1 read / 150 ms | `/senses/range`, `/sensors/latest`, `/sensors/recent` | `nav.blocked` |
+| IMU (ICM42670) | BiBoard | yaw read after every navigation burst and once per sniff; exceptions pushed | `/sensors/latest`, inside `/senses/samples`; `exception.report` | `exception.report` |
 | Battery (`P`) | BiBoard | every 10 s (adaptive up to 40 s idle) | `/status`, `/power` | `battery.low` |
 | WiFi RSSI to the router | BiBoard (`event_rssi`) | 1 Hz push while the leash is on | `/leash` | `leash.near/warn/far/lost` |
 | WiFi fingerprint scans | BiBoard (`XWs`) | one scan per quiet minute, ~2 s blocking | `/senses`, `/senses/samples` | none yet |
-| Dead-reckoned pose | adapter (from commands) | per bounded move | `/senses`, `/senses/samples` | none yet |
+| Dead-reckoned pose | adapter (from commands, IMU yaw fused during navigation) | per bounded move | `/senses`, `/senses/samples`, `/navigation` | `nav.arrived`, `nav.unreachable` |
+| Occupancy grid | adapter (`map_cells`), from ranger rays | per reading while navigating, sweeps on demand | `/navigation/map` | `map.updated`, `nav.error` |
 | Servo positions | BiBoard (`j`) | on demand | `/servo` | none |
 | Satellite health | XIAO status JSON | on demand (Vision tab every 15 s) | `/satellite` | none |
 | Mood light (actuator, but stateful) | XIAO, D2/D3 | on change, resync every 30 s | `/mood` | consumes events |
@@ -135,11 +136,12 @@ Stored: nothing. Events: none.
 
 **Left on the table**
 
-- Nothing polls it when the Vision tab is closed. A background sampler at
-  2–5 Hz would give a continuous trend (closing speed, cm/s) and the
-  `nav.blocked` / `person.approaching` events the navigation brief wants.
-- Range + head pan (joint 0, −90..90°) = a cheap sweep: a polar occupancy
-  slice ahead of the dog, the `sonar_sweep` step type in the brief.
+- ~~Nothing polls it when the Vision tab is closed.~~ Done 2026-09-09: the
+  navigation loop samples at 6 Hz while she moves, stores every reading in
+  `sensor_readings`, and raises `nav.blocked` (NAVIGATION_PHASE1.md).
+  `person.approaching` (closing speed) is still open.
+- ~~Range + head pan = a cheap sweep.~~ Done 2026-09-09: `POST
+  /navigation/sweep`, seven rays into the occupancy grid.
 - Range + camera box `area` = a calibration of "how far is a person of
   this apparent size", which then works when the ranger is looking elsewhere.
 - Miss-rate over time is itself a signal (a moving target in front).
@@ -160,9 +162,10 @@ sniff time), and the exception events as `exception.report` with `code`
 
 - Pitch and roll are read and discarded. They tell whether the dog is on a
   slope, tipping, or being carried at an angle.
-- Continuous yaw is not read between sniffs, so the pose still dead-reckons
-  turns from commands (`driftM` grows). One `gp` per bounded move would fuse
-  it; the brief calls this "IMU feedback inside the odometry shadow".
+- ~~Continuous yaw is not read between sniffs.~~ Done 2026-09-09 for
+  navigation: `SensesService.fuse_yaw()` runs after every route burst and
+  turn and replaces the dead-reckoned heading (NAVIGATION_PHASE1.md §2).
+  Manual driving from the Control tab still dead-reckons turns.
 - Accelerometer magnitude over time = activity level, gait vibration,
   whether it is being petted/lifted, whether a step actually happened.
 - The push events already distinguish pushed-from-which-direction and
@@ -223,10 +226,13 @@ tab filters by time, source, minimum AP count, and thinning.
 ## Pose — `/senses`
 
 Dead reckoning from the bounded-motion vocabulary: commanded turns update
-`heading`, bounded advances update `x, y` by a calibrated stride
-(`strideMPerCycle`, 0.10 m default, tape-measure later). `driftM` grows
+`heading`, bounded advances update `x, y` by the calibrated stride model
+(`strideFirstCycleM` 0.10 m, then `strideMPerCycle` 0.112 m, from the
+2026-08-31 gym-mat session). During navigation the IMU yaw replaces the
+heading after every burst (`yaw`, `yawFused` in the pose). `driftM` grows
 with every move and a restart adds a penalty; `POST /senses/pose/reset`
-re-anchors. Honest, coarse, and the only position estimate the dog has.
+re-anchors the origin and the yaw reference. Honest, coarse, and the only
+position estimate the dog has.
 
 ## Servos — `/servo`
 

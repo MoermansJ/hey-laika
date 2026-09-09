@@ -11,11 +11,12 @@
     input[type=datetime-local] { width: 12.5rem; }
     .filters { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: end; }
     .filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; color: var(--ink-2); }
-    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0.9rem; margin-top: 0.9rem; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 0.9rem; margin-top: 0.9rem; }
     @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
     .mapwrap { position: relative; }
     svg#map { width: 100%; height: min(70vh, 640px); display: block;
       background: #f7f9fa; border: 1px solid var(--ring); border-radius: 8px; }
+    svg#map.nav { cursor: crosshair; }
     .tip { position: absolute; pointer-events: none; z-index: 5; display: none;
       background: rgba(44, 62, 80, 0.96); color: #fff; font-size: 0.76rem;
       padding: 0.5rem 0.65rem; border-radius: 8px; max-width: 300px; line-height: 1.35;
@@ -26,6 +27,7 @@
       margin-top: 0.5rem; align-items: center; }
     .legend .swatch { display: inline-block; width: 60px; height: 8px; border-radius: 4px;
       vertical-align: middle; margin: 0 0.3rem; box-shadow: none; border: none; }
+    .legend .cell { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; margin-right: 0.25rem; }
     .card table { font-size: 0.78rem; }
     .card th, .card td { white-space: nowrap; }
     tr.pick { cursor: pointer; }
@@ -35,15 +37,31 @@
     #detail dt { color: var(--ink-2); }
     #detail dd { margin: 0; }
     .state { font-size: 0.78rem; color: var(--muted); min-height: 1em; }
+    .navstate { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+      background: #ecf0f1; color: #2c3e50; }
+    .navstate.moving, .navstate.planning { background: #d6eaf8; color: #1b4f72; }
+    .navstate.arrived { background: #d5f5e3; color: #1e8449; }
+    .navstate.blocked, .navstate.unreachable, .navstate.failed { background: #fdebd0; color: #7e5109; }
+    .navstate.error { background: #fadbd8; color: #922b21; animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: 0.35; } }
+    .row { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }
+    .row input[type=text], .row input[type=number] { width: 7rem; }
+    .errorbox { border: 1px solid #e74c3c; background: #fdf2f2; border-radius: 8px; padding: 0.6rem; margin-top: 0.5rem; font-size: 0.8rem; }
+    .errorbox h3 { margin: 0 0 0.3rem; font-size: 0.85rem; color: #922b21; }
+    .history { font-size: 0.76rem; margin-top: 0.5rem; }
+    .history div { padding: 0.15rem 0; border-top: 1px solid var(--ring); }
+    .history .res { color: #1e8449; }
+    .history .open { color: #922b21; }
   </style>
 </head>
 <body>
   <div class="topbar">
-    <h1>Map — where she has been</h1>
+    <h1>Map — where she has been and what is in the way</h1>
     <select id="robot-select" title="Robot"></select>
     <span class="state" id="state"></span>
     <div class="spacer"></div>
-    <label class="muted"><input type="checkbox" id="live" checked> live (10 s)</label>
+    <label class="muted"><input type="checkbox" id="live" checked> live</label>
+    <label class="muted" title="Click on the map to send her there"><input type="checkbox" id="navmode"> click to navigate</label>
     <button id="refresh">Refresh</button>
     <button id="sniff" class="primary" title="One WiFi scan now (blocks the dog ~2 s)">Sniff now</button>
     <button id="reset" class="danger" title="Re-anchor the origin: the dog is at its home spot">Reset origin</button>
@@ -78,6 +96,8 @@
       </label>
       <label>Layers
         <span>
+          <label style="display:inline"><input type="checkbox" id="layerOccupancy" checked> occupancy</label>
+          <label style="display:inline"><input type="checkbox" id="layerRoute" checked> route</label>
           <label style="display:inline"><input type="checkbox" id="layerTrail" checked> trail</label>
           <label style="display:inline"><input type="checkbox" id="layerGrid" checked> grid</label>
         </span>
@@ -94,7 +114,33 @@
       <div class="legend" id="legend"></div>
     </div>
     <div>
-      <div class="card" id="pose-card"></div>
+      <div class="card" id="nav-card">
+        <h2>Navigation <span class="navstate" id="navstate">…</span></h2>
+        <div id="nav-body" class="empty">…</div>
+        <div class="row">
+          <button id="cancel" class="danger" title="Stop the current route">Cancel route</button>
+          <button id="sweep" title="Pan the head and scan the surroundings">Sonar sweep</button>
+          <button id="clearmap" title="Forget the occupancy grid (samples stay)">Clear map</button>
+        </div>
+        <div class="row">
+          <label class="muted"><input type="checkbox" id="avoid" checked> reactive stop at</label>
+          <input type="number" id="stopCm" min="5" max="150" value="25" style="width:4.5rem"> cm
+        </div>
+        <div class="row">
+          <input type="text" id="override" placeholder="kjmp" title="A skill to run with avoidance stood down">
+          <button id="override-go" title="Run the skill; the reactive stop resumes when it ends">Override</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:0.9rem" id="error-card">
+        <h2>Errors</h2>
+        <div id="error-body" class="empty">…</div>
+        <div class="history" id="error-history"></div>
+      </div>
+      <div class="card" style="margin-top:0.9rem" id="sensor-card">
+        <h2>Sensors now</h2>
+        <div id="sensor-body" class="empty">…</div>
+      </div>
+      <div class="card" style="margin-top:0.9rem" id="pose-card"></div>
       <div class="card" style="margin-top:0.9rem">
         <h2>Selected sample</h2>
         <div id="detail" class="empty">Hover a point for a quick look, click to pin it here.</div>
@@ -122,6 +168,8 @@
     let samples = [];          // newest first, as served
     let pose = null;
     let status = null;
+    let nav = null;            // /navigation status
+    let grid = null;           // /navigation/map
     let pinned = null;         // sample id pinned in the detail card
     let colorBy = "age";       // "age" or a BSSID
     let view = null;           // world <-> screen mapping
@@ -164,8 +212,9 @@
     });
     ["since", "until", "source", "minAps", "every", "limit"].forEach((id) =>
       $(id).addEventListener("change", refresh));
-    ["layerTrail", "layerGrid"].forEach((id) => $(id).addEventListener("change", draw));
+    ["layerTrail", "layerGrid", "layerOccupancy", "layerRoute"].forEach((id) => $(id).addEventListener("change", draw));
     $("colorBy").addEventListener("change", () => { colorBy = $("colorBy").value; draw(); });
+    $("navmode").addEventListener("change", () => $("map").classList.toggle("nav", $("navmode").checked));
 
     // ---- colour scales ---------------------------------------------------
 
@@ -196,6 +245,12 @@
     function fitView() {
       const xs = samples.map((s) => s.x), ys = samples.map((s) => s.y);
       if (pose) { xs.push(pose.x); ys.push(pose.y); }
+      if (grid && grid.bounds && $("layerOccupancy").checked) {
+        const r = grid.resolutionM;
+        xs.push(grid.bounds.minCx * r, (grid.bounds.maxCx + 1) * r);
+        ys.push(grid.bounds.minCy * r, (grid.bounds.maxCy + 1) * r);
+      }
+      if (nav && nav.target) { xs.push(nav.target.x); ys.push(nav.target.y); }
       if (!xs.length) { xs.push(0); ys.push(0); }
       let minX = Math.min(...xs), maxX = Math.max(...xs);
       let minY = Math.min(...ys), maxY = Math.max(...ys);
@@ -204,9 +259,11 @@
       const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
       // World: x east, y north (heading 0 = +x, left turn = +deg). Screen y is flipped.
       view = {
-        scale,
+        scale, cx, cy,
         sx: (x) => W / 2 + (x - cx) * scale,
         sy: (y) => H / 2 - (y - cy) * scale,
+        wx: (X) => cx + (X - W / 2) / scale,
+        wy: (Y) => cy - (Y - H / 2) / scale,
         minX: cx - (W / 2) / scale, maxX: cx + (W / 2) / scale,
         minY: cy - (H / 2) / scale, maxY: cy + (H / 2) / scale,
       };
@@ -223,10 +280,26 @@
 
     // ---- drawing ---------------------------------------------------------
 
+    function cellColor(state, logodds) {
+      const t = Math.min(1, Math.abs(logodds) / 3);
+      if (state === "o") return `rgba(44, 62, 80, ${0.45 + 0.5 * t})`;
+      return `rgba(46, 204, 113, ${0.10 + 0.25 * t})`;
+    }
+
     function draw() {
       fitView();
       const svg = $("map");
       let html = "";
+      if ($("layerOccupancy").checked && grid && grid.cells && grid.cells.length) {
+        const r = grid.resolutionM;
+        const size = Math.max(1, r * view.scale);
+        html += `<g pointer-events="none">`;
+        grid.cells.forEach(([cx, cy, state, lo]) => {
+          const X = view.sx(cx * r), Y = view.sy((cy + 1) * r);
+          html += `<rect x="${X.toFixed(1)}" y="${Y.toFixed(1)}" width="${size.toFixed(1)}" height="${size.toFixed(1)}" fill="${cellColor(state, lo)}"/>`;
+        });
+        html += `</g>`;
+      }
       if ($("layerGrid").checked) {
         const step = gridStep();
         for (let gx = Math.ceil(view.minX / step) * step; gx <= view.maxX; gx += step) {
@@ -249,7 +322,7 @@
         html += `<polyline points="${pts}" fill="none" stroke="#7f8c8d" stroke-width="1.2" stroke-opacity="0.6" stroke-dasharray="3 3"/>`;
       }
       const tMin = chrono.length ? chrono[0].t : 0, tMax = chrono.length ? chrono[chrono.length - 1].t : 1;
-      chrono.forEach((s) => {
+      if ($("layerTrail").checked) chrono.forEach((s) => {
         let fill, r = 5, extra = "";
         if (colorBy === "age") {
           fill = ageColor(s, tMin, tMax);
@@ -261,6 +334,31 @@
         const active = pinned === s.id;
         html += `<circle class="pt" data-id="${s.id}" cx="${view.sx(s.x).toFixed(1)}" cy="${view.sy(s.y).toFixed(1)}" r="${active ? r + 3 : r}" fill="${fill}"${extra}${active ? ' stroke="#2c3e50" stroke-width="2"' : ""}/>`;
       });
+      if ($("layerRoute").checked && nav) {
+        html += `<g pointer-events="none">`;
+        if (nav.route && nav.route.waypoints && nav.route.waypoints.length && pose) {
+          const pts = [[pose.x, pose.y], ...nav.route.waypoints]
+            .map(([x, y]) => `${view.sx(x).toFixed(1)},${view.sy(y).toFixed(1)}`).join(" ");
+          html += `<polyline points="${pts}" fill="none" stroke="#2980b9" stroke-width="2" stroke-dasharray="6 4"/>`;
+          nav.route.waypoints.forEach(([x, y], i) => {
+            html += `<circle cx="${view.sx(x).toFixed(1)}" cy="${view.sy(y).toFixed(1)}" r="4" fill="${i < nav.route.legIndex ? "#bdc3c7" : "#2980b9"}"/>`;
+          });
+        }
+        if (nav.target) {
+          const X = view.sx(nav.target.x), Y = view.sy(nav.target.y);
+          html += `<g stroke="#8e44ad" stroke-width="2"><circle cx="${X.toFixed(1)}" cy="${Y.toFixed(1)}" r="9" fill="rgba(142,68,173,0.15)"/>` +
+            `<line x1="${(X - 13).toFixed(1)}" x2="${(X + 13).toFixed(1)}" y1="${Y.toFixed(1)}" y2="${Y.toFixed(1)}"/>` +
+            `<line x1="${X.toFixed(1)}" x2="${X.toFixed(1)}" y1="${(Y - 13).toFixed(1)}" y2="${(Y + 13).toFixed(1)}"/></g>`;
+          html += `<text x="${(X + 12).toFixed(1)}" y="${(Y - 12).toFixed(1)}" font-size="11" fill="#8e44ad" font-weight="600">target</text>`;
+        }
+        if (nav.lastBlock && Date.now() / 1000 - nav.lastBlock.at < 300) {
+          const rad = nav.lastBlock.heading * Math.PI / 180, d = nav.lastBlock.rangeCm / 100;
+          const X = view.sx(nav.lastBlock.x + Math.cos(rad) * d), Y = view.sy(nav.lastBlock.y + Math.sin(rad) * d);
+          html += `<g stroke="#e74c3c" stroke-width="2"><line x1="${(X - 6).toFixed(1)}" x2="${(X + 6).toFixed(1)}" y1="${(Y - 6).toFixed(1)}" y2="${(Y + 6).toFixed(1)}"/>` +
+            `<line x1="${(X - 6).toFixed(1)}" x2="${(X + 6).toFixed(1)}" y1="${(Y + 6).toFixed(1)}" y2="${(Y - 6).toFixed(1)}"/></g>`;
+        }
+        html += `</g>`;
+      }
       if (pose) {
         // The marker never intercepts the pointer: the newest sample sits
         // right under it and must stay hoverable.
@@ -280,20 +378,27 @@
 
     function drawLegend(tMin, tMax) {
       const el = $("legend");
+      let html = "";
+      if ($("layerOccupancy").checked) {
+        html += `<span><span class="cell" style="background:rgba(46,204,113,0.3)"></span>seen floor</span>` +
+          `<span><span class="cell" style="background:rgba(44,62,80,0.8)"></span>obstacle (darker = surer)</span>`;
+      }
+      if ($("layerRoute").checked) html += `<span style="color:#2980b9">– – route</span><span style="color:#8e44ad">⊕ target</span><span style="color:#e74c3c">✕ last stop</span>`;
       if (colorBy === "age") {
-        el.innerHTML = samples.length
+        html += samples.length
           ? `<span>older <span class="swatch" style="background:linear-gradient(90deg, rgb(189,195,199), rgb(52,152,219))"></span> newer</span>` +
-            `<span>${new Date(tMin * 1000).toLocaleString()} → ${new Date(tMax * 1000).toLocaleString()}</span>` +
-            `<span>▲ last known position, dashed ring = dead-reckoning uncertainty</span>`
+            `<span>${new Date(tMin * 1000).toLocaleString()} → ${new Date(tMax * 1000).toLocaleString()}</span>`
           : "";
       } else {
         const name = apName(colorBy);
-        el.innerHTML = `<span>${esc(name)}: weak <span class="swatch" style="background:linear-gradient(90deg, rgb(231,76,60), rgb(39,174,96))"></span> strong (−90 … −40 dBm)</span>` +
+        html += `<span>${esc(name)}: weak <span class="swatch" style="background:linear-gradient(90deg, rgb(231,76,60), rgb(39,174,96))"></span> strong (−90 … −40 dBm)</span>` +
           `<span>hollow = not heard there</span>`;
       }
+      html += `<span>▲ last known position, dashed ring = dead-reckoning uncertainty</span>`;
+      el.innerHTML = html;
     }
 
-    // ---- hover / pin -----------------------------------------------------
+    // ---- hover / pin / click-to-navigate ---------------------------------
 
     const byId = () => new Map(samples.map((s) => [s.id, s]));
 
@@ -327,11 +432,35 @@
       tip.style.left = `${left}px`; tip.style.top = `${top}px`;
     });
     $("map").addEventListener("mouseleave", () => { tip.style.display = "none"; });
-    $("map").addEventListener("click", (ev) => {
+
+    function worldAt(ev) {
+      const svg = $("map");
+      const pt = svg.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+      return { x: view.wx(p.x), y: view.wy(p.y) };
+    }
+
+    $("map").addEventListener("click", async (ev) => {
       const target = ev.target.closest && ev.target.closest("circle.pt");
-      pinned = target ? Number(target.dataset.id) : null;
+      if (target) {
+        pinned = Number(target.dataset.id);
+        renderDetail();
+        draw();
+        return;
+      }
+      pinned = null;
       renderDetail();
-      draw();
+      if (!$("navmode").checked || !view) { draw(); return; }
+      const w = worldAt(ev);
+      setState(`going to (${w.x.toFixed(2)}, ${w.y.toFixed(2)})…`);
+      try {
+        const out = await hlApi(BASE, "/navigation/target", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ x: +w.x.toFixed(2), y: +w.y.toFixed(2) }) });
+        setState(`target set: ${out.status}`);
+        await refreshNav();
+      } catch (err) { setState(`target refused: ${err.message}`, true); }
     });
 
     function renderDetail() {
@@ -356,6 +485,84 @@
         aps.map((a) => `<tr><td>${esc(a.ssid || "(hidden)")}<br><span class="muted">${esc(a.bssid)}</span></td>` +
           `<td>${a.rssi} dBm</td><td>${a.channel ?? "—"}</td></tr>`).join("") +
         `</tbody></table>`;
+    }
+
+    // ---- navigation cards ------------------------------------------------
+
+    function renderNav() {
+      const badge = $("navstate");
+      const body = $("nav-body");
+      if (!nav) { badge.textContent = "offline"; badge.className = "navstate"; body.className = "empty"; body.textContent = "navigation unavailable"; return; }
+      badge.textContent = nav.state;
+      badge.className = `navstate ${nav.state}`;
+      body.className = "";
+      const t = nav.target, f = nav.finished, r = nav.route;
+      const legs = r && r.waypoints ? `${Math.min(r.legIndex + 1, r.waypoints.length)} / ${r.waypoints.length}` : "—";
+      body.innerHTML =
+        `<div class="stat"><span>Target</span><span class="mono">${t ? `${t.x}, ${t.y} m` : "—"}</span></div>` +
+        `<div class="stat"><span>Remaining</span><span>${nav.remainingM != null ? nav.remainingM + " m" : "—"}</span></div>` +
+        `<div class="stat"><span>Leg</span><span>${legs}</span></div>` +
+        `<div class="stat"><span>Blocked / replans</span><span>${nav.blockedCount} / ${nav.replans}</span></div>` +
+        `<div class="stat"><span>Reactive stops</span><span>${nav.avoidance.stops}${nav.avoidance.suppressed ? " (stood down)" : ""}${nav.avoidance.rangerEnabled ? "" : " · no ranger"}</span></div>` +
+        `<div class="stat"><span>Map</span><span>${nav.map.grid.free} floor · ${nav.map.grid.occupied} obstacle cells</span></div>` +
+        (f ? `<div class="muted" style="margin-top:0.3rem">Last: ${esc(f.state)}${f.detail ? " — " + esc(f.detail) : ""} (${esc(new Date(f.at * 1000).toLocaleTimeString())})</div>` : "") +
+        (nav.away ? `<div class="muted">Away mode: navigation is off until the leash is released.</div>` : "");
+      if (document.activeElement !== $("stopCm")) $("stopCm").value = nav.avoidance.stopCm;
+      $("avoid").checked = nav.avoidance.enabled;
+      $("cancel").disabled = !nav.active;
+    }
+
+    function renderSensors() {
+      const body = $("sensor-body");
+      const s = nav && nav.sensors;
+      const l = s && s.latest;
+      if (!l) { body.className = "empty"; body.textContent = "no reading yet (she samples while moving)"; return; }
+      body.className = "";
+      const age = Math.max(0, Date.now() / 1000 - l.t);
+      body.innerHTML =
+        `<div class="stat"><span>Range ahead</span><span>${l.rangeCm == null ? (l.gated ? "paused (battery saver)" : "no echo") : Math.round(l.rangeCm) + " cm"}${l.panDeg ? ` (head ${l.panDeg}°)` : ""}</span></div>` +
+        `<div class="stat"><span>Heading / IMU yaw</span><span>${l.heading}° / ${l.yaw != null ? l.yaw + "°" : "—"}</span></div>` +
+        `<div class="stat"><span>Battery</span><span>${l.battery != null ? Math.round(l.battery) + "%" : "—"}</span></div>` +
+        `<div class="stat"><span>In flight</span><span class="mono">${esc(l.command || "—")}${l.behavior ? ` (${esc(l.behavior)})` : ""}</span></div>` +
+        `<div class="stat"><span>Loop</span><span>${s.rateHz != null ? s.rateHz + " Hz" : "idle"} · ${s.recorded} readings · ${age < 60 ? Math.round(age) + " s ago" : "stale"}</span></div>`;
+    }
+
+    let errorHistory = [];
+    function renderErrors() {
+      const body = $("error-body");
+      const e = nav && nav.errors;
+      if (!e) { body.className = "empty"; body.textContent = "—"; return; }
+      body.className = "";
+      if (e.active) {
+        const a = e.active;
+        body.innerHTML = `<div class="errorbox"><h3>${esc(a.kind)} — waiting ${Math.round(a.waitingS)} s</h3>` +
+          `<div>${esc(a.message)}</div>` +
+          `<div class="muted" style="margin-top:0.3rem">${esc(a.prompt)}</div>` +
+          `<div class="row"><input type="text" id="note" placeholder="note (optional)" style="width:100%"></div>` +
+          `<div class="row">` +
+          `<button data-choice="trust_sensor" class="primary" title="The obstacle is real: put it on the map">Sensor is right</button>` +
+          `<button data-choice="trust_map" title="The reading was wrong: keep the map">Map is right</button>` +
+          `<button data-choice="manual" title="I moved her by hand: forget the route, then reset the origin if needed">I moved her</button>` +
+          `</div></div>`;
+        body.querySelectorAll("button[data-choice]").forEach((b) => b.addEventListener("click", async () => {
+          try {
+            await hlApi(BASE, "/navigation/errors/respond", { method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ choice: b.dataset.choice, note: $("note").value || null }) });
+            await refreshNav();
+          } catch (err) { setState(`answer failed: ${err.message}`, true); }
+        }));
+      } else {
+        const h = e.handler || {};
+        const streaks = Object.entries(h.streaks || {}).map(([k, v]) => `${k} ×${v}`).join(", ");
+        body.innerHTML = `<div class="stat"><span>State</span><span>no open error</span></div>` +
+          `<div class="stat"><span>Retrying</span><span>${streaks || "—"}</span></div>` +
+          `<div class="stat"><span>Silent recoveries / escalations</span><span>${h.silentRecoveries ?? 0} / ${h.escalated ?? 0}</span></div>`;
+      }
+      $("error-history").innerHTML = errorHistory.slice(0, 8).map((row) =>
+        `<div><span class="${row.resolution ? "res" : row.tier === "unrecoverable" ? "open" : ""}">${esc(row.tier === "unrecoverable" ? "⚠" : "·")} ${esc(row.kind)}</span> ` +
+        `${esc(new Date(row.t * 1000).toLocaleTimeString())}${row.retries ? ` (try ${row.retries})` : ""}` +
+        `${row.resolution ? ` → ${esc(row.resolution)}` : ""}</div>`).join("");
     }
 
     // ---- side cards ------------------------------------------------------
@@ -415,6 +622,20 @@
       el.style.color = isError ? "var(--critical)" : "var(--muted)";
     }
 
+    async function refreshNav() {
+      try {
+        const [n, g, e] = await Promise.all([
+          hlApi(BASE, "/navigation"), hlApi(BASE, "/navigation/map"),
+          hlApi(BASE, "/navigation/errors?limit=8"),
+        ]);
+        nav = n; grid = g; errorHistory = e.history || [];
+        if (g.pose) pose = g.pose;
+      } catch (err) {
+        nav = null; grid = null;
+      }
+      renderNav(); renderSensors(); renderErrors(); draw();
+    }
+
     async function refresh() {
       try {
         const [page, st] = await Promise.all([
@@ -428,11 +649,21 @@
         if (poseCard) poseCard.render(st);
         renderSummary(page);
         renderDetail();
-        draw();
+        await refreshNav();
         setState(`updated ${new Date().toLocaleTimeString()}`);
       } catch (err) {
         setState(`offline: ${err.message}`, true);
       }
+    }
+
+    async function post(path, body, label) {
+      try {
+        const out = await hlApi(BASE, path, { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+        setState(`${label}: ${out.status || out.state || "ok"}`);
+        await refreshNav();
+        return out;
+      } catch (err) { setState(`${label} failed: ${err.message}`, true); }
     }
 
     $("refresh").addEventListener("click", refresh);
@@ -452,16 +683,36 @@
         await refresh();
       } catch (err) { setState(`reset failed: ${err.message}`, true); }
     });
+    $("cancel").addEventListener("click", () => post("/navigation/cancel", {}, "cancel"));
+    $("sweep").addEventListener("click", () => post("/navigation/sweep", {}, "sweep"));
+    $("clearmap").addEventListener("click", () => {
+      if (confirm("Forget the occupancy grid? Fingerprint samples are kept.")) post("/navigation/map/reset", {}, "clear map");
+    });
+    $("avoid").addEventListener("change", () => post("/navigation/config", { avoidanceEnabled: $("avoid").checked }, "avoidance"));
+    $("stopCm").addEventListener("change", () => post("/navigation/config", { stopCm: Number($("stopCm").value) }, "stop distance"));
+    $("override-go").addEventListener("click", () => {
+      const command = $("override").value.trim();
+      if (command) post("/navigation/override", { command }, "override");
+    });
 
     let poller = null;
 
     function mount(base) {
       BASE = base;
-      samples = []; pose = null; status = null; pinned = null;
+      samples = []; pose = null; status = null; nav = null; grid = null; pinned = null;
       if (poseCard) poseCard.stop();
       poseCard = hlPoseCard($("pose-card"), BASE, { title: "Where she thinks she is" });
       if (poller) poller.tick(); else {
-        poller = hlPoll(async () => { if ($("live").checked) await refresh(); }, 10000);
+        // Samples every 10 s; the navigation cards and map every 2 s, or
+        // every second while a route is running.
+        let ticks = 0;
+        poller = hlPoll(async () => {
+          if (!$("live").checked) return;
+          ticks += 1;
+          if (ticks % 10 === 1) await refresh();
+          else if (nav && nav.active) await refreshNav();
+          else if (ticks % 2 === 0) await refreshNav();
+        }, 1000);
         $("live").addEventListener("change", () => { if ($("live").checked) poller.tick(); });
       }
     }

@@ -2231,6 +2231,471 @@
         "tags" : [ "Robot" ]
       }
     },
+    "/api/robots/{robotId}/navigation" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. Route state, target, avoidance, sensor loop, map and error summary.",
+        "operationId" : "navigation",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Navigation status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/cancel" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "navigationCancel",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Cancel the current route",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/config" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. stopCm, sensorHz, avoidanceEnabled, sweepAngles and the other navigator settings.",
+        "operationId" : "navigationConfig",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Tune navigation",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/data/export" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. kind=actions|readings, format=csv|json, since (epoch seconds), limit.",
+        "operationId" : "navigationDataExport",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "filters",
+          "required" : true,
+          "schema" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : { },
+              "text/csv" : {
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Export training data",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/errors" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. The error waiting for an answer, retry streaks and the history.",
+        "operationId" : "navigationErrors",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Navigation errors",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/errors/respond" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. Body {choice: trust_map|trust_sensor|manual, note}.",
+        "operationId" : "navigationErrorsRespond",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Answer the error state",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/map" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. Cells as [cx, cy, f|o, logodds] with the pose, target and route for the Map tab.",
+        "operationId" : "navigationMap",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Occupancy grid",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/map/cell" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. Body {cx, cy, state: free|occupied|unknown}.",
+        "operationId" : "navigationMapCell",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Correct one map cell",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/map/reset" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "navigationMapReset",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Clear the occupancy grid",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/override" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. Body {behavior} or {command, settleS}; reactive avoidance resumes when the run ends.",
+        "operationId" : "navigationOverride",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Run a skill with avoidance stood down",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/sweep" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. A head-pan range scan from where she stands, run as an arbiter behavior.",
+        "operationId" : "navigationSweep",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Sonar sweep with the head",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/navigation/target" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. Body {x, y} in metres in the map frame; 409 while an error waits for an answer or in away mode.",
+        "operationId" : "navigationTarget",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "object"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Navigate to a map position",
+        "tags" : [ "Robot" ]
+      }
+    },
     "/api/robots/{robotId}/personality" : {
       "get" : {
         "deprecated" : true,
@@ -2693,6 +3158,85 @@
           }
         },
         "summary" : "Trigger one WiFi scan now",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/sensors/latest" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. Range ahead, pose, IMU yaw, battery, the command in flight. fresh=1 takes a reading now.",
+        "operationId" : "sensorsLatest",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "fresh",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Newest sensor-loop reading",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/sensors/recent" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. Filters: limit, since, stored=1 (SQLite instead of the ring buffer).",
+        "operationId" : "sensorsRecent",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "filters",
+          "required" : true,
+          "schema" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Recent sensor readings",
         "tags" : [ "Robot" ]
       }
     },

@@ -382,3 +382,21 @@ The §Vision satellite integration work, minus follow-me:
 - **Not yet:** follow-me itself (a `follow_person` behavior steering on
   `offset` through the arbiter), and a cheaper wake gate for the ears.
 
+---
+
+## Addendum 2026-09-09 — occupancy layer, click-to-go and the reactive stop shipped
+
+The sonar side of §2 and the `sonar_sweep` step of §5.1 exist, along with
+the "generator behaviors" extension §5.3 asked for
+(`Arbiter.submit_generator`). Full account in
+[`NAVIGATION_PHASE1.md`](NAVIGATION_PHASE1.md): a 10 cm occupancy grid in
+`map_cells`, a 6 Hz ranger loop while moving that submits `obstacle_stop`
+at safety priority, A* routes to a clicked map position walked in bounded
+bursts with the IMU yaw fused after each, head-pan sweeps, overrides that
+stand avoidance down, and a two-tier error path that ends in a red blink,
+a spoken prompt and three buttons on the Map tab. `nav.blocked`,
+`nav.arrived`, `nav.unreachable`, `nav.error` and `map.updated` are
+framework events now. Still open from this brief: fingerprint clustering,
+room naming, `goto_room`, RSSI loop closure, and the yaw-fused shadow
+during *manual* driving (fusion runs only inside routes).
+

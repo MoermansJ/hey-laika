@@ -386,6 +386,134 @@ public class RobotController {
         return relayPost.execute(robotId, "/senses/sniff");
     }
 
+    @Operation(summary = "Newest sensor-loop reading",
+            description = "Relayed to the same path on the adapter. Range ahead, pose, IMU yaw, battery,"
+                    + " the command in flight. fresh=1 takes a reading now.")
+    @GetMapping("/sensors/latest")
+    public Map<String, Object> sensorsLatest(@PathVariable String robotId,
+                                             @RequestParam(required = false) String fresh) {
+        return relayGet.execute(robotId, "1".equals(fresh) ? "/sensors/latest?fresh=1" : "/sensors/latest");
+    }
+
+    @Operation(summary = "Recent sensor readings",
+            description = "Relayed to the same path on the adapter. Filters: limit, since, stored=1 (SQLite"
+                    + " instead of the ring buffer).")
+    @GetMapping("/sensors/recent")
+    public Map<String, Object> sensorsRecent(@PathVariable String robotId,
+                                             @RequestParam Map<String, String> filters) {
+        return relayGet.execute(robotId, "/sensors/recent" + query(filters, READING_FILTERS));
+    }
+
+    @Operation(summary = "Navigation status",
+            description = "Relayed to the same path on the adapter. Route state, target, avoidance,"
+                    + " sensor loop, map and error summary.")
+    @GetMapping("/navigation")
+    public Map<String, Object> navigation(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/navigation");
+    }
+
+    @Operation(summary = "Tune navigation",
+            description = "Relayed to the same path on the adapter. stopCm, sensorHz, avoidanceEnabled,"
+                    + " sweepAngles and the other navigator settings.")
+    @PostMapping("/navigation/config")
+    public Map<String, Object> navigationConfig(@PathVariable String robotId,
+                                                @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/navigation/config", body);
+    }
+
+    @Operation(summary = "Navigate to a map position",
+            description = "Relayed to the same path on the adapter. Body {x, y} in metres in the map frame;"
+                    + " 409 while an error waits for an answer or in away mode.")
+    @PostMapping("/navigation/target")
+    public Map<String, Object> navigationTarget(@PathVariable String robotId,
+                                                @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/navigation/target", body);
+    }
+
+    @Operation(summary = "Cancel the current route",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/navigation/cancel")
+    public Map<String, Object> navigationCancel(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/navigation/cancel");
+    }
+
+    @Operation(summary = "Occupancy grid",
+            description = "Relayed to the same path on the adapter. Cells as [cx, cy, f|o, logodds] with the"
+                    + " pose, target and route for the Map tab.")
+    @GetMapping("/navigation/map")
+    public Map<String, Object> navigationMap(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/navigation/map");
+    }
+
+    @Operation(summary = "Clear the occupancy grid",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/navigation/map/reset")
+    public Map<String, Object> navigationMapReset(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/navigation/map/reset");
+    }
+
+    @Operation(summary = "Correct one map cell",
+            description = "Relayed to the same path on the adapter. Body {cx, cy, state: free|occupied|unknown}.")
+    @PostMapping("/navigation/map/cell")
+    public Map<String, Object> navigationMapCell(@PathVariable String robotId,
+                                                 @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/navigation/map/cell", body);
+    }
+
+    @Operation(summary = "Sonar sweep with the head",
+            description = "Relayed to the same path on the adapter. A head-pan range scan from where she"
+                    + " stands, run as an arbiter behavior.")
+    @PostMapping("/navigation/sweep")
+    public Map<String, Object> navigationSweep(@PathVariable String robotId,
+                                               @RequestBody(required = false) Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/navigation/sweep", body == null ? Map.of() : body);
+    }
+
+    @Operation(summary = "Run a skill with avoidance stood down",
+            description = "Relayed to the same path on the adapter. Body {behavior} or {command, settleS};"
+                    + " reactive avoidance resumes when the run ends.")
+    @PostMapping("/navigation/override")
+    public Map<String, Object> navigationOverride(@PathVariable String robotId,
+                                                  @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/navigation/override", body);
+    }
+
+    @Operation(summary = "Navigation errors",
+            description = "Relayed to the same path on the adapter. The error waiting for an answer, retry"
+                    + " streaks and the history.")
+    @GetMapping("/navigation/errors")
+    public Map<String, Object> navigationErrors(@PathVariable String robotId,
+                                                @RequestParam(required = false) Integer limit) {
+        return relayGet.execute(robotId, limit == null ? "/navigation/errors"
+                : "/navigation/errors?limit=" + limit);
+    }
+
+    @Operation(summary = "Answer the error state",
+            description = "Relayed to the same path on the adapter. Body {choice: trust_map|trust_sensor|manual,"
+                    + " note}.")
+    @PostMapping("/navigation/errors/respond")
+    public Map<String, Object> navigationErrorsRespond(@PathVariable String robotId,
+                                                       @RequestBody Map<String, Object> body) {
+        return relayPostWithBody.execute(robotId, "/navigation/errors/respond", body);
+    }
+
+    @Operation(summary = "Export training data",
+            description = "Relayed to the same path on the adapter. kind=actions|readings, format=csv|json,"
+                    + " since (epoch seconds), limit.")
+    @ApiResponse(responseCode = "200", content = {
+            @Content(mediaType = MediaType.APPLICATION_JSON_VALUE),
+            @Content(mediaType = "text/csv", schema = @Schema(type = "string"))})
+    @GetMapping("/navigation/data/export")
+    public ResponseEntity<byte[]> navigationDataExport(@PathVariable String robotId,
+                                                       @RequestParam Map<String, String> filters) {
+        BinaryContent content = relayGetBinary.execute(robotId,
+                "/navigation/data/export" + query(filters, EXPORT_FILTERS));
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(content.contentType()))
+                .cacheControl(CacheControl.noStore())
+                .body(content.body());
+    }
+
     @Operation(summary = "Proximity-leash state",
             description = "Relayed to the same path on the adapter. RSSI, zone and dead-man.")
     @GetMapping("/leash")
@@ -678,10 +806,18 @@ public class RobotController {
 
     private static final Set<String> SAMPLE_FILTERS =
             Set.of("limit", "since", "until", "source", "minAps", "every");
+    private static final Set<String> READING_FILTERS =
+            Set.of("limit", "since", "stored", "format");
+    private static final Set<String> EXPORT_FILTERS =
+            Set.of("limit", "since", "kind", "format");
 
     private static String sampleQuery(Map<String, String> filters) {
+        return query(filters, SAMPLE_FILTERS);
+    }
+
+    private static String query(Map<String, String> filters, Set<String> allowed) {
         String query = filters.entrySet().stream()
-                .filter(e -> SAMPLE_FILTERS.contains(e.getKey()) && !e.getValue().isBlank())
+                .filter(e -> allowed.contains(e.getKey()) && !e.getValue().isBlank())
                 .map(e -> e.getKey() + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8))
                 .collect(Collectors.joining("&"));
         return query.isEmpty() ? "" : "?" + query;

@@ -175,7 +175,8 @@ public class PythonAdapterHttpClient implements RobotAdapterPort {
         return exchange(() -> {
             ResponseEntity<byte[]> entity = http.get().uri(robotUri(robot, path))
                     .accept(MediaType.IMAGE_JPEG, MediaType.APPLICATION_OCTET_STREAM,
-                            MediaType.APPLICATION_JSON)
+                            MediaType.APPLICATION_JSON, MediaType.parseMediaType("text/csv"),
+                            MediaType.TEXT_PLAIN)
                     .retrieve().toEntity(byte[].class);
             MediaType type = entity.getHeaders().getContentType();
             return new BinaryContent(entity.getBody(),
