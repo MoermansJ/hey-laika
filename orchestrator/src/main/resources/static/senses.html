@@ -15,7 +15,8 @@
     .editbtn svg, .wrench svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     /* No gap between cards: a 1 px ring drawn by each card's shadow is the only separator,
        and an unused cell stays page-coloured. */
-    .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: 150px;
+    /* Row height follows the column width (set by sizeRows) so a 2x2 body is 4:3, the camera's frame. */
+    .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: var(--row, 150px);
       grid-auto-flow: dense; gap: 1px; padding: 1px; }
     .widget { box-shadow: 0 0 0 1px var(--ring); }
     .veil { position: absolute; inset: 0; background: rgba(247, 249, 250, 0.82); display: none; align-items: center;
@@ -56,8 +57,14 @@
     .widget.paused .pause { display: flex; }
     .pause span { display: flex; gap: 10px; }
     .pause span i { display: block; width: 12px; height: 44px; background: var(--ink-2); }
-    .cam { position: relative; flex: 1; min-height: 0; background: #111; overflow: hidden; }
+    .cam { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 100%; margin: auto 0; background: #000; overflow: hidden; }
     .cam img, .cam canvas { width: 100%; height: 100%; object-fit: contain; display: block; position: absolute; inset: 0; }
+    .cam .play { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 3;
+      background: #000; border: none; cursor: pointer; padding: 0; }
+    .cam.off .play { display: flex; }
+    .cam .play i { display: block; width: 0; height: 0; border-style: solid; border-width: 24px 0 24px 40px;
+      border-color: transparent transparent transparent #ecf0f1; }
+    .cam .play:hover i { border-left-color: #fff; }
     .cam svg { position: absolute; inset: 0; width: 100%; height: 100%; }
     .cam .box { fill: none; stroke: #2ecc71; stroke-width: 0.6; }
     .cam .box-label { fill: #2ecc71; font-size: 3px; }
@@ -321,17 +328,38 @@
 
     // ---- camera: feed, boxes, static when there is none ----------------------
 
+    // Three states: "feed" (frames arriving), "static" (the eyes run but no
+    // frame comes back: TV static), "off" (paused or no satellite: black with
+    // a play glyph that resumes the eyes).
     let fuzzTimer = null;
+    let camMode = "static";
+    let camConfigured = false;
     function camInit() {
-      body("camera").innerHTML = `<div class="cam"><canvas id="cam-fuzz" width="160" height="120"></canvas>` +
+      body("camera").innerHTML = `<div class="cam" id="cam"><canvas id="cam-fuzz" width="160" height="120"></canvas>` +
         `<img id="cam-img" alt="" hidden><svg id="cam-boxes" viewBox="0 0 100 75" preserveAspectRatio="none"></svg>` +
-        `<span class="corner" id="cam-corner">no feed</span>${PAUSE}</div>`;
+        `<span class="corner" id="cam-corner">no feed</span>` +
+        `<button class="play" id="cam-play" title="Resume the eyes" aria-label="Resume the camera"><i></i></button></div>`;
+      $("cam-play").addEventListener("click", async () => {
+        if (!camConfigured) { openTab("eyes"); return; }
+        try {
+          await api("/eyes/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: true }) });
+          await camStatus();
+        } catch (err) { setState(`resume failed: ${err.message}`, true); }
+      });
       if (fuzzTimer) clearInterval(fuzzTimer);
       fuzzTimer = setInterval(fuzz, 80);
     }
+    function setCamMode(mode) {
+      camMode = mode;
+      const cam = $("cam"), canvas = $("cam-fuzz"), img = $("cam-img");
+      if (!cam) return;
+      cam.classList.toggle("off", mode === "off");
+      canvas.hidden = mode !== "static";
+      img.hidden = mode !== "feed";
+    }
     function fuzz() {
       const canvas = $("cam-fuzz");
-      if (!canvas || canvas.hidden) return;
+      if (!canvas || canvas.hidden || camMode !== "static") return;
       const ctx = canvas.getContext("2d");
       const image = ctx.createImageData(canvas.width, canvas.height);
       const d = image.data;
@@ -341,33 +369,42 @@
       }
       ctx.putImageData(image, 0, 0);
     }
-    function showFeed(on) {
-      const canvas = $("cam-fuzz"), img = $("cam-img");
-      if (!canvas) return;
-      canvas.hidden = on; img.hidden = !on;
-    }
     function camFrame() {
       return new Promise((resolve) => {
         const img = $("cam-img");
-        if (!img || paused["camera"]) return resolve();   // no satellite or paused: no requests
-        img.onload = () => { showFeed(true); touched("camera"); img.onload = img.onerror = null; resolve(); };
-        img.onerror = () => { showFeed(false); img.onload = img.onerror = null; resolve(); };
+        if (!img || paused["camera"]) return resolve();   // off: no requests
+        img.onload = () => { setCamMode("feed"); touched("camera"); img.onload = img.onerror = null; resolve(); };
+        img.onerror = () => { if (!paused["camera"]) setCamMode("static"); img.onload = img.onerror = null; resolve(); };
         img.src = `${BASE}/eyes/snap?t=${Date.now()}`;
       });
     }
     async function camStatus() {
       try {
         const e = await api("/eyes");
+        camConfigured = !!e.configured;
         $("cam-boxes").innerHTML = (e.persons || []).map((p) =>
           `<rect class="box" x="${p.x * 100}" y="${p.y * 75}" width="${p.w * 100}" height="${p.h * 75}"/>` +
           `<text class="box-label" x="${p.x * 100 + 0.8}" y="${p.y * 75 + 3.2}">person ${Math.round(p.confidence * 100)}%</text>`).join("");
         const reason = !e.configured ? "SATELLITE_HOST not set" : !e.enabled ? "paused (battery saver or manual)" : null;
         setPaused("camera", reason);
-        $("cam-corner").textContent = !e.configured ? "no satellite" : !e.enabled ? ""
+        $("cam-corner").textContent = !e.configured ? "no satellite" : !e.enabled ? "paused"
           : `${e.fps ?? 0} fps · ${e.inferenceMs ?? "—"} ms · ${e.personCount || 0} person${e.personCount === 1 ? "" : "s"}`;
-        if (reason) showFeed(!!e.configured && !!e.enabled);
+        if (reason) setCamMode("off");
+        else if (camMode === "off") setCamMode("static");   // running again: static until a frame lands
       } catch (err) { $("cam-corner").textContent = err.message; }
     }
+
+    // Rows follow the column width so a 2x2 body (two rows plus the 1 px gap,
+    // minus padding and header) is 4:3 like the camera frame.
+    function sizeRows() {
+      const grid = $("grid");
+      const columns = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+      const col = (grid.clientWidth - 2 - (columns - 1)) / columns;
+      const bodyWidth = 2 * col + 1 - 22.4;          // two columns minus the card padding
+      const row = (bodyWidth * 0.75 + 17.6 + 28 - 1) / 2;   // body height plus padding and header, over two rows
+      grid.style.setProperty("--row", `${Math.max(120, Math.round(row))}px`);
+    }
+    new ResizeObserver(sizeRows).observe($("grid"));
 
     // ---- sonic ------------------------------------------------------------
 
