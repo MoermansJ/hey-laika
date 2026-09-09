@@ -215,6 +215,10 @@ class SensesService:
         logger.info("Pose reset to origin (heading %.0f, yaw %s)", heading, yaw)
         return self.pose()
 
+    def read_yaw(self) -> float | None:
+        """One `gp` read: the IMU's unwrapped yaw, None if unreadable."""
+        return self._read_yaw()
+
     def fuse_yaw(self) -> dict | None:
         """Replace the dead-reckoned heading with the IMU's. The first fuse
         after a restart adopts the current heading as the reference (the

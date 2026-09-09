@@ -218,3 +218,29 @@ open on Mocha's neighbour Laika. Record results as an addendum here.
 
 What cannot be done without the dog is exactly this list; everything above
 §8 runs in CI against the simulated room.
+
+## 9. Live session 2026-09-09 (evening) — what the floor taught before the battery quit
+
+Stack rebuilt and up, Laika on WiFi, satellite up, pack reading 39 %.
+
+- **Sweep (step 1) works on the dog.** Head pans, seven reads, echoes at
+  66 cm (60° right), 124 cm (60° left), 50 cm (90° left), open ahead. The
+  ranger was gated by the battery saver while she stood still; the pan
+  itself counts as motion and ungated it. `gp` yaw reads fine over the
+  WebSocket (−209.8°, unwrapped); `reset_pose` captured the reference.
+- **The firmware turn does not fit the transport.** `kwkL 60` over the
+  WebSocket completes only when the yaw target is reached; on this floor
+  that took longer than the 20 s skill timeout, the adapter reported
+  failure while she kept turning, and an abort found her 49° round. The
+  navigator now turns the way the gait learner does (`turnMode: vt`):
+  `kvtL/R`, poll the yaw at 10 Hz, `kup` five degrees early, hard deadline,
+  stop in a `finally`, then fuse the yaw. `turnMode: firmware` keeps the
+  old path for a faster floor. Steps 2 to 9 of §8 remain open.
+- **Battery.** 39 % → 27 % in three minutes of light use, then empty: the
+  2S 1000 mAh pack was at its knee. The saver's eco tier engaged at 30 %;
+  the runbook should start from a full pack (≈ 8.3 V), and the saver's
+  thresholds are voltage-derived so a sagging pack under gait load reads
+  lower than at rest.
+- The seeded `power_nap` behavior fails its `d` step over the WebSocket
+  (no completion for the servo-off token); pre-existing, noted for the
+  power-saver owner.

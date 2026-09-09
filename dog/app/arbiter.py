@@ -80,6 +80,13 @@ class Arbiter:
                              factory=factory, interruptible=interruptible,
                              on_end=on_end)
 
+    def interrupt_requested(self) -> bool:
+        """True once a preemption or stop is pending for the running behavior,
+        so a generator busy between yields can wind down early."""
+        with self._lock:
+            return bool(self._interrupt and self._current
+                        and self._current.get("interruptible", True))
+
     def current_behavior(self) -> str | None:
         """Name of the running behavior, without the run-log query status() makes."""
         with self._lock:

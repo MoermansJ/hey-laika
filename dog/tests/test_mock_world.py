@@ -24,6 +24,21 @@ def test_commands_move_the_dog_by_the_calibrated_stride():
     assert world.moves == 3
 
 
+def test_kvt_spins_until_the_next_skill():
+    clock = {"t": 100.0}
+    world = MockWorld(walls=DEFAULT_WALLS, clock=lambda: clock["t"])
+    assert world.apply_command("kvtL")
+    clock["t"] += 2.0
+    assert round(world.yaw(), 1) == 18.8               # 9.4 deg/s
+    clock["t"] += 1.0
+    world.apply_command("kup")
+    clock["t"] += 5.0
+    assert round(world.yaw(), 1) == 28.2               # stopped by kup
+    world.apply_command("kvtR")
+    clock["t"] += 1.0
+    assert round(world.yaw(), 1) == 18.8
+
+
 def test_box_ahead_shows_up_in_the_default_room():
     world = MockWorld()
     assert world.range_cm() == 120.0

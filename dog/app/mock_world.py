@@ -11,13 +11,15 @@ unwrapped, like the ICM42670 does.
 import math
 import random
 import re
+import time
 
 FIRST_CYCLE_M = 0.10
 PER_CYCLE_M = 0.112
 MAX_RANGE_M = 2.0
 
 _ADVANCE = re.compile(r"^k(wk|tr|cr|bk)F\s+(\d+)$")
-_TURN = re.compile(r"^k(?:wk|vt)([LR])(?:\s+(\d+))?$")
+_TURN = re.compile(r"^kwk([LR])\s+(\d+)$")
+_SPIN = re.compile(r"^kvt([LR])$")
 _JOINT = re.compile(r"^[mMiI]\s+0[\s:](-?\d+)")
 
 
@@ -34,7 +36,8 @@ DEFAULT_WALLS = rect(-1.0, -1.0, 3.0, 2.0) + rect(1.2, -0.15, 1.5, 0.15)
 class MockWorld:
     def __init__(self, walls: list[tuple] | None = None, x: float = 0.0,
                  y: float = 0.0, heading: float = 0.0, slip: float = 1.0,
-                 noise_cm: float = 0.0, rng: random.Random | None = None):
+                 noise_cm: float = 0.0, rng: random.Random | None = None,
+                 clock=time.time):
         self.walls = list(DEFAULT_WALLS if walls is None else walls)
         self.x, self.y, self.heading = x, y, heading
         self.slip = slip
@@ -42,21 +45,44 @@ class MockWorld:
         self.pan_deg = 0.0
         self._rng = rng or random.Random(7)
         self.moves = 0
+        # kvtL/R spins continuously until any other skill; the real dog
+        # turns ~9.4 deg/s, tests raise the rate to keep turns quick.
+        self.spin_deg_per_s = 9.4
+        self._spin = 0            # +1 left, -1 right, 0 still
+        self._spin_at = 0.0
+        self._clock = clock
 
     # ---- motion ------------------------------------------------------------
 
+    def _settle(self) -> None:
+        if self._spin:
+            now = self._clock()
+            self.heading += self._spin * self.spin_deg_per_s * (now - self._spin_at)
+            self._spin_at = now
+
     def advance(self, meters: float) -> None:
+        self._settle()
         rad = math.radians(self.heading)
         self.x += meters * self.slip * math.cos(rad)
         self.y += meters * self.slip * math.sin(rad)
         self.moves += 1
 
     def turn(self, degrees: float) -> None:
+        self._settle()
         self.heading += degrees
         self.moves += 1
 
     def apply_command(self, command: str) -> bool:
         command = command.strip()
+        self._settle()
+        if command.startswith("k"):
+            self._spin = 0
+        spin = _SPIN.match(command)
+        if spin:
+            self._spin = 1 if spin.group(1) == "L" else -1
+            self._spin_at = self._clock()
+            self.moves += 1
+            return True
         advance = _ADVANCE.match(command)
         if advance:
             cycles = int(advance.group(2))
@@ -65,7 +91,7 @@ class MockWorld:
             return True
         turn = _TURN.match(command)
         if turn:
-            degrees = float(turn.group(2) or 30)
+            degrees = float(turn.group(2))
             self.turn(degrees if turn.group(1) == "L" else -degrees)
             return True
         joint = _JOINT.match(command)
@@ -75,11 +101,13 @@ class MockWorld:
         return False
 
     def yaw(self) -> float:
+        self._settle()
         return self.heading
 
     # ---- sensing -----------------------------------------------------------
 
     def range_m(self, pan_deg: float | None = None) -> float | None:
+        self._settle()
         pan = self.pan_deg if pan_deg is None else pan_deg
         rad = math.radians(self.heading + pan)
         dx, dy = math.cos(rad), math.sin(rad)

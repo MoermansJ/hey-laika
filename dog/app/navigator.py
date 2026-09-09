@@ -45,6 +45,15 @@ DEFAULTS = {
     "walkExtraS": 0.8,
     "turnSPerDeg": 0.05,
     "turnExtraS": 1.5,
+    # Turns: "vt" spins in place with the continuous kvt gait while the host
+    # watches the IMU and stops with kup (the gait learner's validated
+    # turn); "firmware" uses kwkL/R deg, whose completion only arrives when
+    # the yaw target is reached, longer than the transport's 20 s window on
+    # a slow floor (live, 2026-09-09).
+    "turnMode": "vt",
+    "vtStopLeadDeg": 5.0,
+    "vtPollS": 0.1,
+    "vtSettleS": 1.0,
     "maxCyclesPerBurst": 3,
     "maxReplans": 8,
     "maxBlocked": 5,
@@ -376,16 +385,11 @@ class NavigationService:
             if leg["arrived"]:
                 return "arrived"
             if leg["turnDeg"]:
-                step = {"command": self.planner.turn_command(leg["turnDeg"]),
-                        "settleS": self._turn_settle(leg["turnDeg"])}
-                yield step
-                if step.get("failed"):
-                    if self._handle(RecoverableError(
-                            "action_failed", f"{step['command']} was not accepted",
-                            {"command": step["command"]}))["action"] != "retry":
-                        return "failed"
-                    continue
-                self.errors.clear("action_failed")
+                outcome = yield from self._turn_steps(leg["turnDeg"])
+                if outcome == "failed":
+                    return "failed"
+                if outcome == "interrupted":
+                    return "blocked" if self.state == "blocked" else "failed"
                 self._after_motion()
                 continue
             ahead = self._look_ahead()
@@ -413,6 +417,66 @@ class NavigationService:
             self._after_motion()
             if self.state == "blocked":
                 return "blocked"
+
+    def _turn_steps(self, turn_deg: float):
+        """Turn toward the leg. Returns "ok", "failed" or "interrupted".
+
+        vt mode: start the continuous turn-in-place gait, accumulate the
+        IMU yaw until the target (minus a stop lead for momentum) is swept,
+        then kup. The stop is in a finally block: no exit path, including
+        an arbiter preemption arriving between yields, leaves her spinning.
+        Firmware mode is the one-command kwkL/R deg turn."""
+        if self.config["turnMode"] != "vt":
+            step = {"command": self.planner.turn_command(turn_deg),
+                    "settleS": self._turn_settle(turn_deg)}
+            yield step
+            if step.get("failed"):
+                if self._handle(RecoverableError(
+                        "action_failed", f"{step['command']} was not accepted",
+                        {"command": step["command"]}))["action"] != "retry":
+                    return "failed"
+                return "ok"
+            self.errors.clear("action_failed")
+            return "ok"
+        start = self.senses.read_yaw()
+        if start is None:
+            if self._handle(RecoverableError(
+                    "sensor_anomaly", "IMU yaw unreadable before a turn",
+                    {"turnDeg": turn_deg}))["action"] != "retry":
+                return "failed"
+            return "ok"
+        direction = "L" if turn_deg > 0 else "R"
+        step = {"command": f"kvt{direction}", "settleS": 0.2}
+        yield step
+        if step.get("failed"):
+            self.controller.send_command("kup")
+            if self._handle(RecoverableError(
+                    "action_failed", f"{step['command']} was not accepted",
+                    {"command": step["command"]}))["action"] != "retry":
+                return "failed"
+            return "ok"
+        self.errors.clear("action_failed")
+        total, last = 0.0, start
+        lead = float(self.config["vtStopLeadDeg"])
+        deadline = self._clock() + min(45.0, abs(turn_deg) / 6.0 + 12.0)
+        interrupted = False
+        try:
+            while self._clock() < deadline:
+                if self.arbiter.interrupt_requested():
+                    interrupted = True
+                    break
+                yaw = self.senses.read_yaw()
+                if yaw is not None:
+                    total += (yaw - last + 180.0) % 360.0 - 180.0
+                    last = yaw
+                    if abs(total) >= abs(turn_deg) - lead:
+                        break
+                self._sleep(float(self.config["vtPollS"]))
+        finally:
+            self.controller.send_command("kup")
+        self.senses.fuse_yaw()      # the shadow did not model the spin
+        yield {"settleS": float(self.config["vtSettleS"])}
+        return "interrupted" if interrupted else "ok"
 
     def _turn_settle(self, turn_deg: float) -> float:
         return abs(turn_deg) * float(self.config["turnSPerDeg"]) + float(self.config["turnExtraS"])

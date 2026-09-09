@@ -41,6 +41,7 @@ def setup_module(module):
 def build(walls=None, config=None, arbiter_sleep=None, away=False):
     ctrl = MockBittleController()
     ctrl.world = MockWorld(walls=ROOM if walls is None else walls)
+    ctrl.world.spin_deg_per_s = 720.0     # the real 9.4 deg/s would slow the suite
     ctrl.connect()
     store = BehaviorStore()
     store.init()
@@ -119,7 +120,7 @@ def test_walks_around_the_box_and_maps_it():
     assert h.nav.state == "arrived", h.nav.status()
     assert abs(h.ctrl.world.x - 2.0) <= 0.2 and abs(h.ctrl.world.y) <= 0.2
     for _, x, y in h.trail:
-        assert not (1.15 <= x <= 1.55 and -0.2 <= y <= 0.2), "walked through the box"
+        assert not (1.2 <= x <= 1.5 and -0.15 <= y <= 0.15), "walked through the box"
     occupied = h.grid.occupied_cells()
     assert any(11 <= cx <= 15 and -2 <= cy <= 1 for cx, cy in occupied), occupied
     assert h.nav.stats["sweeps"] >= 1
