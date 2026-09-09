@@ -25,6 +25,7 @@ import time
 from abc import ABC, abstractmethod
 
 from app.config import Config
+from app.mock_world import MockWorld
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +201,9 @@ class MockBittleController(BaseBittleController):
         self.command_log: list[dict] = []
         self._battery_since = time.time()
         self._joint_angles = [0] * JOINT_COUNT
+        # A simulated room: bounded gaits move the dog through it, the
+        # ranger ray-casts its walls, `gp` reports its true heading.
+        self.world = MockWorld(noise_cm=1.5 if Config.MOCK_RICH else 0.0)
         # MOCK_RICH: synthesize the firmware's push/scan surfaces so the GUI
         # has live-looking data (leash RSSI walk, WiFi fingerprints).
         self.on_event_frame = None
@@ -221,6 +225,8 @@ class MockBittleController(BaseBittleController):
                                  daemon=True).start()
 
     def query(self, command: str) -> list[str] | None:
+        if command.strip() == "gp":
+            return [f"ICM: 0.00 0.00 9.81 {self.world.yaw():.2f} 0.0 0.0"]
         if Config.MOCK_RICH and command.startswith("XWs"):
             import random
 
@@ -248,9 +254,7 @@ class MockBittleController(BaseBittleController):
         return True
 
     def read_range_cm(self, pin: int) -> float | None:
-        import random
-
-        return round(random.uniform(18.0, 160.0), 1)
+        return self.world.range_cm()
 
     def query_binary(self, payload: bytes) -> list[str] | None:
         self.send_command(payload[:3].decode("ascii", errors="replace")
@@ -266,6 +270,7 @@ class MockBittleController(BaseBittleController):
         self.command_log.append({"command": command, "at": time.time()})
         # Keep the in-memory log bounded.
         self.command_log = self.command_log[-200:]
+        self.world.apply_command(command)
         logger.info("[mock] -> %s", command)
         return True
 

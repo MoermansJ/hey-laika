@@ -25,13 +25,18 @@ def setup_module(module):
     init_db()
 
 
+# The tests below reason in round 0.10 m cycles; the calibrated default
+# model (0.10 m first cycle, 0.112 m after) is exercised in test_navigator.
+LEGACY_STRIDE = {"strideMPerCycle": 0.10, "strideFirstCycleM": 0.10}
+
+
 SCAN = ['=\r\n{"ssid":"a","bssid":"AA:BB","rssi":-50,"channel":1}\r\n'
         '{"ssid":"b","bssid":"CC:DD","rssi":-80,"channel":11}\r\nX\r\n']
 
 
 def test_shadow_advances_and_turns():
     ctrl = FakeController()
-    senses = SensesService(ctrl)
+    senses = SensesService(ctrl, LEGACY_STRIDE)
     senses.instrument(ctrl)
     ctrl.send_command("kwkF 5")      # 5 cycles x 0.10 m east (heading 0)
     assert senses.pose()["x"] == 0.5
@@ -59,7 +64,7 @@ def test_shadow_ignores_non_motion_and_wraps_heading():
 
 def test_sniff_stores_pose_labeled_sample():
     ctrl = FakeController(scan_lines=SCAN)
-    senses = SensesService(ctrl)
+    senses = SensesService(ctrl, LEGACY_STRIDE)
     senses.instrument(ctrl)
     senses._sample_count = 0
     ctrl.send_command("kwkF 2")
@@ -146,7 +151,7 @@ def test_samples_filters_and_thinning():
 
 def test_pose_restored_on_init_and_reset():
     ctrl = FakeController(scan_lines=SCAN)
-    first = SensesService(ctrl)
+    first = SensesService(ctrl, LEGACY_STRIDE)
     first.instrument(ctrl)
     first._sample_count = 0
     ctrl.send_command("kwkL 90")
@@ -160,7 +165,8 @@ def test_pose_restored_on_init_and_reset():
     pose = second.pose()
     assert pose["heading"] == 90.0 and pose["y"] == 0.4
     assert pose["driftM"] > first.pose()["driftM"]
-    assert second.reset_pose(heading=45) == \
+    reset = second.reset_pose(heading=45)
+    assert {k: reset[k] for k in ("x", "y", "heading", "driftM")} == \
         {"x": 0.0, "y": 0.0, "heading": 45.0, "driftM": 0.0}
 
 
@@ -177,5 +183,5 @@ def test_samples_api_filters_and_reset():
                       ).status_code == 400
     reset = client.post("/api/robots/bittle-1/senses/pose/reset",
                         json={"heading": 10}).get_json()
-    assert reset["pose"] == {"x": 0.0, "y": 0.0, "heading": 10.0,
-                             "driftM": 0.0}
+    assert {k: reset["pose"][k] for k in ("x", "y", "heading", "driftM")} == \
+        {"x": 0.0, "y": 0.0, "heading": 10.0, "driftM": 0.0}

@@ -48,6 +48,12 @@ from app.poll_policy import PollPolicy
 from app.power import PowerTracker
 from app.robot_schema import SERVO_LIMITS, build_schema
 from app.senses import SensesService
+from app.map_builder import MapBuilder
+from app.nav_errors import ErrorHandler, ErrorState
+from app.navigator import NavigationRefused, NavigationService
+from app.occupancy import OccupancyGrid, FREE, OCCUPIED, UNKNOWN
+from app.path_planner import PathPlanner
+from app.sensor_log import ActionLog, SensorLog, readings_csv
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -148,6 +154,28 @@ power_saver = PowerSaver(
     ranger=ranger, motion_at=lambda: bittle.last_motion_at)
 power_saver.init()
 conversation.motion_allowed = power_saver.motion_allowed
+# Navigation (docs/design/NAVIGATION_PHASE1.md): occupancy grid, the sensor
+# loop with the reactive stop, click-to-go routes, sonar sweeps, and the
+# two-tier errors that end in the error state asking a human.
+nav_grid = OccupancyGrid(Config.NAV_GRID_RES_M)
+nav_builder = MapBuilder(nav_grid)
+nav_planner = PathPlanner(nav_grid)
+nav_errors = ErrorHandler()
+nav_error_state = ErrorState(
+    arbiter, mood=mood, handler=nav_errors, trigger=event_binder.trigger,
+    speak=(lambda text: mouth.say(text)) if Config.NAV_SPEAK else None)
+navigation = NavigationService(
+    bittle, arbiter, senses, ranger, nav_grid, nav_builder, nav_planner,
+    SensorLog(), ActionLog(), nav_errors, nav_error_state,
+    trigger=event_binder.trigger,
+    config={"stopCm": Config.NAV_STOP_CM, "sensorHz": Config.NAV_SENSOR_HZ,
+            "rangerOnHead": Config.NAV_RANGER_ON_HEAD,
+            "alwaysSample": Config.NAV_ALWAYS_SAMPLE},
+    battery_reader=lambda: _battery_reading().get("battery"),
+    is_away=lambda: leash.enabled and not Config.MOCK_RICH)
+navigation.instrument(bittle)
+if Config.NAV_ENABLED:
+    navigation.init()
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -1199,6 +1227,190 @@ def senses_sniff(robot_id: str):
                         "message": "no scan data (transport can't capture "
                                    "output, or no APs visible)"}), 502
     return jsonify({"robotId": robot_id, "sample": sample})
+
+
+# ---- Navigation: sensors, map, routes, errors (NAVIGATION_PHASE1.md) ----
+
+@app.errorhandler(NavigationRefused)
+def _navigation_refused(exc):
+    return jsonify({"error": "navigation_refused", "message": str(exc)}), 409
+
+
+@app.get("/api/robots/<robot_id>/sensors/latest")
+@robot_scoped
+def sensors_latest(robot_id: str):
+    """The newest sensor-loop reading (range ahead, pose, yaw, battery, the
+    command in flight). ?fresh=1 takes a reading now instead."""
+    fresh = request.args.get("fresh") == "1"
+    latest = navigation.sample() if fresh else navigation.sensor_log.latest()
+    return jsonify({"robotId": robot_id, "latest": latest,
+                    "fresh": fresh, **navigation.sensor_log.status()})
+
+
+@app.get("/api/robots/<robot_id>/sensors/recent")
+@robot_scoped
+def sensors_recent(robot_id: str):
+    """Readings newest first from the ring buffer, or ?stored=1 from SQLite
+    (with ?since= epoch seconds). ?format=csv for a file."""
+    limit = _num_param(request.args, "limit", 200, lo=1, hi=20000)
+    since = _num_param(request.args, "since", None, lo=0, kind=float)
+    if request.args.get("stored") == "1":
+        rows = navigation.sensor_log.stored(since=since, limit=limit)
+    else:
+        rows = navigation.sensor_log.recent(limit)
+        if since is not None:
+            rows = [r for r in rows if r["t"] >= since]
+    if request.args.get("format") == "csv":
+        return readings_csv(rows), 200, {"Content-Type": "text/csv; charset=utf-8"}
+    return jsonify({"robotId": robot_id, "readings": rows, "returned": len(rows)})
+
+
+@app.get("/api/robots/<robot_id>/navigation")
+@robot_scoped
+def navigation_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **navigation.status()})
+
+
+@app.post("/api/robots/<robot_id>/navigation/config")
+@robot_scoped
+def navigation_config(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    return jsonify({"robotId": robot_id, **navigation.configure(data)})
+
+
+@app.post("/api/robots/<robot_id>/navigation/target")
+@robot_scoped
+def navigation_target(robot_id: str):
+    """Go to a map position: {"x", "y"} in metres (the Map tab's click).
+    409 while an error waits for an answer or in away mode."""
+    data = request.get_json(silent=True) or {}
+    if data.get("x") is None or data.get("y") is None:
+        return jsonify({"error": "bad_request", "message": "'x' and 'y' required"}), 400
+    x = _num_param(data, "x", 0.0, lo=-100, hi=100, kind=float)
+    y = _num_param(data, "y", 0.0, lo=-100, hi=100, kind=float)
+    source = "agent" if data.get("source") == "agent" else "manual"
+    event_binder.reset_idle()
+    result = navigation.set_target(x, y, source=source)
+    log_activity("navigation", f"Target ({x:.2f}, {y:.2f}): {result['status']}")
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.post("/api/robots/<robot_id>/navigation/cancel")
+@robot_scoped
+def navigation_cancel(robot_id: str):
+    result = navigation.cancel()
+    log_activity("navigation", f"Route cancelled (was {result['was']})")
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.get("/api/robots/<robot_id>/navigation/map")
+@robot_scoped
+def navigation_map(robot_id: str):
+    """The occupancy grid for display: cells as [cx, cy, f|o, logodds],
+    plus the pose, target and route."""
+    return jsonify({"robotId": robot_id, **navigation.map_json()})
+
+
+@app.post("/api/robots/<robot_id>/navigation/map/reset")
+@robot_scoped
+def navigation_map_reset(robot_id: str):
+    count = nav_grid.counts()["touched"]
+    nav_grid.clear()
+    nav_grid.save()
+    log_activity("navigation", f"Map cleared ({count} cells)")
+    return jsonify({"robotId": robot_id, "cleared": count})
+
+
+@app.post("/api/robots/<robot_id>/navigation/map/cell")
+@robot_scoped
+def navigation_map_cell(robot_id: str):
+    """Human correction of one cell: {"cx", "cy", "state": free|occupied|unknown}."""
+    data = request.get_json(silent=True) or {}
+    state = data.get("state")
+    if state not in (FREE, OCCUPIED, UNKNOWN):
+        return jsonify({"error": "bad_request",
+                        "message": "'state' must be free, occupied or unknown"}), 400
+    cx = _num_param(data, "cx", None, lo=-10000, hi=10000)
+    cy = _num_param(data, "cy", None, lo=-10000, hi=10000)
+    if cx is None or cy is None:
+        return jsonify({"error": "bad_request", "message": "'cx' and 'cy' required"}), 400
+    return jsonify({"robotId": robot_id, "cell": nav_grid.set_state(cx, cy, state)})
+
+
+@app.post("/api/robots/<robot_id>/navigation/sweep")
+@robot_scoped
+def navigation_sweep(robot_id: str):
+    """Head-pan sonar sweep from where she stands (an arbiter behavior)."""
+    data = request.get_json(silent=True) or {}
+    result = navigation.sweep(source="agent" if data.get("source") == "agent" else "manual")
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.post("/api/robots/<robot_id>/navigation/override")
+@robot_scoped
+def navigation_override(robot_id: str):
+    """Run a behavior or one skill with reactive avoidance stood down until
+    it completes: {"behavior"} or {"command": "kjmp", "settleS"}."""
+    data = request.get_json(silent=True) or {}
+    try:
+        result = navigation.override(
+            behavior=data.get("behavior"), command=data.get("command"),
+            settle_s=_num_param(data, "settleS", 3.0, lo=0, hi=60, kind=float))
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    log_activity("navigation", f"Override {data.get('behavior') or data.get('command')}: "
+                               f"{result['status']}")
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.get("/api/robots/<robot_id>/navigation/errors")
+@robot_scoped
+def navigation_errors(robot_id: str):
+    limit = _num_param(request.args, "limit", 50, lo=1, hi=500)
+    return jsonify({"robotId": robot_id, **nav_error_state.status(),
+                    "handler": nav_errors.status(),
+                    "history": nav_errors.history(limit)})
+
+
+@app.post("/api/robots/<robot_id>/navigation/errors/respond")
+@robot_scoped
+def navigation_errors_respond(robot_id: str):
+    """The human's answer to the error state:
+    {"choice": trust_map|trust_sensor|manual, "note"}."""
+    data = request.get_json(silent=True) or {}
+    try:
+        result = nav_error_state.respond(str(data.get("choice")), note=data.get("note"))
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": "no_error", "message": str(exc)}), 409
+    log_activity("navigation", f"Error {result['errorId']} resolved: {result['choice']}")
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.get("/api/robots/<robot_id>/navigation/data/export")
+@robot_scoped
+def navigation_data_export(robot_id: str):
+    """Training data: motion actions with their sensor snapshot and outcome
+    (?kind=actions, default) or raw readings (?kind=readings), as JSON or
+    ?format=csv, optionally ?since= epoch seconds."""
+    since = _num_param(request.args, "since", None, lo=0, kind=float)
+    limit = _num_param(request.args, "limit", 20000, lo=1, hi=20000)
+    kind = request.args.get("kind", "actions")
+    as_csv = request.args.get("format") == "csv"
+    if kind == "readings":
+        rows = navigation.sensor_log.stored(since=since, limit=limit)
+        if as_csv:
+            return readings_csv(rows), 200, {"Content-Type": "text/csv; charset=utf-8"}
+    elif kind == "actions":
+        if as_csv:
+            return (navigation.action_log.export_csv(since=since, limit=limit), 200,
+                    {"Content-Type": "text/csv; charset=utf-8"})
+        rows = navigation.action_log.export(since=since, limit=limit)
+    else:
+        return jsonify({"error": "bad_request",
+                        "message": "'kind' must be actions or readings"}), 400
+    return jsonify({"robotId": robot_id, "kind": kind, "rows": rows, "returned": len(rows)})
 
 
 # ---- Proximity leash ----

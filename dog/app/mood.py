@@ -37,6 +37,7 @@ MOODS = {
     "warn":        (255, 90,  0,   "blink", 700,  255),   # leash stretching
     "lost":        (255, 0,   0,   "blink", 350,  255),   # leash at its end
     "low_battery": (255, 0,   0,   "pulse", 2500, 255),
+    "error":       (255, 0,   0,   "blink", 500,  255),   # navigation error state, 2 Hz
     "rainbow":     (0,   0,   0,   "rainbow", 600, 255),  # host-stepped, periodMs per colour
 }
 
@@ -63,6 +64,8 @@ EVENT_MOODS = {
     "leash.lost":       ("lost", None),
     "battery.low":      ("low_battery", None),
     "idle.timeout":     ("idle", None),
+    "nav.blocked":      ("alert", 1.5),
+    "nav.arrived":      ("happy", 2.0),
 }
 
 # voice.phrase picks its mood from the intent; anything not listed is "wake".

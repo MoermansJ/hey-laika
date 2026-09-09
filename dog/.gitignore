@@ -20,3 +20,7 @@ htmlcov/
 .idea/
 .vscode/
 Thumbs.db
+
+# SQLite write-ahead files next to bittle.db
+*.db-wal
+*.db-shm

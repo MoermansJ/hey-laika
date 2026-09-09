@@ -102,6 +102,16 @@ class Config:
     ULTRASONIC_PIN = int(os.getenv("ULTRASONIC_PIN", "0")) or None
     # Grove Speaker Plus on the other UART-socket pin (firmware PWM playback).
     SPEAKER_PIN = int(os.getenv("SPEAKER_PIN", "0")) or None
+    # Navigation (NAVIGATION_PHASE1.md): reactive stop distance, the
+    # sensor/avoidance loop rate, grid resolution, whether the ranger pans
+    # with the head (sonar sweeps), and whether the error state speaks.
+    NAV_ENABLED = _bool("NAV_ENABLED", True)
+    NAV_STOP_CM = float(os.getenv("NAV_STOP_CM", "25"))
+    NAV_SENSOR_HZ = float(os.getenv("NAV_SENSOR_HZ", "6"))
+    NAV_GRID_RES_M = float(os.getenv("NAV_GRID_RES_M", "0.10"))
+    NAV_RANGER_ON_HEAD = _bool("NAV_RANGER_ON_HEAD", True)
+    NAV_SPEAK = _bool("NAV_SPEAK", True)
+    NAV_ALWAYS_SAMPLE = _bool("NAV_ALWAYS_SAMPLE", False)
 
     # XIAO satellite (camera + mood light) reached over HTTP on its own WiFi
     # address; empty = no satellite (eyes and mood report disabled).

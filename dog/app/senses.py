@@ -43,7 +43,13 @@ logger = logging.getLogger(__name__)
 DEFAULTS = {
     "quietS": 5.0,          # no motion for this long -> a "motion gap"
     "minIntervalS": 60.0,   # politeness: at most one sniff per interval
-    "strideMPerCycle": 0.10,  # tape-measure calibrated later (spatial MVP)
+    # Stride model from the 2026-08-31 calibration session on the gym mat:
+    # the first cycle is a start-up transient, every next one is longer.
+    "strideFirstCycleM": 0.10,
+    "strideMPerCycle": 0.112,
+    # Straight walks drifted ~2.5-3 deg/cycle to the right on the mat; left
+    # at 0 here because the navigator fuses the IMU yaw after every burst.
+    "headingDriftDegPerCycle": 0.0,
 }
 
 RESTART_DRIFT_M = 0.5   # honesty penalty: the dog may have been carried
@@ -108,9 +114,15 @@ class SensesService:
         self._y = 0.0
         self._heading = 0.0          # degrees, 0 = boot orientation
         self._drift_m = 0.0          # accumulated commanded travel (honesty)
+        self._yaw_ref = None         # IMU yaw that corresponds to heading 0
+        self._last_yaw = None
+        self._yaw_fusions = 0
         self._last_sniff = 0.0
         self._sample_count = None    # lazy; filled on init
         self._stop = threading.Event()
+        # Navigation holds the sniffer while a route is running: the scan
+        # blocks the firmware ~2 s and has dropped the WebSocket.
+        self.hold_sniffer = lambda: False
 
     # ---- lifecycle ---------------------------------------------------------
 
@@ -157,13 +169,15 @@ class SensesService:
             advance = _ADVANCE.match(command)
             if advance:
                 gait, cycles = advance.group(1), int(advance.group(2))
-                meters = int(cycles) * self.config["strideMPerCycle"]
+                meters = self.stride_m(cycles)
                 if gait == "bk":
                     meters = -meters
+                self._heading += float(self.config["headingDriftDegPerCycle"]) * cycles
+                self._heading = (self._heading + 180.0) % 360.0 - 180.0
                 rad = math.radians(self._heading)
                 self._x += meters * math.cos(rad)
                 self._y += meters * math.sin(rad)
-                self._drift_m += abs(meters)
+                self._drift_m += abs(meters) * 0.15 + 0.01
                 return
             turn = _TURN.match(command)
             if turn:
@@ -176,24 +190,64 @@ class SensesService:
                 # Unmodeled motion: pose unchanged, uncertainty grows.
                 self._drift_m += 0.02
 
+    def stride_m(self, cycles: int) -> float:
+        if cycles <= 0:
+            return 0.0
+        return float(self.config["strideFirstCycleM"]) + \
+            float(self.config["strideMPerCycle"]) * (cycles - 1)
+
     def pose(self) -> dict:
         with self._lock:
             return {"x": round(self._x, 2), "y": round(self._y, 2),
                     "heading": round(self._heading, 1),
-                    "driftM": round(self._drift_m, 2)}
+                    "driftM": round(self._drift_m, 2),
+                    "yaw": None if self._last_yaw is None else round(self._last_yaw, 1),
+                    "yawFused": self._yaw_ref is not None}
 
     def reset_pose(self, heading: float = 0.0) -> dict:
+        yaw = self._read_yaw()
         with self._lock:
             self._x = self._y = 0.0
             self._heading = float(heading)
             self._drift_m = 0.0
-        logger.info("Pose reset to origin (heading %.0f)", heading)
+            self._last_yaw = yaw
+            self._yaw_ref = None if yaw is None else yaw - float(heading)
+        logger.info("Pose reset to origin (heading %.0f, yaw %s)", heading, yaw)
+        return self.pose()
+
+    def fuse_yaw(self) -> dict | None:
+        """Replace the dead-reckoned heading with the IMU's. The first fuse
+        after a restart adopts the current heading as the reference (the
+        yaw counts from boot, the map from the last reset), every later one
+        corrects it. Returns the correction applied, None when the transport
+        cannot read the IMU."""
+        yaw = self._read_yaw()
+        if yaw is None:
+            return None
+        with self._lock:
+            self._last_yaw = yaw
+            if self._yaw_ref is None:
+                self._yaw_ref = yaw - self._heading
+                correction = 0.0
+            else:
+                fused = (yaw - self._yaw_ref + 180.0) % 360.0 - 180.0
+                correction = (fused - self._heading + 180.0) % 360.0 - 180.0
+                self._heading = fused
+            self._yaw_fusions += 1
+            heading = self._heading
+        return {"yaw": round(yaw, 1), "heading": round(heading, 1),
+                "correctionDeg": round(correction, 1)}
+
+    def nudge_pose(self, dx: float, dy: float) -> dict:
+        with self._lock:
+            self._x += dx
+            self._y += dy
         return self.pose()
 
     # ---- opportunistic sniffer --------------------------------------------
 
     def _may_sniff(self, now: float) -> bool:
-        if not self.enabled or self._is_away():
+        if not self.enabled or self._is_away() or self.hold_sniffer():
             return False
         if now - self._last_sniff < self.config["minIntervalS"]:
             return False

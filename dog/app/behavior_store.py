@@ -157,6 +157,21 @@ SEED_BEHAVIORS = [
         "steps": [{"command": "b 26 8 26 8 21 4", "settleS": 0.5}],
         "interruptible": True, "cooldownS": 8,
     },
+    {
+        "name": "obstacle_stop",
+        "description": "Safety: something is right ahead — stop and step back",
+        "steps": [{"command": "kup", "settleS": 1.0},
+                  {"command": "kbkF 1", "settleS": 2.0},
+                  {"command": "kup", "settleS": 1.0}],
+        "interruptible": True, "cooldownS": 2,
+    },
+    {
+        "name": "error_halt",
+        "description": "Safety: navigation error — stand still and ask for help",
+        "steps": [{"command": "kup", "settleS": 1.5},
+                  {"command": "b 10 8 8 8", "settleS": 0.5}],
+        "interruptible": True, "cooldownS": 3,
+    },
 ]
 
 SEED_BINDINGS = [

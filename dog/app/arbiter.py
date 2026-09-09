@@ -55,15 +55,49 @@ class Arbiter:
     # ---- public API --------------------------------------------------------
 
     def submit(self, behavior_name: str, source: str = "manual",
-               priority: int = 2, cause: dict | None = None) -> dict:
-        from app.metrics import metrics
-
+               priority: int = 2, cause: dict | None = None,
+               suppress_avoidance: bool = False) -> dict:
         behavior = self.store.behavior(behavior_name)
         if behavior is None:
+            from app.metrics import metrics
             metrics.inc("behavior.rejected")
             return {"status": "rejected", "reason": "behavior not found"}
+        return self._enqueue(behavior_name, source, priority, cause,
+                             cooldown=behavior.get("cooldownS") or 0,
+                             suppress_avoidance=suppress_avoidance)
+
+    def submit_generator(self, name: str, factory, source: str = "manual",
+                         priority: int = 2, cause: dict | None = None,
+                         interruptible: bool = True,
+                         suppress_avoidance: bool = False, on_end=None) -> dict:
+        """A behavior whose steps come from code: `factory()` returns an
+        iterable of step dicts ({command, settleS}), typically a generator
+        that decides the next step after the previous one settled (a route
+        that re-reads the ranger between bursts). The arbiter still owns
+        execution, preemption at step boundaries and the run log."""
+        return self._enqueue(name, source, priority, cause, cooldown=0,
+                             suppress_avoidance=suppress_avoidance,
+                             factory=factory, interruptible=interruptible,
+                             on_end=on_end)
+
+    def current_behavior(self) -> str | None:
+        """Name of the running behavior, without the run-log query status() makes."""
         with self._lock:
-            cooldown = behavior.get("cooldownS") or 0
+            return self._current["behavior"] if self._current else None
+
+    def avoidance_suppressed(self) -> bool:
+        """True while the running behavior asked reactive avoidance to stand
+        down (an explicit override such as a jump over an obstacle)."""
+        with self._lock:
+            return bool(self._current and self._current.get("suppress_avoidance"))
+
+    def _enqueue(self, behavior_name: str, source: str, priority: int,
+                 cause: dict | None, cooldown: float, suppress_avoidance: bool,
+                 factory=None, interruptible: bool | None = None,
+                 on_end=None) -> dict:
+        from app.metrics import metrics
+
+        with self._lock:
             last = self._last_start.get(behavior_name, 0)
             if cooldown and time.time() - last < cooldown:
                 metrics.inc("behavior.rejected")
@@ -85,7 +119,11 @@ class Arbiter:
             submission = {"behavior": behavior_name, "source": source,
                           "priority": priority, "seq": self._seq,
                           "cause": cause or {"type": source},
-                          "run_id": str(uuid.uuid4())}
+                          "run_id": str(uuid.uuid4()),
+                          "suppress_avoidance": suppress_avoidance,
+                          "factory": factory, "on_end": on_end}
+            if interruptible is not None:
+                submission["interruptible"] = interruptible
             self._queue.append(submission)
             self._queue.sort(key=lambda s: (s["priority"], s["seq"]))
 
@@ -127,6 +165,8 @@ class Arbiter:
                 current["stepTotal"] = self._current.get("stepTotal", 0)
                 current["cause"] = self._current.get("cause")
                 current["runId"] = self._current.get("run_id")
+                current["suppressAvoidance"] = bool(self._current.get("suppress_avoidance"))
+                current["generated"] = self._current.get("factory") is not None
             queued = [{**{k: s[k] for k in ("behavior", "source", "priority")},
                        "cause": s.get("cause"), "runId": s.get("run_id")}
                       for s in self._queue]
@@ -149,11 +189,16 @@ class Arbiter:
                 if self._stop_thread:
                     return
                 submission = self._queue.pop(0)
-                behavior = self.store.behavior(submission["behavior"])
-                if behavior is None:
-                    continue
+                if submission.get("factory") is not None:
+                    behavior = {"name": submission["behavior"], "steps": None,
+                                "interruptible": submission.get("interruptible", True)}
+                else:
+                    behavior = self.store.behavior(submission["behavior"])
+                    if behavior is None:
+                        continue
                 submission["interruptible"] = behavior.get("interruptible", True)
-                submission["stepTotal"] = len(behavior["steps"])
+                submission["stepTotal"] = (len(behavior["steps"])
+                                           if behavior["steps"] is not None else 0)
                 submission["step"] = 0
                 self._current = submission
                 self._interrupt = False
@@ -168,26 +213,43 @@ class Arbiter:
                                       run_id=submission["run_id"])
         self._notify()
         status, detail = "complete", ""
+        steps = behavior["steps"]
+        generated = steps is None
         try:
-            for index, step in enumerate(behavior["steps"]):
+            if generated:
+                steps = submission["factory"]()
+            for index, step in enumerate(steps):
                 with self._lock:
                     if self._interrupt and submission["interruptible"]:
                         status, detail = "interrupted", "preempted/stopped"
                         break
                     submission["step"] = index + 1
-                sent = self.controller.send_command(step["command"])
-                self.last_motion_at = time.time()
-                if not sent and step["command"] != "kup":
-                    logger.warning("Behavior %s step failed: %s",
-                                   behavior["name"], step["command"])
-                    status = "failed"
-                    detail = f"step {index + 1} failed: {step['command']}"
-                self._sleep(float(step.get("settleS", 1.0)))
+                command = (step or {}).get("command")
+                if command:
+                    sent = self.controller.send_command(command)
+                    self.last_motion_at = time.time()
+                    if not sent and command != "kup":
+                        logger.warning("Behavior %s step failed: %s",
+                                       behavior["name"], command)
+                        if generated:
+                            step["failed"] = True   # the generator decides
+                        else:
+                            status = "failed"
+                            detail = f"step {index + 1} failed: {command}"
+                if step and step.get("status"):
+                    status, detail = step["status"], step.get("detail", "")
+                self._sleep(float((step or {}).get("settleS", 1.0)))
                 self._notify()
         except Exception as exc:
             logger.exception("Behavior %s crashed", behavior["name"])
             status, detail = "failed", str(exc)
         finally:
+            if generated and hasattr(steps, "close"):
+                try:
+                    steps.close()
+                except Exception:
+                    logger.exception("Generator for %s did not close cleanly",
+                                     behavior["name"])
             with self._lock:
                 preempted_by = (self._interrupted_by
                                 if status == "interrupted" else None)
@@ -196,6 +258,12 @@ class Arbiter:
                 self._interrupted_by = None
             self.store.log_end(run_id, status, detail,
                                preempted_by=preempted_by)
+            on_end = submission.get("on_end")
+            if on_end is not None:
+                try:
+                    on_end(status, detail)
+                except Exception:
+                    logger.exception("on_end for %s failed", behavior["name"])
             self._notify()
 
     def _notify(self) -> None:
