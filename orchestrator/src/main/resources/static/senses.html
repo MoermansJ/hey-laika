@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Senses</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%233498db%22/></svg>">
+  <link rel="stylesheet" href="console.css">
+  <style>
+    .topbar { margin-bottom: 0.8rem; }
+    .grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: 150px;
+      grid-auto-flow: dense; gap: 0.75rem; }
+    @media (max-width: 1100px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    @media (max-width: 700px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .widget { position: relative; background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
+      padding: 0.6rem 0.75rem; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+    .widget.hidden-w { display: none; }
+    .w1x1 { grid-column: span 1; grid-row: span 1; }
+    .w2x1 { grid-column: span 2; grid-row: span 1; }
+    .w2x2 { grid-column: span 2; grid-row: span 2; }
+    .w4x1 { grid-column: span 4; grid-row: span 1; }
+    .widget h2 { margin: 0 0 0.35rem; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--ink-2); display: flex; align-items: center; gap: 0.4rem; padding-right: 2rem; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #bdc3c7; flex: 0 0 auto; }
+    .dot.fresh { background: #27ae60; } .dot.aging { background: var(--warn); } .dot.stale { background: #bdc3c7; }
+    .dot.paused { background: #8e44ad; }
+    .body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; font-size: 0.82rem; }
+    .big { font-size: 2rem; font-weight: 600; line-height: 1; color: var(--ink); }
+    .big small { font-size: 0.8rem; font-weight: 400; color: var(--muted); margin-left: 0.3rem; }
+    .sub { font-size: 0.76rem; color: var(--ink-2); margin-top: 0.25rem; }
+    .line { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.78rem; padding: 0.1rem 0; }
+    .line span:last-child { color: var(--ink-2); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wrench { position: absolute; top: 0.45rem; right: 0.45rem; width: 26px; height: 26px; display: flex;
+      align-items: center; justify-content: center; border: 1px solid var(--ring); border-radius: 7px;
+      background: var(--surface); color: var(--ink-2); opacity: 0; cursor: pointer; padding: 0;
+      transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease; }
+    .widget:hover .wrench { opacity: 1; }
+    .wrench:hover, .wrench:focus-visible { background: var(--ink); color: var(--surface); border-color: var(--ink); opacity: 1; }
+    .wrench svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .veil { position: absolute; inset: 0; background: rgba(247, 249, 250, 0.82); display: none; align-items: center;
+      justify-content: center; text-align: center; font-size: 0.78rem; color: var(--ink-2); padding: 1rem; z-index: 2; }
+    .widget.paused .veil { display: flex; }
+    .cam { position: relative; flex: 1; min-height: 0; background: #111; border-radius: 6px; overflow: hidden; }
+    .cam img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .cam svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .cam .box { fill: none; stroke: #2ecc71; stroke-width: 0.6; }
+    .cam .box-label { fill: #2ecc71; font-size: 3px; }
+    .cam .corner { position: absolute; left: 0.4rem; bottom: 0.3rem; color: #ecf0f1; font-size: 0.7rem;
+      background: rgba(0,0,0,0.45); padding: 0.1rem 0.4rem; border-radius: 4px; }
+    .spark { width: 100%; height: 34px; display: block; }
+    .bar { height: 10px; background: #ecf0f1; border-radius: 5px; overflow: hidden; margin-top: 0.35rem; }
+    .bar div { height: 100%; background: #27ae60; }
+    .bar.warn div { background: var(--warn); } .bar.bad div { background: var(--critical); }
+    .radar, .compass, .minimap { width: 100%; height: 100%; display: block; }
+    .tick { font-size: 0.74rem; line-height: 1.35; overflow: auto; flex: 1; }
+    .tick div { display: flex; gap: 0.5rem; border-top: 1px dashed var(--ring); padding: 0.1rem 0; }
+    .tick time { color: var(--muted); flex: 0 0 auto; }
+    .tick b { font-weight: 600; color: var(--ink-2); flex: 0 0 auto; }
+    .banner { display: none; border: 1px solid var(--critical); background: #fdf2f2; border-radius: 10px;
+      padding: 0.6rem 0.8rem; margin-bottom: 0.75rem; font-size: 0.82rem; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .banner.on { display: flex; }
+    .banner b { color: #922b21; }
+    .config { display: none; flex-wrap: wrap; gap: 0.4rem 1rem; font-size: 0.78rem; color: var(--ink-2);
+      margin-bottom: 0.75rem; }
+    .config.on { display: flex; }
+    .state { font-size: 0.78rem; color: var(--muted); }
+    .swatch { width: 100%; height: 34px; border-radius: 6px; border: 1px solid var(--ring); }
+    .navstate { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+      background: #ecf0f1; color: #2c3e50; }
+    .navstate.moving, .navstate.planning { background: #d6eaf8; color: #1b4f72; }
+    .navstate.arrived { background: #d5f5e3; color: #1e8449; }
+    .navstate.blocked, .navstate.unreachable, .navstate.failed { background: #fdebd0; color: #7e5109; }
+    .navstate.error { background: #fadbd8; color: #922b21; }
+    .row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.3rem; }
+    .row button { font-size: 0.74rem; padding: 0.2rem 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>Senses — everything she knows right now</h1>
+    <select id="robot-select" title="Robot"></select>
+    <span class="state" id="state"></span>
+    <div class="spacer"></div>
+    <label class="muted"><input type="checkbox" id="live" checked> live</label>
+    <button id="customise" title="Show or hide widgets">Widgets</button>
+  </div>
+
+  <div class="config" id="config"></div>
+  <div class="banner" id="banner"></div>
+  <div class="grid" id="grid"></div>
+
+  <script src="common.js"></script>
+  <script src="cards.js"></script>
+  <script src="nav.js" defer></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let BASE = "";
+    let ROBOT = "";
+    const EMBEDDED = new URLSearchParams(location.search).has("embedded");
+    const KEY = "heyLaikaSensesHidden";
+
+    // Each widget: size, the tab that configures it, a renderer. The
+    // wrench opens that tab: in the robot page (embedded) the parent
+    // switches tabs, standalone the browser opens the page.
+    const TAB_PAGES = { eyes: "eyes.html", map: "map.html", ears: "ears.html", leash: "leash.html",
+      control: "control.html", behavior: "behavior.html", voice: "voice.html", mind: "mind.html",
+      activity: "index.html", metrics: "metrics.html" };
+
+    const WRENCH = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0 5 5l-7.4 7.4a2.1 2.1 0 0 1-3-3l7.4-7.4z"/><path d="M14.7 6.3 18 3l3 3-3.3 3.3"/></svg>`;
+
+    const WIDGETS = [
+      { id: "camera", title: "Camera", size: "w2x2", tab: "eyes" },
+      { id: "sonic", title: "Sonic", size: "w2x1", tab: "map" },
+      { id: "battery", title: "Battery", size: "w2x1", tab: "mind" },
+      { id: "radar", title: "Radar (last sweep)", size: "w2x2", tab: "map" },
+      { id: "heading", title: "Heading", size: "w1x1", tab: "map" },
+      { id: "mood", title: "Mood", size: "w1x1", tab: "control" },
+      { id: "mic", title: "Microphone", size: "w2x1", tab: "ears" },
+      { id: "wifi", title: "WiFi", size: "w2x1", tab: "leash" },
+      { id: "minimap", title: "Map", size: "w2x1", tab: "map" },
+      { id: "navigation", title: "Navigation", size: "w2x1", tab: "map" },
+      { id: "motion", title: "Motion", size: "w1x1", tab: "behavior" },
+      { id: "satellite", title: "Satellite", size: "w1x1", tab: "eyes" },
+      { id: "events", title: "Events", size: "w4x1", tab: "activity" },
+      { id: "speaker", title: "Speaker", size: "w2x1", tab: "voice" },
+    ];
+
+    const fresh = {};       // widget id -> epoch ms of last good update
+    const paused = {};      // widget id -> reason string or null
+
+    function hiddenSet() {
+      try { return new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch { return new Set(); }
+    }
+    function saveHidden(set) {
+      try { localStorage.setItem(KEY, JSON.stringify([...set])); } catch {}
+    }
+
+    function openTab(tab) {
+      if (EMBEDDED && window.parent !== window) {
+        window.parent.postMessage({ type: "laika-open-tab", tab }, "*");
+        return;
+      }
+      const page = TAB_PAGES[tab] || "index.html";
+      location.href = page === "index.html" ? `index.html#robot/${encodeURIComponent(ROBOT)}`
+        : `${page}?robot=${encodeURIComponent(ROBOT)}`;
+    }
+
+    function build() {
+      const hidden = hiddenSet();
+      $("grid").innerHTML = WIDGETS.map((w) =>
+        `<section class="widget ${w.size}${hidden.has(w.id) ? " hidden-w" : ""}" id="w-${w.id}" data-id="${w.id}">` +
+        `<h2><span class="dot" id="dot-${w.id}"></span>${esc(w.title)}</h2>` +
+        `<button class="wrench" data-tab="${w.tab}" title="Configure on the ${esc(w.tab)} tab" aria-label="Configure ${esc(w.title)}">${WRENCH}</button>` +
+        `<div class="body" id="body-${w.id}"><span class="empty">…</span></div>` +
+        `<div class="veil" id="veil-${w.id}"></div></section>`).join("");
+      document.querySelectorAll(".wrench").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
+      $("config").innerHTML = WIDGETS.map((w) =>
+        `<label><input type="checkbox" data-id="${w.id}" ${hidden.has(w.id) ? "" : "checked"}> ${esc(w.title)}</label>`).join("");
+      $("config").querySelectorAll("input").forEach((cb) => cb.addEventListener("change", () => {
+        const set = hiddenSet();
+        if (cb.checked) set.delete(cb.dataset.id); else set.add(cb.dataset.id);
+        saveHidden(set);
+        $(`w-${cb.dataset.id}`).classList.toggle("hidden-w", !cb.checked);
+      }));
+    }
+    $("customise").addEventListener("click", () => $("config").classList.toggle("on"));
+
+    function body(id) { return $(`body-${id}`); }
+    function touched(id) { fresh[id] = Date.now(); }
+    function setPaused(id, reason) {
+      paused[id] = reason || null;
+      const w = $(`w-${id}`);
+      w.classList.toggle("paused", !!reason);
+      $(`veil-${id}`).textContent = reason || "";
+    }
+    function tickDots() {
+      const now = Date.now();
+      WIDGETS.forEach((w) => {
+        const dot = $(`dot-${w.id}`);
+        const age = fresh[w.id] ? (now - fresh[w.id]) / 1000 : Infinity;
+        dot.className = "dot " + (paused[w.id] ? "paused" : age < 6 ? "fresh" : age < 20 ? "aging" : "stale");
+        dot.title = paused[w.id] ? paused[w.id] : age === Infinity ? "no data yet" : `${Math.round(age)} s ago`;
+      });
+    }
+    setInterval(tickDots, 1000);
+
+    const api = (path, options) => hlApi(BASE, path, options);
+    const live = () => $("live").checked;
+
+    function spark(values, { max = null, misses = true, width = 300, height = 34 } = {}) {
+      const vals = values.map((v) => (v == null ? null : Number(v)));
+      const known = vals.filter((v) => v != null);
+      if (!known.length) return `<svg class="spark" viewBox="0 0 ${width} ${height}"></svg>`;
+      const top = max ?? Math.max(...known, 1);
+      const step = width / Math.max(1, vals.length - 1);
+      let d = "", dots = "";
+      vals.forEach((v, i) => {
+        const x = i * step;
+        if (v == null) { if (misses) dots += `<circle cx="${x.toFixed(1)}" cy="${height - 3}" r="1.6" fill="#e74c3c"/>`; d += " M"; return; }
+        const y = height - 2 - (Math.min(v, top) / top) * (height - 6);
+        d += (d.endsWith("M") || !d) ? `${d ? "" : "M"}${x.toFixed(1)},${y.toFixed(1)}` : ` L${x.toFixed(1)},${y.toFixed(1)}`;
+      });
+      d = d.replace(/ M(?= ?M)/g, "").replace(/M$/, "");
+      return `<svg class="spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">` +
+        `<path d="${d}" fill="none" stroke="#2980b9" stroke-width="1.5"/>${dots}</svg>`;
+    }
+
+    // ---- camera ----------------------------------------------------------
+
+    let camReady = false;
+    function camInit() {
+      body("camera").innerHTML = `<div class="cam"><img id="cam-img" alt="camera" hidden>` +
+        `<svg id="cam-boxes" viewBox="0 0 100 75" preserveAspectRatio="none"></svg>` +
+        `<span class="corner" id="cam-corner">no frame</span></div>`;
+      camReady = true;
+    }
+    function camFrame() {
+      return new Promise((resolve) => {
+        const img = $("cam-img");
+        if (!img || paused["camera"]) return resolve();   // no satellite: no requests
+        img.onload = () => { img.hidden = false; touched("camera"); img.onload = img.onerror = null; resolve(); };
+        img.onerror = () => { img.hidden = true; img.onload = img.onerror = null; resolve(); };
+        img.src = `${BASE}/eyes/snap?t=${Date.now()}`;
+      });
+    }
+    async function camStatus() {
+      try {
+        const e = await api("/eyes");
+        const boxes = (e.persons || []).map((p) =>
+          `<rect class="box" x="${p.x * 100}" y="${p.y * 75}" width="${p.w * 100}" height="${p.h * 75}"/>` +
+          `<text class="box-label" x="${p.x * 100 + 0.8}" y="${p.y * 75 + 3.2}">person ${Math.round(p.confidence * 100)}%</text>`).join("");
+        $("cam-boxes").innerHTML = boxes;
+        $("cam-corner").textContent = !e.configured ? "no satellite" : !e.enabled ? "paused"
+          : `${e.fps ?? 0} fps · ${e.inferenceMs ?? "—"} ms · ${e.personCount || 0} person${e.personCount === 1 ? "" : "s"}`;
+        setPaused("camera", !e.configured ? "SATELLITE_HOST not set" : !e.enabled ? "paused (battery saver or manual)" : null);
+      } catch (err) { $("cam-corner").textContent = err.message; }
+    }
+
+    // ---- sonic ------------------------------------------------------------
+
+    let navStatus = null;
+    async function sonic() {
+      try {
+        const r = await api("/senses/range");
+        const stop = navStatus?.avoidance?.stopCm ?? 25;
+        const pan = navStatus?.sensors?.latest?.panDeg;
+        const v = r.distanceCm;
+        body("sonic").innerHTML =
+          `<div class="big" style="color:${v != null && v <= stop ? "var(--critical)" : "var(--ink)"}">${v == null ? "—" : Math.round(v)}<small>${v == null ? (r.gated ? "paused" : "no echo") : "cm ahead"}</small></div>` +
+          spark(r.recent || [], { max: 200 }) +
+          `<div class="sub">${r.reads} reads · ${r.misses} misses · stop at ${stop} cm${pan ? ` · head ${pan}°` : ""}</div>`;
+        setPaused("sonic", r.gated ? "paused: standing still (battery saver)" : null);
+        if (!r.gated) touched("sonic");
+      } catch (err) { body("sonic").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    // ---- battery ----------------------------------------------------------
+
+    const batterySamples = [];   // [t, pct] over the last hour
+    async function battery() {
+      try {
+        const [s, saver, power] = await Promise.all([api("/status"), api("/power/saver"), api("/power")]);
+        const pct = s.battery;
+        const now = Date.now() / 1000;
+        if (pct != null) { batterySamples.push([now, pct]); while (batterySamples.length && now - batterySamples[0][0] > 3600) batterySamples.shift(); }
+        let drain = null;
+        if (batterySamples.length > 2) {
+          const [t0, p0] = batterySamples[0], [t1, p1] = batterySamples[batterySamples.length - 1];
+          if (t1 - t0 > 120) drain = (p0 - p1) / ((t1 - t0) / 3600);
+        }
+        const emptyIn = drain && drain > 0 && pct != null ? Math.round((pct - 8) / drain * 60) : null;
+        const cls = pct == null ? "" : pct <= 15 ? "bad" : pct <= 30 ? "warn" : "";
+        body("battery").innerHTML =
+          `<div class="big">${pct == null ? "—" : Math.round(pct)}<small>%</small> <span class="navstate ${saver.tier === "active" ? "arrived" : saver.tier === "critical" ? "error" : "blocked"}">${esc(saver.tier || "?")}</span></div>` +
+          `<div class="bar ${cls}"><div style="width:${Math.max(0, Math.min(100, pct || 0))}%"></div></div>` +
+          `<div class="sub">${drain != null ? `${drain.toFixed(1)} %/h${emptyIn != null ? ` · empty in ~${emptyIn} min` : ""}` : "drain: collecting…"}` +
+          `${power.predictedMinutesLeft != null ? ` · tracker says ${Math.round(power.predictedMinutesLeft)} min` : ""}` +
+          `${saver.reasons && saver.reasons.length ? ` · ${esc(saver.reasons.join(", "))}` : ""}</div>`;
+        setPaused("battery", s.connected === false ? "robot offline" : null);
+        if (pct != null) touched("battery");
+      } catch (err) { body("battery").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    // ---- radar, heading, minimap, navigation (one /navigation poll) -------
+
+    function radar() {
+      const sw = navStatus?.lastSweep;
+      const stop = navStatus?.avoidance?.stopCm ?? 25;
+      if (!sw) { body("radar").innerHTML = `<span class="empty">no sweep yet — run one from the Map tab</span>`; return; }
+      const W = 200, H = 120, cx = W / 2, cy = H - 8, R = H - 16;
+      let html = `<svg class="radar" viewBox="0 0 ${W} ${H}">`;
+      [0.5, 1, 1.5, 2].forEach((m) => {
+        const r = (m / 2) * R;
+        html += `<path d="M${(cx - r).toFixed(1)},${cy} A${r},${r} 0 0 1 ${(cx + r).toFixed(1)},${cy}" fill="none" stroke="#e3e8ea"/>` +
+          `<text x="${(cx + r + 1).toFixed(1)}" y="${cy - 1}" font-size="6" fill="#95a5a6">${m}</text>`;
+      });
+      sw.readings.forEach((rd) => {
+        const a = (90 + rd.panDeg) * Math.PI / 180;     // pan left = counter-clockwise on screen
+        const d = rd.rangeCm == null ? 2.0 : Math.min(2.0, rd.rangeCm / 100);
+        const r = (d / 2) * R;
+        const x = cx + Math.cos(a) * r, y = cy - Math.sin(a) * r;
+        html += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${rd.rangeCm == null ? "#d5dbdb" : "rgba(46,204,113,0.6)"}" stroke-width="3" stroke-linecap="round"/>`;
+        if (rd.rangeCm != null) html += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${rd.rangeCm <= stop ? "#e74c3c" : "#2c3e50"}"/>`;
+      });
+      html += `<polygon points="${cx},${cy - 6} ${cx - 4},${cy + 3} ${cx + 4},${cy + 3}" fill="#e74c3c"/></svg>`;
+      body("radar").innerHTML = html + `<div class="sub">${new Date(sw.at * 1000).toLocaleTimeString()} · ${sw.hits} echoes · ${sw.freed} cells freed${sw.contradictions?.length ? ` · ${sw.contradictions.length} contradiction(s)` : ""}</div>`;
+      touched("radar");
+    }
+
+    function heading() {
+      const p = navStatus?.pose;
+      if (!p) return;
+      const W = 100, H = 100, cx = 50, cy = 50, R = 40;
+      const needle = (deg, color, len) => {
+        const a = deg * Math.PI / 180;
+        return `<line x1="${cx}" y1="${cy}" x2="${(cx + Math.cos(a) * len).toFixed(1)}" y2="${(cy - Math.sin(a) * len).toFixed(1)}" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`;
+      };
+      let html = `<svg class="compass" viewBox="0 0 ${W} ${H}"><circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#e3e8ea"/>` +
+        `<text x="${cx + R + 3}" y="${cy + 3}" font-size="8" fill="#95a5a6">+x</text>`;
+      if (p.yaw != null && !p.yawFused) html += needle(p.heading, "#bdc3c7", R - 4);
+      html += needle(p.heading, "#e74c3c", R - 4) + `<circle cx="${cx}" cy="${cy}" r="3" fill="#2c3e50"/></svg>`;
+      body("heading").innerHTML = `<div style="display:flex;gap:0.5rem;align-items:center;height:100%"><div style="flex:0 0 46%;height:100%">${html}</div>` +
+        `<div><div class="big" style="font-size:1.4rem">${p.heading}<small>°</small></div><div class="sub">yaw ${p.yaw != null ? p.yaw + "°" : "—"}${p.yawFused ? " fused" : ""}<br>±${p.driftM} m</div></div></div>`;
+      touched("heading");
+    }
+
+    let mapData = null;
+    async function minimap() {
+      try {
+        mapData = await api("/navigation/map");
+        const cells = mapData.cells || [], r = mapData.resolutionM, pose = mapData.pose;
+        const b = mapData.bounds;
+        const xs = [pose.x], ys = [pose.y];
+        if (b) { xs.push(b.minCx * r, (b.maxCx + 1) * r); ys.push(b.minCy * r, (b.maxCy + 1) * r); }
+        if (mapData.target) { xs.push(mapData.target.x); ys.push(mapData.target.y); }
+        const W = 220, H = 100, pad = 6;
+        const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+        const scale = Math.min((W - 2 * pad) / Math.max(1, maxX - minX), (H - 2 * pad) / Math.max(1, maxY - minY));
+        const mx = (minX + maxX) / 2, my = (minY + maxY) / 2;
+        const sx = (x) => W / 2 + (x - mx) * scale, sy = (y) => H / 2 - (y - my) * scale;
+        const size = Math.max(1, r * scale);
+        let html = `<svg class="minimap" viewBox="0 0 ${W} ${H}">`;
+        cells.forEach(([cx, cy, st, lo]) => {
+          html += `<rect x="${sx(cx * r).toFixed(1)}" y="${sy((cy + 1) * r).toFixed(1)}" width="${size.toFixed(1)}" height="${size.toFixed(1)}" fill="${st === "o" ? "rgba(44,62,80,0.8)" : "rgba(46,204,113,0.3)"}"/>`;
+        });
+        if (mapData.target) html += `<circle cx="${sx(mapData.target.x).toFixed(1)}" cy="${sy(mapData.target.y).toFixed(1)}" r="4" fill="none" stroke="#8e44ad" stroke-width="1.5"/>`;
+        html += `<g transform="translate(${sx(pose.x).toFixed(1)} ${sy(pose.y).toFixed(1)}) rotate(${(-pose.heading).toFixed(1)})"><polygon points="7,0 -4,-4 -2,0 -4,4" fill="#e74c3c"/></g></svg>`;
+        body("minimap").innerHTML = html;
+        touched("minimap");
+      } catch (err) { body("minimap").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    async function navigation() {
+      try {
+        navStatus = await api("/navigation");
+        const n = navStatus, t = n.target;
+        body("navigation").innerHTML =
+          `<div class="line"><span><span class="navstate ${esc(n.state)}">${esc(n.state)}</span></span><span>${t ? `→ ${t.x}, ${t.y} m` : "no target"}</span></div>` +
+          `<div class="line"><span>Remaining</span><span>${n.remainingM != null ? n.remainingM + " m" : "—"}</span></div>` +
+          `<div class="line"><span>Stops / blocked / replans</span><span>${n.avoidance.stops} / ${n.blockedCount} / ${n.replans}</span></div>` +
+          `<div class="line"><span>Map</span><span>${n.map.grid.free} floor · ${n.map.grid.occupied} obstacle</span></div>`;
+        touched("navigation");
+        const e = n.errors?.active;
+        const banner = $("banner");
+        if (e) {
+          banner.className = "banner on";
+          banner.innerHTML = `<b>She needs help:</b> ${esc(e.kind)} — ${esc(e.message)} (${Math.round(e.waitingS)} s)` +
+            `<span class="row"><button class="primary" data-choice="trust_sensor">Sensor is right</button>` +
+            `<button data-choice="trust_map">Map is right</button><button data-choice="manual">I moved her</button></span>`;
+          banner.querySelectorAll("button[data-choice]").forEach((b) => b.addEventListener("click", async () => {
+            try {
+              await api("/navigation/errors/respond", { method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ choice: b.dataset.choice }) });
+              await navigation();
+            } catch (err) { setState(`answer failed: ${err.message}`, true); }
+          }));
+        } else banner.className = "banner";
+        radar(); heading();
+      } catch (err) { body("navigation").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    // ---- mic, wifi, motion, satellite, events -----------------------------
+
+    async function mic() {
+      try {
+        const e = await api("/ears");
+        const l = e.level || {};
+        const pct = l.rms != null ? Math.min(100, (l.rms / Math.max(1, (l.floor || 300) * 8)) * 100) : 0;
+        body("mic").innerHTML =
+          `<div class="big">${l.rms != null ? Math.round(l.rms) : "—"}<small>rms${l.speaking ? " · gate open" : ""}</small></div>` +
+          `<div class="bar ${l.speaking ? "warn" : ""}"><div style="width:${pct}%"></div></div>` +
+          `<div class="sub">peak ${l.peak ?? "—"} · floor ${l.floor ?? "—"} · ${e.wakes ?? 0} wakes · ${e.streaming ? "streaming" : "no stream"}</div>` +
+          `<div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.lastText ? `“${esc(e.lastText)}”` : ""}</div>`;
+        setPaused("mic", e.streaming ? null : "no audio from the satellite");
+        if (e.streaming) touched("mic");
+      } catch (err) { body("mic").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    const rssiSamples = [];
+    async function wifi() {
+      try {
+        const settled = await Promise.allSettled([api("/leash"), paused["satellite"] ? Promise.reject(new Error("no satellite")) : api("/satellite"), api("/senses")]);
+        const v = (r, fallback) => (r.status === "fulfilled" ? r.value : fallback);
+        const l = v(settled[0], {}), sat = v(settled[1], {}), s = v(settled[2], {});
+        if (l.rssi != null) { rssiSamples.push(l.rssi); if (rssiSamples.length > 60) rssiSamples.shift(); }
+        body("wifi").innerHTML =
+          `<div class="big">${l.rssi != null ? Math.round(l.rssi) : "—"}<small>dBm to ${esc(l.ssid || "router")}</small> ${l.enabled ? `<span class="navstate ${l.zone === "near" ? "arrived" : "blocked"}">${esc(l.zone || "?")}</span>` : ""}</div>` +
+          spark(rssiSamples.map((v) => v + 100), { max: 70, misses: false }) +
+          `<div class="sub">satellite ${sat.device?.rssi != null ? sat.device.rssi + " dBm" : "offline"} · last scan ${s.lastSniffAgeS != null ? Math.round(s.lastSniffAgeS) + " s ago" : "none"} · ${s.sampleCount ?? 0} samples</div>`;
+        if (l.rssi != null || sat.device) touched("wifi");
+      } catch (err) { body("wifi").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    async function motion() {
+      try {
+        const [a, s] = await Promise.all([api("/arbiter/status"), api("/status")]);
+        const c = a.current;
+        const moving = navStatus?.avoidance?.moving;
+        body("motion").innerHTML =
+          `<div class="big" style="font-size:1.1rem">${c ? esc(c.behavior) : "idle"}</div>` +
+          `<div class="sub">${c ? `${esc(c.source)} · step ${c.step}${c.stepTotal ? "/" + c.stepTotal : ""}` : moving ? "moving" : "still"}</div>` +
+          `<div class="sub mono" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.lastCommand || "—")}</div>`;
+        touched("motion");
+      } catch (err) { body("motion").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    async function satellite() {
+      try {
+        const sat = await api("/satellite");
+        const d = sat.device;
+        body("satellite").innerHTML = d
+          ? `<div class="big" style="font-size:1.1rem">up ${Math.round((d.uptimeS || 0) / 60)}<small>min</small></div>` +
+            `<div class="sub">mic ${d.mic ? "ok" : "off"} · cam ${d.camera ? "ok" : "off"}<br>${d.rssi} dBm · ${d.packets ?? 0} pkts</div>`
+          : `<span class="empty">${sat.enabled ? "offline" : "not configured"}</span>`;
+        setPaused("satellite", d ? null : "satellite offline");
+        if (d) touched("satellite");
+      } catch (err) {
+        body("satellite").innerHTML = `<span class="empty">${esc(err.message)}</span>`;
+        setPaused("satellite", err.status === 409 ? "SATELLITE_HOST not set" : null);
+      }
+    }
+
+    async function events() {
+      try {
+        const a = await api("/activity");
+        const rows = (a.activity || []).slice(0, 12);
+        body("events").innerHTML = `<div class="tick">` + rows.map((r) =>
+          `<div><time>${esc(new Date(r.at).toLocaleTimeString())}</time><b>${esc(r.kind)}</b><span>${esc(r.message)}</span></div>`).join("") + `</div>`;
+        touched("events");
+      } catch (err) { body("events").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    // ---- mood and speaker (compact; the full cards live on their tabs) ----
+
+    async function mood() {
+      try {
+        const m = await api("/mood");
+        const c = m.color || {};
+        const rgb = `rgb(${c.r ?? 0},${c.g ?? 0},${c.b ?? 0})`;
+        body("mood").innerHTML =
+          `<div class="swatch" style="background:${rgb};opacity:${(c.brightness ?? 255) / 255}"></div>` +
+          `<div class="sub"><b>${esc(m.mood || "—")}</b> · ${esc(c.effect || "")}${m.hold ? ` · held` : ""}${m.flash ? ` · flash ${m.flash.remainingS}s` : ""}</div>`;
+        setPaused("mood", m.enabled ? null : "mood light disabled");
+        if (m.enabled) touched("mood");
+      } catch (err) { body("mood").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    async function speaker() {
+      try {
+        const s = await api("/mouth");
+        const when = s.at ? new Date(s.at * 1000).toLocaleTimeString() : null;
+        body("speaker").innerHTML =
+          `<div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.text ? `“${esc(s.text)}”` : "nothing said yet"}${when ? ` <span class="muted">${when}</span>` : ""}</div>` +
+          `<div class="row"><input type="text" id="say-text" placeholder="say something" style="flex:1;min-width:0"><button id="say-go">Speak</button></div>` +
+          `<div class="sub">${s.enabled ? `${esc(s.ttsEngine || "tts")} · ${esc(s.voice?.voice || "")}` : "SPEAKER_PIN not set"}${s.error ? ` · ${esc(s.error)}` : ""}</div>`;
+        $("say-go").addEventListener("click", async () => {
+          const text = $("say-text").value.trim();
+          if (!text) return;
+          try {
+            await api("/mouth/say", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+            await speaker();
+          } catch (err) { setState(`speak failed: ${err.message}`, true); }
+        });
+        setPaused("speaker", s.enabled ? null : "SPEAKER_PIN not set");
+        if (s.enabled) touched("speaker");
+      } catch (err) { body("speaker").innerHTML = `<span class="empty">${esc(err.message)}</span>`; }
+    }
+
+    function setState(text, isError) {
+      const el = $("state");
+      el.textContent = text || "";
+      el.style.color = isError ? "var(--critical)" : "var(--muted)";
+    }
+
+    const pollers = [];
+    function poll(fn, ms) { pollers.push(hlPoll(async () => { if (live()) await fn(); }, ms)); }
+
+    function mount(base, robotId) {
+      BASE = base; ROBOT = robotId;
+      pollers.forEach((p) => p.stop());
+      pollers.length = 0;
+      build();
+      camInit();
+      poll(mood, 3000);
+      poll(async () => { if (!$("say-text") || !$("say-text").value) await speaker(); }, 10000);
+      poll(camFrame, 330); poll(camStatus, 1000);
+      poll(navigation, 2000); poll(sonic, 1000); poll(battery, 5000);
+      poll(mic, 1000); poll(wifi, 3000); poll(minimap, 5000);
+      poll(motion, 2000); poll(satellite, 15000); poll(events, 4000);
+      setState(`mounted ${new Date().toLocaleTimeString()}`);
+    }
+
+    (async function boot() {
+      let page;
+      try {
+        page = await hlPage({ onRobotChange: (id) => mount(`/api/robots/${id}`, id) });
+      } catch (err) { setState(`orchestrator unreachable: ${err.message}`, true); return; }
+      if (!page.robotId) return;
+      mount(page.base, page.robotId);
+    })();
+  </script>
+</body>
+</html>

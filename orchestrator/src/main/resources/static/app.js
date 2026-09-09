@@ -274,6 +274,7 @@ function route() {
 // tabs without one (activity, specs) are panels in index.html itself.
 const TABS = [
   { id: "activity", label: "Activity" },
+  { id: "senses",   label: "Senses",       page: "senses.html" },
   { id: "control",  label: "Control",      page: "control.html" },
   { id: "behavior", label: "Behavior",     page: "behavior.html" },
   { id: "ears",     label: "Audio input",  page: "ears.html" },
@@ -335,6 +336,13 @@ function selectTab(name) {
     }
   });
 }
+
+// An embedded page's widget wrench asks for another tab of the same robot.
+window.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type !== "laika-open-tab") return;
+  if (TABS.some((t) => t.id === data.tab)) selectTab(data.tab);
+});
 
 function showPage(page) {
   state.page = page;
