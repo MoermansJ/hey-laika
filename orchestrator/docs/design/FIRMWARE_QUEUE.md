@@ -47,6 +47,12 @@ Wanted next (not started):
 - Push the IMU pitch/roll and the exception direction/force angle to the
   host (SENSOR_DATA.md "left on the table").
 
+- A `sweep` token: pan joint 0 through a list of angles, read the ranger
+  at each, answer with all the numbers in one reply, head back to 0
+  (STATIONARY_SENSING_BRIEF.md §7). Halves the look-around and takes 14
+  round trips off the WebSocket. Bench check: one command returns 13
+  distances that match a host-driven `POST /navigation/sweep`.
+
 - A fused `event_nav` push frame (ranger distance + IMU yaw, 10-20 Hz while
   a gait runs) so the host's navigation loop stops paying a locked round
   trip per reading; today it samples at 6 Hz between commands

@@ -26,6 +26,7 @@ Java orchestrator's structure.
 - [BEHAVIOR_FRAMEWORK_BRIEF.md](design/BEHAVIOR_FRAMEWORK_BRIEF.md) — 2026-08-31 brief: one arbitrated behavior framework (stored behaviors, bindings, arbiter, provenance)
 - [PROXIMITY_LEASH_BRIEF.md](design/PROXIMITY_LEASH_BRIEF.md) — 2026-09-01 brief: phone-tethered leash via WiFi RSSI, marks, dead-man
 - [NAVIGATION_MAPPING_BRIEF.md](design/NAVIGATION_MAPPING_BRIEF.md) — 2026-09-01 brief: perceptual mapping from WiFi fingerprints + sonar, rooms, `goto_room`
+- [STATIONARY_SENSING_BRIEF.md](design/STATIONARY_SENSING_BRIEF.md) — 2026-09-09 brief: the look-around as the unit of measurement (head pan × ranger × camera from a standing pose), host-side depth, landmarks and place signatures, a vantage planner scored by information per metre, scan bundles for the learning work
 - [NAVIGATION_PHASE1.md](design/NAVIGATION_PHASE1.md) — 2026-09-09 as built: occupancy grid, A* click-to-go routes, 6 Hz reactive stop, sonar sweeps, overrides, two-tier errors with the human dialogue, data glossary, and the live-check runbook still open
 - [OBSERVABILITY_MIND_BRIEF.md](design/OBSERVABILITY_MIND_BRIEF.md) — 2026-09-01 brief: request metrics page and the per-robot Mind tab
 - [VOICE_RELAY_BRIEF.md](design/VOICE_RELAY_BRIEF.md) — 2026-09-01 brief: XIAO ESP32S3 Sense mic → host transcription → decision layer; Grove Speaker Plus output
