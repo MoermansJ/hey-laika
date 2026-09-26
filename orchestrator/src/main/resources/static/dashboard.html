@@ -101,26 +101,26 @@
     .tick div { display: flex; gap: 0.5rem; border-top: 1px dashed var(--ring); padding: 0.1rem 0; }
     .tick time { color: var(--muted); flex: 0 0 auto; }
     .tick b { font-weight: 600; color: var(--ink-2); flex: 0 0 auto; }
-    .banner { display: none; border: 1px solid var(--critical); background: #fdf2f2; border-radius: 0;
+    .banner { display: none; border: 1px solid var(--critical); background: rgba(255,93,93,0.12); border-radius: 0;
       padding: 0.6rem 0.8rem; margin-bottom: 0.75rem; font-size: 0.82rem; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
     .banner.on { display: flex; }
-    .banner b { color: #922b21; }
+    .banner b { color: var(--critical); }
     .config { display: none; flex-wrap: wrap; gap: 0.4rem 1rem; font-size: 0.78rem; color: var(--ink-2);
       margin-bottom: 0.75rem; align-items: center; }
     body.editing .config { display: flex; }
     .config .hintline { width: 100%; color: var(--muted); }
     body.editing .widget { cursor: move; }
-    body.editing .widget::after { content: ""; position: absolute; inset: 0; border: 2px dashed rgba(52, 152, 219, 0.5); pointer-events: none; z-index: 5; }
+    body.editing .widget::after { content: ""; position: absolute; inset: 0; border: 2px dashed rgba(77,255,140,0.5); pointer-events: none; z-index: 5; }
     body.editing .widget.dragging { opacity: 0.4; }
-    body.editing .widget.over::after { border-color: var(--ink); background: rgba(52, 152, 219, 0.08); }
+    body.editing .widget.over::after { border-color: var(--ink); background: rgba(77,255,140,0.08); }
     .state { font-size: 0.78rem; color: var(--muted); }
     .swatch { width: 100%; height: 34px; border: 1px solid var(--ring); }
     .navstate { display: inline-block; padding: 0.05rem 0.45rem; font-size: 0.72rem; font-weight: 600;
-      background: #ecf0f1; color: #2c3e50; }
-    .navstate.moving, .navstate.planning { background: #d6eaf8; color: #1b4f72; }
-    .navstate.arrived { background: #d5f5e3; color: #1e8449; }
-    .navstate.blocked, .navstate.unreachable, .navstate.failed { background: #fdebd0; color: #7e5109; }
-    .navstate.error { background: #fadbd8; color: #922b21; }
+      background: rgba(127,219,163,0.15); color: var(--ink-2); }
+    .navstate.moving, .navstate.planning { background: rgba(61,220,255,0.15); color: var(--seq); }
+    .navstate.arrived { background: rgba(77,255,140,0.15); color: var(--good); }
+    .navstate.blocked, .navstate.unreachable, .navstate.failed { background: rgba(255,204,77,0.15); color: var(--warn); }
+    .navstate.error { background: rgba(255,93,93,0.15); color: var(--critical); }
     .row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.3rem; }
     .row button { font-size: 0.74rem; padding: 0.2rem 0.5rem; border-radius: 0; }
     button, input[type=text] { border-radius: 0; }
@@ -497,16 +497,16 @@
       let html = `<svg class="radar" viewBox="0 0 ${W} ${H}">`;
       [0.5, 1, 1.5, 2].forEach((m) => {
         const r = (m / 2) * R;
-        html += `<path d="M${(cx - r).toFixed(1)},${cy} A${r},${r} 0 0 1 ${(cx + r).toFixed(1)},${cy}" fill="none" stroke="#e3e8ea"/>` +
-          `<text x="${(cx + r + 1).toFixed(1)}" y="${cy - 1}" font-size="6" fill="#95a5a6">${m}</text>`;
+        html += `<path d="M${(cx - r).toFixed(1)},${cy} A${r},${r} 0 0 1 ${(cx + r).toFixed(1)},${cy}" fill="none" stroke="#123a22"/>` +
+          `<text x="${(cx + r + 1).toFixed(1)}" y="${cy - 1}" font-size="6" fill="#4f9c73">${m}</text>`;
       });
       sw.readings.forEach((rd) => {
         const a = (90 + rd.panDeg) * Math.PI / 180;     // pan left = counter-clockwise on screen
         const d = rd.rangeCm == null ? 2.0 : Math.min(2.0, rd.rangeCm / 100);
         const r = (d / 2) * R;
         const x = cx + Math.cos(a) * r, y = cy - Math.sin(a) * r;
-        html += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${rd.rangeCm == null ? "#d5dbdb" : "rgba(46,204,113,0.6)"}" stroke-width="3" stroke-linecap="round"/>`;
-        if (rd.rangeCm != null) html += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${rd.rangeCm <= stop ? "#e74c3c" : "#2c3e50"}"/>`;
+        html += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${rd.rangeCm == null ? "#1f6b3f" : "rgba(46,204,113,0.6)"}" stroke-width="3" stroke-linecap="round"/>`;
+        if (rd.rangeCm != null) html += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${rd.rangeCm <= stop ? "#e74c3c" : "#7fdba3"}"/>`;
       });
       html += `<polygon points="${cx},${cy - 6} ${cx - 4},${cy + 3} ${cx + 4},${cy + 3}" fill="#e74c3c"/></svg>`;
       body("radar").innerHTML = html + `<div class="sub">${new Date(sw.at * 1000).toLocaleTimeString()} · ${sw.hits} echoes · ${sw.freed} cells freed${sw.contradictions?.length ? ` · ${sw.contradictions.length} contradiction(s)` : ""}</div>`;
@@ -522,9 +522,9 @@
         const a = deg * Math.PI / 180;
         return `<line x1="${cx}" y1="${cy}" x2="${(cx + Math.cos(a) * len).toFixed(1)}" y2="${(cy - Math.sin(a) * len).toFixed(1)}" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`;
       };
-      let html = `<svg class="compass" viewBox="0 0 ${W} ${H}"><circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#e3e8ea"/>` +
-        `<text x="${cx + R + 3}" y="${cy + 3}" font-size="8" fill="#95a5a6">+x</text>`;
-      html += needle(p.heading, "#e74c3c", R - 4) + `<circle cx="${cx}" cy="${cy}" r="3" fill="#2c3e50"/></svg>`;
+      let html = `<svg class="compass" viewBox="0 0 ${W} ${H}"><circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#123a22"/>` +
+        `<text x="${cx + R + 3}" y="${cy + 3}" font-size="8" fill="#4f9c73">+x</text>`;
+      html += needle(p.heading, "#e74c3c", R - 4) + `<circle cx="${cx}" cy="${cy}" r="3" fill="#7fdba3"/></svg>`;
       body("heading").innerHTML = `<div style="display:flex;gap:0.5rem;align-items:center;height:100%"><div style="flex:0 0 46%;height:100%">${html}</div>` +
         `<div><div class="big" style="font-size:1.4rem">${p.heading}<small>°</small></div><div class="sub">yaw ${p.yaw != null ? p.yaw + "°" : "—"}${p.yawFused ? " fused" : ""}<br>±${p.driftM} m</div></div></div>`;
       if (p.yaw != null) touched("heading");
@@ -570,7 +570,7 @@
           const pts = [[pose.x, pose.y], ...mapData.route.waypoints].map(([x, y]) => `${sx(x).toFixed(1)},${sy(y).toFixed(1)}`).join(" ");
           html += `<polyline points="${pts}" fill="none" stroke="#3498db" stroke-width="1.5" stroke-dasharray="5 3"/>`;
         }
-        if (mapData.target) html += `<circle cx="${sx(mapData.target.x).toFixed(1)}" cy="${sy(mapData.target.y).toFixed(1)}" r="5" fill="none" stroke="#ecf0f1" stroke-width="1.5"/>`;
+        if (mapData.target) html += `<circle cx="${sx(mapData.target.x).toFixed(1)}" cy="${sy(mapData.target.y).toFixed(1)}" r="5" fill="none" stroke="#7fdba3" stroke-width="1.5"/>`;
         html += `<g transform="translate(${sx(pose.x).toFixed(1)} ${sy(pose.y).toFixed(1)}) rotate(${(-pose.heading).toFixed(1)})">` +
           `<polyline points="-6,-7 6,0 -6,7" fill="none" stroke="#2ecc71" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/></g>`;
         html += `<text x="${W - 4}" y="12" font-size="8" fill="#7f8c8d" text-anchor="end">${(mapData.counts?.free ?? 0)} floor · ${(mapData.counts?.occupied ?? 0)} obstacle · ${step} m grid</text></svg>`;
