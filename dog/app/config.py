@@ -133,6 +133,14 @@ class Config:
     IDLE_SIT_S = float(os.getenv("IDLE_SIT_S", "60"))
     IDLE_REST_S = float(os.getenv("IDLE_REST_S", "120"))
 
+    # Roaming Assistant explorer (PERSONALITY_MODES_BRIEF.md §5, P2 v1): the
+    # frontier picker's stopping conditions. Defaults are the brief's own
+    # "something modest" placeholder (§5.1 point 5) pending open question 1
+    # (tune after watching one real exploration run).
+    ROAMING_SESSION_CAP_S = float(os.getenv("ROAMING_SESSION_CAP_S", "1200"))
+    ROAMING_BATTERY_FLOOR = float(os.getenv("ROAMING_BATTERY_FLOOR", "20"))
+    ROAMING_MIN_SCORE = float(os.getenv("ROAMING_MIN_SCORE", "0.15"))
+
     @classmethod
     def sqlalchemy_url(cls) -> str:
         if cls.DATABASE_TYPE == "postgres" and cls.DATABASE_URL:
@@ -141,6 +149,15 @@ class Config:
         if not db_path.is_absolute():
             db_path = PROJECT_ROOT / db_path
         return f"sqlite:///{db_path.as_posix()}"
+
+    @classmethod
+    def data_dir(cls) -> Path:
+        """Where the sqlite db lives — collection-point photos ride along in
+        the same persisted volume."""
+        db_path = Path(cls.SQLITE_DB_PATH)
+        if not db_path.is_absolute():
+            db_path = PROJECT_ROOT / db_path
+        return db_path.parent
 
     @classmethod
     def claude_engine(cls) -> bool:

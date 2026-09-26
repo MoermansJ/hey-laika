@@ -15,14 +15,14 @@
     @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
     .mapwrap { position: relative; }
     svg#map { width: 100%; height: min(70vh, 640px); display: block;
-      background: #f7f9fa; border: 1px solid var(--ring); border-radius: 8px; }
+      background: var(--page); border: 1px solid var(--ring); border-radius: 8px; }
     svg#map.nav { cursor: crosshair; }
     .tip { position: absolute; pointer-events: none; z-index: 5; display: none;
-      background: rgba(44, 62, 80, 0.96); color: #fff; font-size: 0.76rem;
+      background: rgba(7,28,17,0.96); color: var(--ink); font-size: 0.76rem;
       padding: 0.5rem 0.65rem; border-radius: 8px; max-width: 300px; line-height: 1.35;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
-    .tip b { color: #ffd479; }
-    .tip .aps { margin-top: 0.3rem; border-top: 1px solid rgba(255,255,255,0.25); padding-top: 0.3rem; }
+      box-shadow: 0 4px 14px rgba(0,0,0,0.5); border: 1px solid var(--ring); }
+    .tip b { color: var(--warn); }
+    .tip .aps { margin-top: 0.3rem; border-top: 1px solid rgba(77,255,140,0.25); padding-top: 0.3rem; }
     .legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--ink-2);
       margin-top: 0.5rem; align-items: center; }
     .legend .swatch { display: inline-block; width: 60px; height: 8px; border-radius: 4px;
@@ -31,27 +31,29 @@
     .card table { font-size: 0.78rem; }
     .card th, .card td { white-space: nowrap; }
     tr.pick { cursor: pointer; }
-    tr.pick:hover, tr.active { background: rgba(52, 152, 219, 0.1); }
+    tr.pick:hover, tr.active { background: rgba(61,220,255,0.12); }
     .scroll { max-height: 260px; overflow: auto; }
-    #detail dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; font-size: 0.8rem; }
-    #detail dt { color: var(--ink-2); }
-    #detail dd { margin: 0; }
+    #detail dl, #point-detail dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; font-size: 0.8rem; }
+    #detail dt, #point-detail dt { color: var(--ink-2); }
+    #detail dd, #point-detail dd { margin: 0; }
+    #point-detail img { width: 100%; border-radius: 6px; margin-bottom: 0.5rem; display: block; background: var(--page); }
+    #point-detail .caption { font-style: italic; margin: 0 0 0.5rem; }
     .state { font-size: 0.78rem; color: var(--muted); min-height: 1em; }
     .navstate { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
-      background: #ecf0f1; color: #2c3e50; }
-    .navstate.moving, .navstate.planning { background: #d6eaf8; color: #1b4f72; }
-    .navstate.arrived { background: #d5f5e3; color: #1e8449; }
-    .navstate.blocked, .navstate.unreachable, .navstate.failed { background: #fdebd0; color: #7e5109; }
-    .navstate.error { background: #fadbd8; color: #922b21; animation: blink 1s steps(2) infinite; }
+      background: rgba(127,219,163,0.15); color: var(--ink-2); }
+    .navstate.moving, .navstate.planning { background: rgba(61,220,255,0.15); color: var(--seq); }
+    .navstate.arrived { background: rgba(77,255,140,0.15); color: var(--good); }
+    .navstate.blocked, .navstate.unreachable, .navstate.failed { background: rgba(255,204,77,0.15); color: var(--warn); }
+    .navstate.error { background: rgba(255,93,93,0.15); color: var(--critical); animation: blink 1s steps(2) infinite; }
     @keyframes blink { 50% { opacity: 0.35; } }
     .row { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }
     .row input[type=text], .row input[type=number] { width: 7rem; }
-    .errorbox { border: 1px solid #e74c3c; background: #fdf2f2; border-radius: 8px; padding: 0.6rem; margin-top: 0.5rem; font-size: 0.8rem; }
-    .errorbox h3 { margin: 0 0 0.3rem; font-size: 0.85rem; color: #922b21; }
+    .errorbox { border: 1px solid var(--critical); background: rgba(255,93,93,0.1); border-radius: 8px; padding: 0.6rem; margin-top: 0.5rem; font-size: 0.8rem; }
+    .errorbox h3 { margin: 0 0 0.3rem; font-size: 0.85rem; color: var(--critical); }
     .history { font-size: 0.76rem; margin-top: 0.5rem; }
     .history div { padding: 0.15rem 0; border-top: 1px solid var(--ring); }
-    .history .res { color: #1e8449; }
-    .history .open { color: #922b21; }
+    .history .res { color: var(--good); }
+    .history .open { color: var(--critical); }
   </style>
 </head>
 <body>
@@ -100,6 +102,7 @@
           <label style="display:inline"><input type="checkbox" id="layerRoute" checked> route</label>
           <label style="display:inline"><input type="checkbox" id="layerTrail" checked> trail</label>
           <label style="display:inline"><input type="checkbox" id="layerGrid" checked> grid</label>
+          <label style="display:inline"><input type="checkbox" id="layerPoints" checked> collection points</label>
         </span>
       </label>
     </div>
@@ -145,6 +148,13 @@
         <h2>Selected sample</h2>
         <div id="detail" class="empty">Hover a point for a quick look, click to pin it here.</div>
       </div>
+      <div class="card" style="margin-top:0.9rem" id="points-card">
+        <h2>Collection points</h2>
+        <div class="scroll">
+          <table id="points-table"><thead><tr><th>When</th><th>Position</th><th>Caption</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div id="point-detail" class="empty" style="margin-top:0.6rem">Click a collection point on the map or in this list.</div>
+      </div>
       <div class="card" style="margin-top:0.9rem">
         <h2>Collected</h2>
         <div id="summary"></div>
@@ -173,6 +183,8 @@
     let pinned = null;         // sample id pinned in the detail card
     let colorBy = "age";       // "age" or a BSSID
     let view = null;           // world <-> screen mapping
+    let points = [];           // roaming's collection points, newest first
+    let pinnedPoint = null;    // collection point id pinned in its detail card
 
     // ---- filters ---------------------------------------------------------
 
@@ -212,7 +224,7 @@
     });
     ["since", "until", "source", "minAps", "every", "limit"].forEach((id) =>
       $(id).addEventListener("change", refresh));
-    ["layerTrail", "layerGrid", "layerOccupancy", "layerRoute"].forEach((id) => $(id).addEventListener("change", draw));
+    ["layerTrail", "layerGrid", "layerOccupancy", "layerRoute", "layerPoints"].forEach((id) => $(id).addEventListener("change", draw));
     $("colorBy").addEventListener("change", () => { colorBy = $("colorBy").value; draw(); });
     $("navmode").addEventListener("change", () => $("map").classList.toggle("nav", $("navmode").checked));
 
@@ -244,6 +256,7 @@
 
     function fitView() {
       const xs = samples.map((s) => s.x), ys = samples.map((s) => s.y);
+      if ($("layerPoints").checked) { xs.push(...points.map((p) => p.x)); ys.push(...points.map((p) => p.y)); }
       if (pose) { xs.push(pose.x); ys.push(pose.y); }
       if (grid && grid.bounds && $("layerOccupancy").checked) {
         const r = grid.resolutionM;
@@ -305,21 +318,21 @@
         for (let gx = Math.ceil(view.minX / step) * step; gx <= view.maxX; gx += step) {
           const X = view.sx(gx).toFixed(1);
           const major = Math.abs(gx) < 1e-9;
-          html += `<line x1="${X}" x2="${X}" y1="0" y2="${H}" stroke="${major ? "#95a5a6" : "#e3e8ea"}" stroke-width="${major ? 1.2 : 1}"/>`;
-          html += `<text x="${X}" y="${H - 6}" font-size="10" fill="#95a5a6" text-anchor="middle">${+gx.toFixed(1)} m</text>`;
+          html += `<line x1="${X}" x2="${X}" y1="0" y2="${H}" stroke="${major ? "#4f9c73" : "#123a22"}" stroke-width="${major ? 1.2 : 1}"/>`;
+          html += `<text x="${X}" y="${H - 6}" font-size="10" fill="#4f9c73" text-anchor="middle">${+gx.toFixed(1)} m</text>`;
         }
         for (let gy = Math.ceil(view.minY / step) * step; gy <= view.maxY; gy += step) {
           const Y = view.sy(gy).toFixed(1);
           const major = Math.abs(gy) < 1e-9;
-          html += `<line x1="0" x2="${W}" y1="${Y}" y2="${Y}" stroke="${major ? "#95a5a6" : "#e3e8ea"}" stroke-width="${major ? 1.2 : 1}"/>`;
-          html += `<text x="6" y="${(+Y - 3).toFixed(1)}" font-size="10" fill="#95a5a6">${+gy.toFixed(1)} m</text>`;
+          html += `<line x1="0" x2="${W}" y1="${Y}" y2="${Y}" stroke="${major ? "#4f9c73" : "#123a22"}" stroke-width="${major ? 1.2 : 1}"/>`;
+          html += `<text x="6" y="${(+Y - 3).toFixed(1)}" font-size="10" fill="#4f9c73">${+gy.toFixed(1)} m</text>`;
         }
       }
       // Chronological order for the trail (server returns newest first).
       const chrono = samples.slice().reverse();
       if ($("layerTrail").checked && chrono.length > 1) {
         const pts = chrono.map((s) => `${view.sx(s.x).toFixed(1)},${view.sy(s.y).toFixed(1)}`).join(" ");
-        html += `<polyline points="${pts}" fill="none" stroke="#7f8c8d" stroke-width="1.2" stroke-opacity="0.6" stroke-dasharray="3 3"/>`;
+        html += `<polyline points="${pts}" fill="none" stroke="#4f9c73" stroke-width="1.2" stroke-opacity="0.6" stroke-dasharray="3 3"/>`;
       }
       const tMin = chrono.length ? chrono[0].t : 0, tMax = chrono.length ? chrono[chrono.length - 1].t : 1;
       if ($("layerTrail").checked) chrono.forEach((s) => {
@@ -328,12 +341,24 @@
           fill = ageColor(s, tMin, tMax);
         } else {
           const dbm = apRssi(s, colorBy);
-          if (dbm == null) { fill = "#ffffff"; extra = ' stroke="#bdc3c7" stroke-width="1"'; r = 3.5; }
+          if (dbm == null) { fill = "#123a22"; extra = ' stroke="#4f9c73" stroke-width="1"'; r = 3.5; }
           else fill = rssiColor(dbm);
         }
         const active = pinned === s.id;
-        html += `<circle class="pt" data-id="${s.id}" cx="${view.sx(s.x).toFixed(1)}" cy="${view.sy(s.y).toFixed(1)}" r="${active ? r + 3 : r}" fill="${fill}"${extra}${active ? ' stroke="#2c3e50" stroke-width="2"' : ""}/>`;
+        html += `<circle class="pt" data-id="${s.id}" cx="${view.sx(s.x).toFixed(1)}" cy="${view.sy(s.y).toFixed(1)}" r="${active ? r + 3 : r}" fill="${fill}"${extra}${active ? ' stroke="#fff" stroke-width="2"' : ""}/>`;
       });
+      if ($("layerPoints").checked && points.length) {
+        html += points.map((p) => {
+          const X = view.sx(p.x), Y = view.sy(p.y);
+          const active = pinnedPoint === p.id;
+          const half = active ? 8 : 6;
+          const edge = active ? "#4dff8c" : "#fff";
+          return `<g class="pt-cp" data-id="${p.id}" transform="translate(${X.toFixed(1)} ${Y.toFixed(1)})">` +
+            `<rect x="${-half}" y="${-half}" width="${half * 2}" height="${half * 2}" rx="2" ` +
+            `fill="#e67e22" stroke="${edge}" stroke-width="1.5"/>` +
+            `<circle r="${half * 0.42}" fill="#fff"/></g>`;
+        }).join("");
+      }
       if ($("layerRoute").checked && nav) {
         html += `<g pointer-events="none">`;
         if (nav.route && nav.route.waypoints && nav.route.waypoints.length && pose) {
@@ -341,7 +366,7 @@
             .map(([x, y]) => `${view.sx(x).toFixed(1)},${view.sy(y).toFixed(1)}`).join(" ");
           html += `<polyline points="${pts}" fill="none" stroke="#2980b9" stroke-width="2" stroke-dasharray="6 4"/>`;
           nav.route.waypoints.forEach(([x, y], i) => {
-            html += `<circle cx="${view.sx(x).toFixed(1)}" cy="${view.sy(y).toFixed(1)}" r="4" fill="${i < nav.route.legIndex ? "#bdc3c7" : "#2980b9"}"/>`;
+            html += `<circle cx="${view.sx(x).toFixed(1)}" cy="${view.sy(y).toFixed(1)}" r="4" fill="${i < nav.route.legIndex ? "#4f9c73" : "#2980b9"}"/>`;
           });
         }
         if (nav.target) {
@@ -369,7 +394,7 @@
         // Screen rotation is clockwise; world heading is counter-clockwise.
         html += `<g transform="translate(${X.toFixed(1)} ${Y.toFixed(1)}) rotate(${(-pose.heading).toFixed(1)})">` +
           `<polygon points="14,0 -8,-8 -4,0 -8,8" fill="#e74c3c" stroke="#fff" stroke-width="1.5"/></g>`;
-        html += `<text x="${(X + 14).toFixed(1)}" y="${(Y - 12).toFixed(1)}" font-size="11" fill="#c0392b" font-weight="600">Laika</text>`;
+        html += `<text x="${(X + 14).toFixed(1)}" y="${(Y - 12).toFixed(1)}" font-size="11" fill="#ff5d5d" font-weight="600">Laika</text>`;
         html += `</g>`;
       }
       svg.innerHTML = html;
@@ -395,6 +420,9 @@
           `<span>hollow = not heard there</span>`;
       }
       html += `<span>▲ last known position, dashed ring = dead-reckoning uncertainty</span>`;
+      if ($("layerPoints").checked && points.length) {
+        html += `<span><span class="cell" style="background:#e67e22;border-radius:2px"></span>collection point (Roaming Assistant)</span>`;
+      }
       el.innerHTML = html;
     }
 
@@ -417,13 +445,26 @@
         `<div class="aps">${aps.length} network${aps.length === 1 ? "" : "s"}<br>${rows}${more}</div>`;
     }
 
+    const pointById = () => new Map(points.map((p) => [p.id, p]));
+
+    function pointHtml(p) {
+      const when = new Date(p.t * 1000);
+      return `<b>Collection point #${p.id}</b> ${esc(when.toLocaleString())}<br>` +
+        `pose (${p.x}, ${p.y}) m · heading ${p.heading}°` +
+        (p.battery != null ? ` · battery ${p.battery}%` : "") +
+        `<div class="aps">${esc(p.caption)}</div>`;
+    }
+
     const tip = $("tip");
     $("map").addEventListener("mousemove", (ev) => {
-      const target = ev.target.closest && ev.target.closest("circle.pt");
+      const target = ev.target.closest && ev.target.closest("circle.pt, .pt-cp");
       if (!target) { tip.style.display = "none"; return; }
-      const s = byId().get(Number(target.dataset.id));
-      if (!s) return;
-      tip.innerHTML = sampleHtml(s, true);
+      const id = Number(target.dataset.id);
+      const html = target.classList.contains("pt-cp")
+        ? (pointById().get(id) && pointHtml(pointById().get(id)))
+        : (byId().get(id) && sampleHtml(byId().get(id), true));
+      if (!html) { tip.style.display = "none"; return; }
+      tip.innerHTML = html;
       tip.style.display = "block";
       const wrap = $("map").getBoundingClientRect();
       let left = ev.clientX - wrap.left + 14, top = ev.clientY - wrap.top + 14;
@@ -442,6 +483,14 @@
     }
 
     $("map").addEventListener("click", async (ev) => {
+      const cpTarget = ev.target.closest && ev.target.closest(".pt-cp");
+      if (cpTarget) {
+        pinnedPoint = Number(cpTarget.dataset.id);
+        renderPointDetail();
+        renderPointsList();
+        draw();
+        return;
+      }
       const target = ev.target.closest && ev.target.closest("circle.pt");
       if (target) {
         pinned = Number(target.dataset.id);
@@ -485,6 +534,47 @@
         aps.map((a) => `<tr><td>${esc(a.ssid || "(hidden)")}<br><span class="muted">${esc(a.bssid)}</span></td>` +
           `<td>${a.rssi} dBm</td><td>${a.channel ?? "—"}</td></tr>`).join("") +
         `</tbody></table>`;
+    }
+
+    // ---- collection points (Roaming Assistant) ----------------------------
+
+    function renderPointsList() {
+      const tbody = $("points-table").querySelector("tbody");
+      if (!points.length) {
+        tbody.innerHTML = `<tr><td colspan="3" class="muted">none yet — switch to Roaming Assistant on the Personality tab</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = points.map((p) => `<tr class="pick${pinnedPoint === p.id ? " active" : ""}" data-id="${p.id}">` +
+        `<td>${esc(new Date(p.t * 1000).toLocaleString())}</td>` +
+        `<td>${p.x}, ${p.y} m</td>` +
+        `<td>${esc(p.caption)}</td></tr>`).join("");
+      tbody.querySelectorAll("tr.pick").forEach((tr) => tr.addEventListener("click", () => {
+        pinnedPoint = pinnedPoint === Number(tr.dataset.id) ? null : Number(tr.dataset.id);
+        renderPointDetail();
+        renderPointsList();
+        draw();
+      }));
+    }
+
+    function renderPointDetail() {
+      const el = $("point-detail");
+      const p = pinnedPoint != null ? pointById().get(pinnedPoint) : null;
+      if (!p) {
+        el.className = "empty";
+        el.textContent = "Click a collection point on the map or in this list.";
+        return;
+      }
+      el.className = "";
+      el.innerHTML =
+        (p.hasPhoto ? `<img src="${BASE}/collection_points/${p.id}/photo?t=${Date.now()}" alt="collection point photo">` : "") +
+        `<p class="caption">${esc(p.caption)}</p>` +
+        `<dl>` +
+        `<dt>Point</dt><dd>#${p.id}</dd>` +
+        `<dt>Time</dt><dd>${esc(new Date(p.t * 1000).toLocaleString())}</dd>` +
+        `<dt>Position</dt><dd>${p.x}, ${p.y} m</dd>` +
+        `<dt>Heading</dt><dd>${p.heading}°</dd>` +
+        `<dt>Battery</dt><dd>${p.battery != null ? p.battery + "%" : "—"}</dd>` +
+        `</dl>`;
     }
 
     // ---- navigation cards ------------------------------------------------
@@ -638,17 +728,22 @@
 
     async function refresh() {
       try {
-        const [page, st] = await Promise.all([
+        const [page, st, pointPage] = await Promise.all([
           hlApi(BASE, `/senses/samples${filterQuery()}`),
           hlApi(BASE, "/senses"),
+          hlApi(BASE, "/collection_points?limit=300").catch(() => ({ points: [] })),
         ]);
         samples = page.samples || [];
         pose = page.pose || st.pose || null;
         status = st;
+        points = pointPage.points || [];
         if (pinned != null && !samples.some((s) => s.id === pinned)) pinned = null;
+        if (pinnedPoint != null && !points.some((p) => p.id === pinnedPoint)) pinnedPoint = null;
         if (poseCard) poseCard.render(st);
         renderSummary(page);
         renderDetail();
+        renderPointsList();
+        renderPointDetail();
         await refreshNav();
         setState(`updated ${new Date().toLocaleTimeString()}`);
       } catch (err) {
@@ -700,6 +795,7 @@
     function mount(base) {
       BASE = base;
       samples = []; pose = null; status = null; nav = null; grid = null; pinned = null;
+      points = []; pinnedPoint = null;
       if (poseCard) poseCard.stop();
       poseCard = hlPoseCard($("pose-card"), BASE, { title: "Where she thinks she is" });
       if (poller) poller.tick(); else {

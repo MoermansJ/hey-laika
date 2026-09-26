@@ -22,6 +22,9 @@
     "description" : "Live metrics and hourly rollups",
     "name" : "Metrics"
   }, {
+    "description" : "Stationary Assistant, Roaming Assistant or Fruitfly: which systems are allowed to move her, and why",
+    "name" : "Mode"
+  }, {
     "description" : "One robot's hardware, brain relays and senses, addressed through its adapter",
     "name" : "Robot"
   } ],
@@ -995,6 +998,83 @@
         "tags" : [ "Robot" ]
       }
     },
+    "/api/robots/{robotId}/collection_points" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter. Filters: limit, since, until.",
+        "operationId" : "collectionPoints",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "filters",
+          "required" : true,
+          "schema" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Roaming Assistant's collection points",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/collection_points/{pointId}/photo" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "collectionPointPhoto",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "pointId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "image/jpeg" : {
+                "schema" : {
+                  "type" : "string",
+                  "format" : "binary"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A collection point's photo",
+        "tags" : [ "Robot" ]
+      }
+    },
     "/api/robots/{robotId}/command" : {
       "post" : {
         "operationId" : "command",
@@ -1900,6 +1980,76 @@
         },
         "summary" : "Record a labelled RSSI mark",
         "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mode" : {
+      "get" : {
+        "operationId" : "mode",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RobotMode"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Current operating mode",
+        "tags" : [ "Mode" ]
+      }
+    },
+    "/api/robots/{robotId}/mode/{mode}" : {
+      "post" : {
+        "description" : "stationary | roaming | fruitfly. The orchestrator's personality-tick behavior loop is always kept stopped (Stationary Assistant is a one-time sit, no autonomous movement — see PERSONALITY_MODES_BRIEF.md §2 and the 2026-09-25 incident note in SetRobotModeUseCase), then relays the switch to the adapter, which owns conversation/navigation/fruitfly.",
+        "operationId" : "set",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "mode",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "via",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "default" : "gui"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RobotMode"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Switch operating mode",
+        "tags" : [ "Mode" ]
       }
     },
     "/api/robots/{robotId}/mood" : {
@@ -3783,6 +3933,25 @@
             "type" : "string"
           },
           "type" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RobotMode" : {
+        "type" : "object",
+        "properties" : {
+          "changedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "changedBy" : {
+            "type" : "string"
+          },
+          "mode" : {
+            "type" : "string",
+            "enum" : [ "STATIONARY", "ROAMING", "FRUITFLY", "PHONE" ]
+          },
+          "robotId" : {
             "type" : "string"
           }
         }

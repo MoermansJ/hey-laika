@@ -27,12 +27,12 @@ fails the build on any violation. Rules enforced:
 
 | Layer | Package | Contents |
 |---|---|---|
-| Domain | `domain.behavior` | Personality model, action catalog, decision engine, behavior records. |
+| Domain | `domain.behavior` | Personality model, action catalog, decision engine, behavior records, operating mode (`OperatingMode`/`RobotMode` — see `PERSONALITY_MODES_BRIEF.md`). |
 | | `domain.fleet` | `Fleet` (the immutable configured set of robots), `Robot` identity, `RobotInfo`, `FleetStats`, `RobotNotFoundException`. |
 | | `domain.robot` | Records mirroring the Python adapter's JSON (`RobotStatus`, `ServoState`, ...). Field names match the adapter's camelCase exactly; Jackson maps them by name at both edges, so there are no mapper classes. |
 | Application | `application.usecase` | One class per use case, `execute` only. The inbound API of the core. |
 | | `application.service` | Collaborators shared by use cases: `FleetSweep`, `BehaviorLoops`, `RobotBehaviorLoop`, `ActionExecutor`, `OrchestratorMetricsSnapshot`. The only process-local state left here is the loop's worker thread, its manual-action queue and a bounded ring of recent decisions; everything durable goes through a port (§3, §7). |
-| | `application.port.out` | Interfaces the core needs implemented: `RobotAdapterPort`, `FleetRepositoryPort`, `PersonalityStateRepositoryPort`, `DecisionHistoryRepositoryPort`, `LeasePort`, `EventPublisherPort`, `MetricsRollupRepositoryPort`, `OrchestratorMetricsPort`, plus the port exceptions `AdapterErrorException` and `AdapterUnavailableException`. |
+| | `application.port.out` | Interfaces the core needs implemented: `RobotAdapterPort`, `FleetRepositoryPort`, `PersonalityStateRepositoryPort`, `RobotModeRepositoryPort`, `DecisionHistoryRepositoryPort`, `LeasePort`, `EventPublisherPort`, `MetricsRollupRepositoryPort`, `OrchestratorMetricsPort`, plus the port exceptions `AdapterErrorException` and `AdapterUnavailableException`. |
 | | `application` (root) | `BehaviorSettings`, `MetricsSettings`, `InstanceIdentity`, `BehaviorLoopRunningException`, `BehaviorLoopHeldElsewhereException`. |
 | Adapters, inbound | `adapter.in.web` | REST controllers and `GlobalExceptionHandler`. |
 | | `adapter.in.scheduling` | `FleetBroadcastScheduler`, `MetricsRollupScheduler`. |
@@ -149,6 +149,14 @@ fails the build on any violation. Rules enforced:
 - Fleet status sweeps run in parallel across robots; an unreachable adapter yields
   `RobotStatus.unreachable` (connected = false) rather than an error. Fleet-wide autonomous
   start/stop map exceptions to `false` per robot.
+- `ModeController` (`/api/robots/{id}/mode`) owns `OperatingMode`
+  (`stationary`/`roaming`/`fruitfly`, `robot_modes` table). `SetRobotModeUseCase` starts the
+  behavior loop for `stationary` and stops it otherwise — the loop's `ActionExecutor` calls
+  the adapter's `/execute_action` directly, bypassing the adapter's `Arbiter`, so it must not
+  run while roaming/fruitfly hold the arbiter (`PERSONALITY_MODES_BRIEF.md` §2) — then relays
+  the switch to the adapter's own `/mode`, which owns conversation/navigation/fruitfly.
+  `ResyncRobotModesUseCase` re-pushes the stored mode to every robot's adapter on orchestrator
+  boot, same reasoning as the lease re-acquire path.
 
 ## 6. Broadcasting
 

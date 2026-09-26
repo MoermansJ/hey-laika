@@ -30,7 +30,9 @@ from app.conversation import ConversationService, InfoTool, battery_sentence
 from app.power_saver import PowerSaver
 from app.ears import EarsService, build_transcriber
 from app.event_binder import EventBinder
+from app.explorer import ExplorerService
 from app.eyes import EyesService, build_detector
+from app.mode import ModeService
 from app.mood import MoodService
 from app.mouth import MouthService
 from app.ranger import RangerService
@@ -176,6 +178,22 @@ navigation = NavigationService(
 navigation.instrument(bittle)
 if Config.NAV_ENABLED:
     navigation.init()
+# Roaming Assistant's frontier explorer (PERSONALITY_MODES_BRIEF.md §5):
+# walks the frontier of the occupancy grid, photographing and logging a
+# collection point at each vantage. Started/stopped by mode switches, not
+# NAV_ENABLED, but it has nothing to drive without navigation.
+explorer = ExplorerService(
+    navigation, nav_grid, nav_planner, senses, eyes,
+    battery_reader=lambda: _battery_reading().get("battery"),
+    trigger=event_binder.trigger,
+    config={"sessionCapS": Config.ROAMING_SESSION_CAP_S,
+            "batteryFloor": Config.ROAMING_BATTERY_FLOOR,
+            "minScore": Config.ROAMING_MIN_SCORE})
+explorer.init()
+# Personality modes (docs/design/PERSONALITY_MODES_BRIEF.md): the
+# orchestrator owns the mode itself and pushes changes here; this mirror
+# flips conversation/eyes/arbiter on the adapter side.
+mode = ModeService(arbiter, conversation, eyes, event_binder, behavior_store, explorer)
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -1439,6 +1457,49 @@ def leash_mark(robot_id: str):
     label = str(data.get("label") or "mark")
     entry = leash.mark(label)
     return jsonify({"robotId": robot_id, "mark": entry, **leash.status()})
+
+
+@app.get("/api/robots/<robot_id>/mode")
+@robot_scoped
+def mode_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **mode.status()})
+
+
+@app.post("/api/robots/<robot_id>/mode")
+@robot_scoped
+def mode_set(robot_id: str):
+    data = request.get_json(silent=True) or {}
+    requested = data.get("mode")
+    if requested not in ("stationary", "roaming", "fruitfly"):
+        return jsonify({"error": "bad_request",
+                        "message": "'mode' must be stationary, roaming or fruitfly"}), 400
+    result = mode.set_mode(requested)
+    log_activity("mode", f"mode -> {requested}")
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.get("/api/robots/<robot_id>/collection_points")
+@robot_scoped
+def collection_points_list(robot_id: str):
+    """Filtered slice of the roaming explorer's collection points, newest
+    first. ?since= / ?until= are epoch seconds; ?limit= caps the page."""
+    args = request.args
+    result = explorer.points(
+        limit=_num_param(args, "limit", 200, lo=1, hi=300),
+        since=_num_param(args, "since", None, lo=0, kind=float),
+        until=_num_param(args, "until", None, lo=0, kind=float))
+    return jsonify({"robotId": robot_id, **result})
+
+
+@app.get("/api/robots/<robot_id>/collection_points/<int:point_id>/photo")
+@robot_scoped
+def collection_points_photo(robot_id: str, point_id: int):
+    jpeg = explorer.photo(point_id)
+    if jpeg is None:
+        return jsonify({"error": "no_photo",
+                        "message": "no photo stored for this point"}), 404
+    return app.response_class(jpeg, mimetype="image/jpeg",
+                              headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/robots/<robot_id>/arbiter/status")

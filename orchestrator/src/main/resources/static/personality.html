@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personality</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%234dff8c%22/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&family=Silkscreen:wght@400;700&display=swap">
+  <style>
+    /* Personality is the first page moved to the phosphor-terminal
+       direction confirmed in the design pass (see chat/artifact history,
+       PERSONALITY_MODES_BRIEF.md). It deliberately does not use console.css
+       — every other tab is still the old light theme, so there is a visible
+       seam at this page's edge until that shell-wide reskin happens. */
+    :root {
+      --ground:        #050f09;
+      --glass:         #071c11;
+      --panel-edge:    #0e2417;
+      --phosphor:      #4dff8c;
+      --phosphor-soft: rgba(77,255,140,0.4);
+      --phosphor-dim:  #1f6b3f;
+      --ink-2:         #7fdba3;
+      --critical:      #ff5d5d;
+      --font-display:  'VT323', 'Courier New', monospace;
+      --font-body:     'Share Tech Mono', 'Courier New', monospace;
+      --font-blocky:   'Silkscreen', 'Courier New', monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--ground); color: var(--phosphor);
+      font-family: var(--font-body); padding: 1.1rem 1.25rem 2rem;
+      position: relative;
+    }
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50;
+      background: repeating-linear-gradient(to bottom,
+        rgba(0,0,0,0.2) 0px, rgba(0,0,0,0.2) 1px, transparent 2px, transparent 3px);
+      mix-blend-mode: multiply;
+    }
+
+    .topbar { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
+    .topbar h1 {
+      font-family: var(--font-display); font-size: 1.7rem; letter-spacing: 0.04em; margin: 0;
+      text-shadow: 0 0 10px var(--phosphor-soft); text-wrap: balance;
+    }
+    .spacer { flex: 1 1 auto; }
+    .topbar-time {
+      font-family: var(--font-display); font-size: 1.7rem; letter-spacing: 0.04em;
+      color: var(--phosphor); text-shadow: 0 0 10px var(--phosphor-soft);
+      font-variant-numeric: tabular-nums;
+    }
+
+    select, button, input[type="text"] {
+      font-family: var(--font-body); background: var(--glass); color: var(--phosphor);
+      border: 1px solid var(--phosphor-dim); border-radius: 3px; padding: 0.35rem 0.5rem;
+    }
+    select:focus, button:focus-visible, input:focus-visible { outline: 2px solid var(--phosphor); outline-offset: 1px; }
+    button:hover { border-color: var(--phosphor); cursor: pointer; }
+
+    .chip {
+      font-family: var(--font-body); font-size: 0.72rem; letter-spacing: 0.04em;
+      border: 1px solid var(--phosphor-dim); color: var(--ink-2);
+      border-radius: 999px; padding: 0.2rem 0.6rem;
+    }
+    .chip.on   { color: var(--phosphor); border-color: var(--phosphor); }
+    .chip.warn { color: var(--critical); border-color: var(--critical); }
+
+    .cursor {
+      display: inline-block; width: 0.55em; height: 1em; background: var(--phosphor);
+      vertical-align: -0.15em; animation: blink-cursor 1s steps(1) infinite;
+    }
+    @keyframes blink-cursor { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+    .mode-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem; margin-bottom: 1.1rem;
+    }
+    .mode-card {
+      position: relative; text-align: center; cursor: pointer; border: 2px solid var(--phosphor-dim);
+      background: var(--glass); box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+      padding: 1rem 1.1rem; display: flex; flex-direction: column; align-items: center; gap: 0.55rem;
+      font-family: var(--font-body); transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .info-icon {
+      position: absolute; top: 0.5rem; right: 0.55rem; width: 1.15rem; height: 1.15rem;
+      border-radius: 50%; border: 1px solid var(--phosphor-dim); color: var(--ink-2);
+      font-family: var(--font-blocky); font-size: 0.6rem; line-height: 1.1rem; text-align: center;
+      cursor: help; background: var(--ground); transition: border-color 0.15s ease, color 0.15s ease;
+    }
+    .info-icon:hover { border-color: var(--phosphor); color: var(--phosphor); }
+    .info-popover {
+      display: none; position: absolute; top: 1.6rem; right: 0; width: 220px; text-align: left;
+      z-index: 10; background: var(--ground); border: 1px solid var(--phosphor); border-radius: 4px;
+      padding: 0.6rem 0.7rem; font-size: 0.76rem; line-height: 1.5; color: var(--ink-2);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.55); text-shadow: none;
+    }
+    .info-icon:hover .info-popover { display: block; }
+    .info-popover b { color: var(--phosphor); }
+    .mode-card:hover { border-color: var(--ink-2); }
+    .mode-card.active { border-color: var(--phosphor); box-shadow: inset 0 0 16px rgba(0,0,0,0.5), 0 0 14px var(--phosphor-soft); }
+    .mode-card canvas { width: 100%; max-width: 104px; height: auto; image-rendering: pixelated; }
+    .mode-card h2 {
+      margin: 0; font-family: var(--font-blocky); font-size: 0.85rem; letter-spacing: 0.06em;
+      color: var(--phosphor); text-shadow: 0 0 6px var(--phosphor-soft);
+    }
+    .mode-card p { margin: 0; color: var(--ink-2); font-size: 0.8rem; line-height: 1.45; }
+    .status-pill, .soon-pill {
+      font-family: var(--font-blocky); font-size: 0.62rem; letter-spacing: 0.05em;
+      padding: 0.25rem 0.6rem;
+    }
+    .status-pill { background: var(--phosphor); color: var(--ground); }
+    .soon-pill { border: 1px solid var(--phosphor-dim); color: var(--ink-2); }
+
+    .card {
+      border: 2px solid var(--phosphor); background: var(--glass);
+      box-shadow: inset 0 0 16px rgba(0,0,0,0.5); padding: 0.9rem 1rem;
+    }
+    .card h2 {
+      margin: 0 0 0.7rem; font-family: var(--font-blocky); font-size: 0.72rem;
+      letter-spacing: 0.1em; color: var(--ink-2); text-transform: uppercase;
+    }
+    .empty { color: var(--phosphor-dim); font-size: 0.85rem; }
+    .stat { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; padding: 0.15rem 0; }
+    .stat span:last-child { color: var(--ink-2); text-align: right; }
+    .hint { font-size: 0.78rem; color: var(--phosphor-dim); line-height: 1.6; }
+
+    /* ---- terminal: activity + conversation, merged, with input to the agent ---- */
+    .term-status { margin-bottom: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px dashed var(--phosphor-dim); }
+    .term-log {
+      height: 260px; overflow-y: auto; font-size: 0.82rem; line-height: 1.55;
+      padding-right: 0.3rem; scrollbar-color: var(--phosphor-dim) var(--glass);
+    }
+    .term-line { white-space: pre-wrap; word-break: break-word; }
+    .term-line .t-time { color: var(--phosphor-dim); }
+    .term-line.t-activity .t-msg { color: var(--ink-2); }
+    .term-line.t-you .t-msg { color: var(--phosphor); }
+    .term-line.t-laika .t-msg { color: #bfffe0; }
+    .term-line.t-pending .t-msg { color: var(--phosphor-dim); font-style: italic; }
+    .term-input-row { display: flex; gap: 0.5rem; margin-top: 0.7rem; align-items: center; }
+    .term-input-row .prompt { color: var(--phosphor); }
+    .term-input-row input[type="text"] { flex: 1; }
+    .term-input-row button { font-family: var(--font-blocky); font-size: 0.68rem; letter-spacing: 0.05em; }
+
+    #toast {
+      position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%); z-index: 60;
+      background: var(--glass); border: 1px solid var(--phosphor); color: var(--phosphor);
+      font-size: 0.82rem; padding: 0.5rem 0.9rem; border-radius: 4px; display: none;
+    }
+    #toast.err { border-color: var(--critical); color: var(--critical); }
+
+    @media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+  </style>
+  <script src="common.js"></script>
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <div class="topbar">
+    <h1>PERSONALITY</h1>
+    <select id="robot-select" title="Robot"></select>
+    <div class="spacer"></div>
+    <span id="clock" class="hl-clock topbar-time">&hellip;</span>
+    <span id="mode-chip" class="chip" style="display:none"></span>
+  </div>
+
+  <div class="mode-grid" id="cards"></div>
+
+  <section class="card">
+    <h2>Current mode &mdash; console</h2>
+    <div id="mode-status" class="term-status empty">&hellip;</div>
+    <div id="term-log" class="term-log"></div>
+    <div class="term-input-row">
+      <span class="prompt">&gt;</span>
+      <input type="text" id="term-input" placeholder="say something to her…" autocomplete="off">
+      <button type="button" id="term-send">SEND</button>
+    </div>
+  </section>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const state = { base: "" };
+
+    const MODES = [
+      { id: "stationary", title: "Stationary Assistant",
+        blurb: "Sits down and stays put. Watches and talks from one spot — " +
+               "built for conversation, not for covering ground.",
+        info: "<b>What it does:</b> she sits down once and stays there — " +
+              "no idle ticking, no looking around, no autonomous movement " +
+              "of any kind. She watches with her camera and answers when " +
+              "spoken to; the only things that can move her are your " +
+              "voice and safety behaviors.<br><br>" +
+              "<b>Use it for:</b> a desk or side-table companion — " +
+              "conversation, questions, company — whenever you want the " +
+              "safest default with no chance of her wandering off.",
+        built: true, icon: "stationary" },
+      { id: "roaming", title: "Roaming Assistant",
+        blurb: "Walks the apartment on her own, extends the map, and drops " +
+               "a photo + description wherever she stops to look. See it on the Map tab.",
+        info: "<b>What it does:</b> she picks unexplored edges of the map, " +
+              "walks to each one, stands, photographs it and logs a " +
+              "collection point (photo + caption) pinned to the map. She " +
+              "still answers a wake word mid-walk.<br><br>" +
+              "<b>Use it for:</b> mapping a new room, or checking in on " +
+              "the apartment while you're out — review what she saw " +
+              "afterward on the Map tab's collection points.",
+        built: true, icon: "roaming" },
+      { id: "fruitfly", title: "Fruitfly",
+        blurb: "A simulated fly connectome drives her instead of you. No chat, " +
+               "no manual control while it runs — only an exit button.",
+        info: "<b>What it does:</b> a live simulation of the MaleCNS fruit-fly " +
+              "connectome (166,700 neurons) reads sensory input and drives " +
+              "her motion directly. No chat, no manual steering — safety " +
+              "stops still apply, but otherwise something alien is " +
+              "driving.<br><br>" +
+              "<b>Use it for:</b> watching a genuinely novel experiment, " +
+              "not practical use — the only control is the Exit button.",
+        built: false, icon: "fruitfly",
+        notBuiltHint: "the connectome brain hasn't shipped to the robot yet " +
+              "— the F1 bench spike runs standalone, logging decoded " +
+              "commands, but nothing yet bridges it to her arbiter. See " +
+              "docs/design/PERSONALITY_MODES_BRIEF.md. Selecting this mode " +
+              "just stops the conversation loop and hands the arbiter " +
+              "back; nothing drives her yet." },
+      { id: "phone", title: "Phone",
+        blurb: "Hold up fingers to dial a number; she reads each digit back " +
+               "and the full number when you show all ten fingers.",
+        info: "<b>What it does:</b> she watches your hand, counts extended " +
+              "fingers as digits, announces each one, and reads back the " +
+              "full sequence when you show all ten fingers. Dialing itself " +
+              "is stubbed for now — this is the input path.<br><br>" +
+              "<b>Use it for:</b> trying the hand-input pipeline before " +
+              "real dialing lands.",
+        built: false, icon: "phone",
+        notBuiltHint: "hand-input dialing hasn't shipped yet — see " +
+              "docs/design/PERSONALITY_MODES_BRIEF.md and the phone-mode " +
+              "build plan. Selecting this mode stops the conversation loop " +
+              "and eyes' person detection, but nothing reads finger " +
+              "gestures yet." },
+    ];
+
+    // ---- bell-jar icons: same palette + rasterize pipeline as the design pass ----
+
+    const PALETTE = ["#04150a", "#0d3a1e", "#1f6b3f", "#3fbf72", "#8dffb8"];
+
+    function rasterize(canvas, drawHi) {
+      const hi = document.createElement("canvas");
+      hi.width = 160; hi.height = 160;
+      const hctx = hi.getContext("2d");
+      hctx.fillStyle = "#000"; hctx.fillRect(0, 0, 160, 160);
+      drawHi(hctx);
+      const lw = 26, lh = 26;
+      const low = document.createElement("canvas");
+      low.width = lw; low.height = lh;
+      const lctx = low.getContext("2d");
+      lctx.imageSmoothingEnabled = true;
+      lctx.drawImage(hi, 0, 0, lw, lh);
+      const data = lctx.getImageData(0, 0, lw, lh).data;
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      const cw = canvas.width / lw, ch = canvas.height / lh;
+      for (let y = 0; y < lh; y++) {
+        for (let x = 0; x < lw; x++) {
+          const i = (y * lw + x) * 4;
+          const lum = (data[i] * 0.35 + data[i + 1] * 0.5 + data[i + 2] * 0.15) / 255;
+          const level = lum < 0.1 ? 0 : lum < 0.28 ? 1 : lum < 0.5 ? 2 : lum < 0.75 ? 3 : 4;
+          ctx.fillStyle = PALETTE[level];
+          ctx.fillRect(Math.round(x * cw), Math.round(y * ch), Math.ceil(cw), Math.ceil(ch));
+        }
+      }
+    }
+
+    function dot(ctx, x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+
+    // Dome sides are drawn from the arc's OWN endpoints (not nudged-in
+    // numbers) so the walls come out exactly vertical, not tapered.
+    function drawDome(hctx) {
+      const cx = 80, topY = 95, r = 52, baseY = 138;
+      const leftX = cx - r, rightX = cx + r;
+      hctx.strokeStyle = "#cfffe0"; hctx.lineWidth = 5; hctx.lineJoin = "round"; hctx.lineCap = "round";
+      hctx.beginPath();
+      hctx.arc(cx, topY, r, Math.PI, 0, false);
+      hctx.lineTo(rightX, baseY); hctx.lineTo(leftX, baseY); hctx.closePath();
+      hctx.stroke();
+      hctx.fillStyle = "#1f6b3f"; hctx.fillRect(leftX - 8, baseY, r * 2 + 16, 10);
+      hctx.strokeStyle = "rgba(255,255,255,0.45)"; hctx.lineWidth = 3;
+      hctx.beginPath(); hctx.arc(cx, topY, 45, Math.PI * 1.12, Math.PI * 1.42, false); hctx.stroke();
+    }
+
+    function drawBrain(hctx, t) {
+      const pulse = 0.7 + 0.3 * ((Math.sin(t / 900) + 1) / 2);
+      const g = Math.round(140 * pulse + 90);
+      hctx.fillStyle = "rgb(" + g + "," + Math.round(g * 1.05) + "," + Math.round(g * 0.9) + ")";
+      hctx.beginPath(); hctx.ellipse(80, 88, 32, 24, 0, 0, Math.PI * 2); hctx.fill();
+      hctx.strokeStyle = "#0a2513"; hctx.lineWidth = 2;
+      hctx.beginPath(); hctx.moveTo(56, 80); hctx.quadraticCurveTo(66, 68, 76, 80); hctx.quadraticCurveTo(86, 92, 96, 80); hctx.stroke();
+      hctx.beginPath(); hctx.moveTo(58, 96); hctx.quadraticCurveTo(70, 86, 80, 96); hctx.quadraticCurveTo(90, 106, 100, 96); hctx.stroke();
+      hctx.beginPath(); hctx.moveTo(64, 68); hctx.quadraticCurveTo(70, 60, 78, 66); hctx.stroke();
+      // brain stem: tapers from the brain's underside down toward the spine
+      hctx.fillStyle = "rgb(" + Math.round(g * 0.55) + "," + Math.round(g * 0.6) + "," + Math.round(g * 0.5) + ")";
+      hctx.beginPath();
+      hctx.moveTo(70, 104); hctx.lineTo(90, 104);
+      hctx.lineTo(85, 130); hctx.lineTo(75, 130);
+      hctx.closePath(); hctx.fill();
+      hctx.strokeStyle = "#0a2513"; hctx.lineWidth = 1.5;
+      hctx.beginPath(); hctx.moveTo(70, 104); hctx.lineTo(90, 104); hctx.lineTo(85, 130); hctx.lineTo(75, 130); hctx.closePath(); hctx.stroke();
+    }
+
+    function drawFly(hctx, t) {
+      const jx = 80 + Math.sin(t / 130) * 24 + Math.sin(t / 47) * 6;
+      const jy = 92 + Math.cos(t / 97) * 20 + Math.sin(t / 61) * 5;
+      const px = 80 + Math.sin((t - 130) / 130) * 24, py = 92 + Math.cos((t - 130) / 97) * 20;
+      hctx.strokeStyle = "rgba(180,255,200,0.35)"; hctx.lineWidth = 2; hctx.setLineDash([2, 4]);
+      hctx.beginPath(); hctx.moveTo(px, py); hctx.lineTo(jx, jy); hctx.stroke();
+      hctx.setLineDash([]);
+      hctx.fillStyle = "#cfffe0"; hctx.beginPath(); hctx.ellipse(jx, jy, 4, 6, 0, 0, Math.PI * 2); hctx.fill();
+      hctx.fillStyle = "rgba(220,255,230,0.55)";
+      hctx.beginPath(); hctx.ellipse(jx - 5, jy - 3, 6, 3, -0.5, 0, Math.PI * 2); hctx.fill();
+      hctx.beginPath(); hctx.ellipse(jx + 5, jy - 3, 6, 3, 0.5, 0, Math.PI * 2); hctx.fill();
+    }
+
+    // Classic radar/sonar scope: fixed range rings + a sweep line whose
+    // fading trail is built from wedges swept AROUND the center (not a
+    // straight gradient, which faded the wrong axis). Angle comes from
+    // (t % period)/period so one revolution is always exactly `period` ms
+    // with no seam at the wrap.
+    function drawRadarDome(hctx, t) {
+      drawDome(hctx);
+      const cx = 80, cy = 100, r = 40;
+
+      hctx.strokeStyle = "rgba(150,255,190,0.35)"; hctx.lineWidth = 1;
+      [14, 27, 40].forEach(function (rr) {
+        hctx.beginPath(); hctx.arc(cx, cy, rr, 0, Math.PI * 2); hctx.stroke();
+      });
+      hctx.fillStyle = "rgba(150,255,190,0.6)"; dot(hctx, cx, cy, 1.6);
+
+      const period = 4200;
+      const ang = (((t % period) + period) % period) / period * Math.PI * 2;
+      const trail = 1.15, slices = 16;
+      for (let i = 0; i < slices; i++) {
+        const a0 = ang - trail * (i / slices);
+        const a1 = ang - trail * ((i + 1) / slices);
+        const alpha = 0.8 * (1 - i / slices);
+        hctx.beginPath(); hctx.moveTo(cx, cy); hctx.arc(cx, cy, r, a0, a1, true); hctx.closePath();
+        hctx.fillStyle = "rgba(150,255,190," + alpha.toFixed(2) + ")";
+        hctx.fill();
+      }
+      hctx.strokeStyle = "rgba(200,255,220,0.95)"; hctx.lineWidth = 1.5;
+      hctx.beginPath(); hctx.moveTo(cx, cy); hctx.lineTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r); hctx.stroke();
+
+      hctx.fillStyle = "rgba(200,255,220,0.8)";
+      dot(hctx, cx + 18, cy - 8, 2.2); dot(hctx, cx - 14, cy + 10, 1.8);
+    }
+
+    // A raised palm with five fingers, one lifting at a time in sequence —
+    // a small nod to "she's counting fingers" without needing a digit glyph.
+    function drawHand(hctx, t) {
+      const cx = 80, palmY = 106;
+      const cycle = 900, lift = Math.floor((t / cycle) % 5);
+      hctx.fillStyle = "#cfffe0";
+      hctx.beginPath(); hctx.ellipse(cx, palmY, 20, 16, 0, 0, Math.PI * 2); hctx.fill();
+      const angles = [-1.15, -0.55, 0, 0.55, 1.15];
+      angles.forEach(function (a, i) {
+        const raised = i === lift;
+        const len = raised ? 34 : 26;
+        const baseX = cx + Math.sin(a) * 16, baseY = palmY - 6 - Math.cos(a) * 4;
+        const tipX = cx + Math.sin(a) * (16 + len * 0.35), tipY = baseY - len;
+        hctx.strokeStyle = raised ? "#e8fff2" : "#8dffb8";
+        hctx.lineWidth = 6; hctx.lineCap = "round";
+        hctx.beginPath(); hctx.moveTo(baseX, baseY); hctx.lineTo(tipX, tipY); hctx.stroke();
+      });
+    }
+
+    // Roaming defaults to the matched-triptych radar reading (all three jars
+    // stay sealed); the open-jar/pawprint-trail alternative is one function
+    // swap away if the other reading wins instead.
+    const ICON_DRAW = {
+      stationary: function (hctx, t) { drawDome(hctx); drawBrain(hctx, t); },
+      fruitfly:   function (hctx, t) { drawDome(hctx); drawFly(hctx, t); },
+      roaming:    function (hctx, t) { drawRadarDome(hctx, t); },
+      phone:      function (hctx, t) { drawDome(hctx); drawHand(hctx, t); },
+    };
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const iconTimers = {};
+
+    // Driven off performance.now() rather than a per-mount counter that
+    // started at 0: mountIcons() can be called again later (a re-render,
+    // a future feature) without the sweep/pulse snapping back to its start
+    // phase — it just continues from wherever real elapsed time puts it.
+    function mountIcons() {
+      Object.keys(iconTimers).forEach((k) => clearInterval(iconTimers[k]));
+      MODES.forEach((m) => {
+        const canvas = document.getElementById("icon-" + m.id);
+        if (!canvas) return;
+        const draw = ICON_DRAW[m.icon];
+        const frame = () => rasterize(canvas, (hctx) => draw(hctx, performance.now()));
+        frame();
+        if (!reduceMotion) iconTimers[m.id] = setInterval(frame, 140);
+      });
+    }
+
+    // ---- clock: 24h, matched to the PERSONALITY wordmark's size/weight ----
+
+    function tickClock() {
+      const el = $("#clock");
+      if (!el) return;
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      el.textContent = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    }
+    tickClock();
+    setInterval(tickClock, 1000);
+
+    // ---- mode cards ----
+
+    let lastRenderedMode = null;
+    function renderCards(current) {
+      // The 5 s mode poll calls this every tick; rebuilding the card DOM
+      // (and, with it, every icon's canvas) when nothing actually changed
+      // is wasted churn even now that mountIcons() no longer resets the
+      // sweep phase, so skip it outright.
+      if (current === lastRenderedMode) return;
+      lastRenderedMode = current;
+      $("#cards").innerHTML = MODES.map((m) => `
+        <button type="button" class="mode-card${m.id === current ? " active" : ""}" data-mode="${m.id}">
+          <span class="info-icon" aria-hidden="true">i<span class="info-popover">${m.info}</span></span>
+          <canvas id="icon-${m.id}" width="104" height="104"></canvas>
+          <h2>${esc(m.title)}</h2>
+          <p>${esc(m.blurb)}</p>
+          ${(m.id === current ? '<span class="status-pill">ACTIVE</span>' : "")}
+          ${(m.built ? "" : '<span class="soon-pill">STUBBED</span>')}
+        </button>`).join("");
+      $("#cards").querySelectorAll(".mode-card").forEach((btn) => {
+        btn.addEventListener("click", () => selectMode(btn.dataset.mode));
+      });
+      mountIcons();
+    }
+
+    function renderStatus(mode) {
+      const el = $("#mode-status");
+      const def = MODES.find((m) => m.id === mode.mode);
+      el.className = "term-status";
+      const since = mode.changedAt ? new Date(mode.changedAt).toLocaleString() : "—";
+      el.innerHTML = `<div class="stat"><span>&gt; MODE</span><span>${esc(def?.title ?? mode.mode)}</span></div>` +
+        `<div class="stat"><span>&gt; SINCE</span><span>${esc(since)}</span></div>` +
+        (def && !def.built
+          ? `<div class="hint" style="margin-top:0.4rem">${esc(def.title)}: ` +
+            `${esc(def.notBuiltHint || "")}</div>`
+          : "");
+    }
+
+    // The orchestrator serializes OperatingMode as its enum name
+    // ("STATIONARY"), not the lowercase wireId the GUI's MODES ids and the
+    // POST /mode/{mode} route use — lowercase it once at the boundary.
+    function normalizeMode(mode) {
+      return { ...mode, mode: (mode.mode || "").toLowerCase() };
+    }
+
+    async function refresh() {
+      const chip = $("#mode-chip");
+      try {
+        const mode = normalizeMode(await hlApi(state.base, "/mode"));
+        chip.style.display = "none";
+        renderCards(mode.mode);
+        renderStatus(mode);
+      } catch (err) {
+        chip.style.display = ""; chip.textContent = "ORCHESTRATOR UNREACHABLE";
+        chip.className = "chip warn"; chip.title = err.message;
+      }
+    }
+
+    async function selectMode(modeId) {
+      const chip = $("#mode-chip");
+      try {
+        const mode = normalizeMode(await hlApi(state.base, `/mode/${modeId}`, { method: "POST" }));
+        renderCards(mode.mode);
+        renderStatus(mode);
+        hlToast(`Switched to ${MODES.find((m) => m.id === modeId)?.title ?? modeId}`);
+      } catch (err) {
+        chip.style.display = ""; chip.textContent = "SWITCH FAILED";
+        chip.className = "chip warn"; chip.title = err.message;
+        hlToast(`Mode switch failed: ${err.message}`, true);
+      }
+    }
+
+    // ---- terminal: activity log + conversation turns, merged and live,
+    // with an input that goes to the same conversation router "Hey Laika"
+    // uses (POST /conversation/say — same LLM, same behaviors, same speaker) ----
+
+    const term = { lines: [], knownTurnIds: new Set(), pendingSince: null };
+
+    function fmtTime(iso) {
+      try { return new Date(iso).toLocaleTimeString([], { hour12: false }); }
+      catch { return ""; }
+    }
+
+    function pushLine(cls, iso, text) {
+      term.lines.push({ cls, at: iso, text });
+      if (term.lines.length > 80) term.lines.shift();
+    }
+
+    function renderLog() {
+      const el = $("#term-log");
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+      const sorted = term.lines.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+      el.innerHTML = sorted.map((l) =>
+        `<div class="term-line ${l.cls}"><span class="t-time">[${esc(fmtTime(l.at))}]</span> ` +
+        `<span class="t-msg">${esc(l.text)}</span></div>`).join("") +
+        `<div class="term-line"><span class="prompt">&gt;</span> <span class="cursor"></span></div>`;
+      if (atBottom) el.scrollTop = el.scrollHeight;
+    }
+
+    async function refreshLog() {
+      try {
+        const [activity, convo] = await Promise.all([
+          hlApi(state.base, "/activity"),
+          hlApi(state.base, "/conversation?limit=15"),
+        ]);
+        const seenActivity = new Set(term.lines.filter((l) => l.cls === "t-activity").map((l) => l.at + l.text));
+        (activity.activity || []).slice(-40).forEach((e) => {
+          const key = e.at + e.message;
+          if (!seenActivity.has(key)) pushLine("t-activity", e.at, `[${e.kind}] ${e.message}`);
+        });
+        (convo.turns || []).slice().reverse().forEach((turn) => {
+          if (term.knownTurnIds.has(turn.id)) return;
+          term.knownTurnIds.add(turn.id);
+          if (turn.heard) pushLine("t-you", turn.at, turn.heard);
+          if (turn.error) pushLine("t-laika", turn.at, `(error) ${turn.error}`);
+          else if (turn.said) pushLine("t-laika", turn.at, turn.said);
+        });
+        // drop the transient "thinking" line once the real turn lands
+        term.lines = term.lines.filter((l) => l.cls !== "t-pending");
+        if (convo.current && convo.state && convo.state !== "idle") {
+          const cur = convo.current;
+          pushLine("t-pending", new Date().toISOString(),
+            `laika is ${convo.state}${cur.heard ? ` — "${cur.heard}"` : ""}…`);
+        }
+        renderLog();
+      } catch (err) {
+        // offline; leave the log as last known, the mode chip already reports this
+      }
+    }
+
+    async function sendToAgent() {
+      const input = $("#term-input");
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      pushLine("t-you", new Date().toISOString(), text);
+      renderLog();
+      try {
+        await hlApi(state.base, "/conversation/say", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        refreshLog();
+      } catch (err) {
+        pushLine("t-laika", new Date().toISOString(), `(send failed) ${err.message}`);
+        renderLog();
+      }
+    }
+
+    $("#term-send").addEventListener("click", sendToAgent);
+    $("#term-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendToAgent(); });
+
+    async function boot() {
+      let page;
+      try {
+        page = await hlPage({
+          onRobotChange: (id) => {
+            state.base = `/api/robots/${id}`;
+            term.lines = []; term.knownTurnIds = new Set();
+            refresh(); refreshLog();
+          },
+        });
+      } catch (err) {
+        $("#mode-chip").style.display = ""; $("#mode-chip").textContent = "ORCHESTRATOR UNREACHABLE";
+        $("#mode-chip").className = "chip warn";
+        return;
+      }
+      if (!page.robotId) return;
+      state.base = page.base;
+      refresh();
+      refreshLog();
+      hlPoll(refresh, 5000, { immediate: false });
+      hlPoll(refreshLog, 2000, { immediate: false });
+    }
+    boot();
+  </script>
+</body>
+</html>

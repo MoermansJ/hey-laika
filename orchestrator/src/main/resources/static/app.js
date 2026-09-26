@@ -23,6 +23,8 @@ const state = {
   display: {},             // robotId -> DisplayContent
   activity: {},            // robotId -> ActivityEntry[]
   animations: {},          // robotId -> Animation[]
+  mode: {},                // robotId -> operating mode ("stationary"/"roaming"/"fruitfly"/"phone")
+  activeTab: "personality",
   wsConnected: false,
   wsGaveUp: false,
   wsFailures: 0,
@@ -109,6 +111,9 @@ function handleMessage(topic, body) {
     } else if (kind === "activity") {
       state.activity[robotId] = body.activity || [];
       if (onRobotPage(robotId)) renderActivity(robotId);
+    } else if (kind === "mode") {
+      state.mode[robotId] = (body.mode || "stationary").toLowerCase();
+      if (onRobotPage(robotId)) renderTabBar();
     }
   }
 }
@@ -171,7 +176,7 @@ function subscribeAll() {
   stompClient.subscribe("/topic/fleet/stats",
       (msg) => handleMessage("/topic/fleet/stats", JSON.parse(msg.body)));
   state.robots.forEach((robot) => {
-    ["status", "personality", "display", "activity"].forEach((kind) => {
+    ["status", "personality", "display", "activity", "mode"].forEach((kind) => {
       const topic = `/topic/robot/${robot.robotId}/${kind}`;
       stompClient.subscribe(topic, (msg) => handleMessage(topic, JSON.parse(msg.body)));
     });
@@ -249,11 +254,18 @@ async function pollTick() {
   }
 }
 
-/** One-shot REST fetch of a robot's detail — instant paint on page open. */
+/** One-shot REST fetch of a robot's detail — instant paint on page open.
+ * Mode rides along here too (not just the WS push) since it drives which
+ * tabs are even visible — worth refreshing on every poll tick, not just at
+ * WS-connect time. */
 async function refreshRobotDetail(robotId) {
   try {
-    const activity = await api(`/api/robots/${robotId}/activity`);
+    const [activity, mode] = await Promise.all([
+      api(`/api/robots/${robotId}/activity`),
+      api(`/api/robots/${robotId}/mode`),
+    ]);
     handleMessage(`/topic/robot/${robotId}/activity`, activity);
+    handleMessage(`/topic/robot/${robotId}/mode`, mode);
   } catch { /* adapter offline; feed keeps last state */ }
 }
 
@@ -272,29 +284,84 @@ function route() {
 
 // The robot page's tabs, in order. `page` embeds that file in an iframe;
 // tabs without one (activity, specs) are panels in index.html itself.
+// `always: true` tabs show regardless of operating mode; the rest only show
+// while the robot is in one of `modes` (PERSONALITY_MODES_BRIEF.md — the
+// 2026-09-20 GUI overhaul gates most tabs behind the mode you're in, with
+// Personality itself as the always-visible landing view/switcher). Fruitfly
+// deliberately gets nothing extra: no manual/interactive tabs while
+// something else is driving her.
 const TABS = [
-  { id: "activity", label: "Activity" },
-  { id: "senses",   label: "Dashboard",    page: "dashboard.html" },
-  { id: "control",  label: "Control",      page: "control.html" },
-  { id: "behavior", label: "Behavior",     page: "behavior.html" },
-  { id: "ears",     label: "Audio input",  page: "ears.html" },
-  { id: "voice",    label: "Audio output", page: "voice.html" },
-  { id: "eyes",     label: "Vision",       page: "eyes.html" },
-  { id: "mind",     label: "Mind",         page: "mind.html" },
-  { id: "leash",    label: "Leash",        page: "leash.html" },
-  { id: "map",      label: "Map",          page: "map.html" },
-  { id: "metrics",  label: "Metrics",      page: "metrics.html" },
-  { id: "specs",    label: "Specs" },
+  { id: "personality", label: "Personality", page: "personality.html", always: true },
+  { id: "activity",  label: "Activity",  always: true },
+  { id: "senses",    label: "Dashboard", page: "dashboard.html", always: true },
+  { id: "mind",      label: "Mind",      page: "mind.html", always: true },
+  { id: "map",       label: "Map",       page: "map.html", always: true },
+  { id: "leash",     label: "Leash",     page: "leash.html", always: true },
+  { id: "metrics",   label: "Metrics",   page: "metrics.html", always: true },
+  { id: "specs",     label: "Specs",     always: true },
+  { id: "control",   label: "Control",      page: "control.html", modes: ["stationary"] },
+  { id: "behavior",  label: "Behavior",     page: "behavior.html", modes: ["stationary"] },
+  { id: "ears",      label: "Audio input",  page: "ears.html", modes: ["stationary", "roaming"] },
+  { id: "voice",     label: "Audio output", page: "voice.html", modes: ["stationary", "roaming"] },
+  { id: "eyes",      label: "Vision",       page: "eyes.html", modes: ["stationary", "roaming"] },
 ];
 const FRAME_TABS = TABS.filter((t) => t.page).map((t) => t.id);
 
-function renderTabs() {
-  $("#tab-bar").innerHTML = TABS.map((t, i) =>
-      `<button class="tab${i === 0 ? " active" : ""}" role="tab" aria-selected="${i === 0}"` +
-      ` data-tab="${t.id}">${escapeHtml(t.label)}</button>`).join("");
+function visibleTabs(mode) {
+  return TABS.filter((t) => t.always || (t.modes && t.modes.includes(mode)));
+}
+
+// Iframes are created once, up front, for every tab regardless of mode —
+// cheap (nothing loads until a tab's src is set), and it means a mode
+// switch never has to tear down and reload a frame that stays visible.
+function renderFrames() {
   $("#robot-frames").innerHTML = TABS.filter((t) => t.page).map((t) =>
       `<div id="robot-tab-${t.id}" class="robot-tab hidden">` +
       `<iframe id="${t.id}-frame" class="control-frame" title="${escapeHtml(t.label)}"></iframe></div>`).join("");
+}
+
+// Only the button strip depends on mode; rebuilding it is what actually
+// gates the tabs. Falls back to Personality if the active tab just got
+// hidden by a mode switch.
+function renderTabBar() {
+  const mode = state.mode[state.selected] || "stationary";
+  const tabs = visibleTabs(mode);
+  if (!tabs.some((t) => t.id === state.activeTab)) state.activeTab = "personality";
+  $("#tab-bar").innerHTML = tabs.map((t) =>
+      `<button class="tab${t.id === state.activeTab ? " active" : ""}" role="tab"` +
+      ` aria-selected="${t.id === state.activeTab}" data-tab="${t.id}">${escapeHtml(t.label)}</button>`).join("");
+  showActiveTabPanel();
+}
+
+function showActiveTabPanel() {
+  const name = state.activeTab;
+  document.querySelectorAll(".robot-tab").forEach((panel) =>
+      panel.classList.toggle("hidden", panel.id !== `robot-tab-${name}`));
+  // Tell every embedded page whether it is the visible tab so hidden
+  // frames stop polling (common.js listens for this).
+  FRAME_TABS.forEach((frameName) => {
+    const frame = $(`#${frameName}-frame`);
+    if (frame && frame.contentWindow && frame.getAttribute("src")) {
+      frame.contentWindow.postMessage(
+          { type: "laika-visible", visible: frameName === name }, "*");
+    }
+  });
+  const tabDef = TABS.find((t) => t.id === name);
+  if (tabDef && tabDef.page) {
+    const frame = $(`#${name}-frame`);
+    if (frame && !frame.getAttribute("src")) {
+      frame.src = `${tabDef.page}?embedded=1&robot=${encodeURIComponent(state.selected)}`;
+    }
+  }
+  if (name === "specs") {
+    renderSpecsPage($("#specs-content"), state.selected);
+    loadPollingPanel(state.selected);
+  }
+}
+
+function activateTab(name) {
+  state.activeTab = name;
+  renderTabBar();
 }
 
 function clearFrames() {
@@ -318,30 +385,13 @@ function resetRobotPanels() {
   $("#polling-state").textContent = "";
 }
 
-function selectTab(name) {
-  document.querySelectorAll(".tab-bar .tab").forEach((t) => {
-    const active = t.dataset.tab === name;
-    t.classList.toggle("active", active);
-    t.setAttribute("aria-selected", active ? "true" : "false");
-  });
-  document.querySelectorAll(".robot-tab").forEach((panel) =>
-      panel.classList.toggle("hidden", panel.id !== `robot-tab-${name}`));
-  // Tell every embedded page whether it is the visible tab so hidden
-  // frames stop polling (common.js listens for this).
-  FRAME_TABS.forEach((frameName) => {
-    const frame = $(`#${frameName}-frame`);
-    if (frame && frame.contentWindow && frame.getAttribute("src")) {
-      frame.contentWindow.postMessage(
-          { type: "laika-visible", visible: frameName === name }, "*");
-    }
-  });
-}
-
 // An embedded page's widget wrench asks for another tab of the same robot.
+// (If that tab is mode-hidden, renderTabBar's fallback quietly lands on
+// Personality instead — a wrench never opens a tab the current mode hides.)
 window.addEventListener("message", (event) => {
   const data = event.data || {};
   if (data.type !== "laika-open-tab") return;
-  if (TABS.some((t) => t.id === data.tab)) selectTab(data.tab);
+  if (TABS.some((t) => t.id === data.tab)) activateTab(data.tab);
 });
 
 function showPage(page) {
@@ -373,12 +423,14 @@ function showRobotPage(robotId) {
 
   if (robotChanged) {
     // Embedded tabs are per-robot: clear cached frames, wipe the shared
-    // panels and return to Activity so nothing shows the previous
-    // robot's data while the new robot's fetches are in flight.
+    // panels and land back on Personality — the mode gate/switcher — so
+    // nothing shows the previous robot's data while the new robot's
+    // fetches are in flight.
     clearFrames();
     resetRobotPanels();
-    selectTab("activity");
+    state.activeTab = "personality";
   }
+  renderTabBar();
 
   renderRobotHeader(robotId);
   renderActivity(robotId);
@@ -611,23 +663,13 @@ $("#sidebar-open").onclick = () => $("#sidebar").classList.toggle("open");
 
 // Robot page tabs. Embedded per-robot pages lazy-load on first activation
 // (frames are cleared whenever the selected robot changes or the user
-// returns to the dashboard).
-renderTabs();
-document.querySelectorAll(".tab-bar .tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    selectTab(tab.dataset.tab);
-    const src = TABS.find((t) => t.id === tab.dataset.tab)?.page;
-    if (src) {
-      const frame = $(`#${tab.dataset.tab}-frame`);
-      if (frame && !frame.getAttribute("src")) {
-        frame.src = `${src}?embedded=1&robot=${encodeURIComponent(state.selected)}`;
-      }
-    }
-    if (tab.dataset.tab === "specs") {
-      renderSpecsPage($("#specs-content"), state.selected);
-      loadPollingPanel(state.selected);
-    }
-  });
+// returns to the dashboard). The tab bar's buttons are rebuilt on every mode
+// change (renderTabBar), so the click listener is delegated on the
+// container rather than attached per-button.
+renderFrames();
+$("#tab-bar").addEventListener("click", (e) => {
+  const tab = e.target.closest(".tab");
+  if (tab) activateTab(tab.dataset.tab);
 });
 
 // ---------- boot ----------

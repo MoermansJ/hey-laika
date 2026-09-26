@@ -514,6 +514,28 @@ public class RobotController {
                 .body(content.body());
     }
 
+    @Operation(summary = "Roaming Assistant's collection points",
+            description = "Relayed to the same path on the adapter. Filters: limit, since, until.")
+    @GetMapping("/collection_points")
+    public Map<String, Object> collectionPoints(@PathVariable String robotId,
+                                                @RequestParam Map<String, String> filters) {
+        return relayGet.execute(robotId, "/collection_points" + query(filters, COLLECTION_POINT_FILTERS));
+    }
+
+    @Operation(summary = "A collection point's photo",
+            description = "Relayed to the same path on the adapter.")
+    @ApiResponse(responseCode = "200", content = @Content(mediaType = MediaType.IMAGE_JPEG_VALUE,
+            schema = @Schema(type = "string", format = "binary")))
+    @GetMapping("/collection_points/{pointId}/photo")
+    public ResponseEntity<byte[]> collectionPointPhoto(@PathVariable String robotId,
+                                                       @PathVariable String pointId) {
+        BinaryContent photo = relayGetBinary.execute(robotId, "/collection_points/" + pointId + "/photo");
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(photo.contentType()))
+                .cacheControl(CacheControl.noStore())
+                .body(photo.body());
+    }
+
     @Operation(summary = "Proximity-leash state",
             description = "Relayed to the same path on the adapter. RSSI, zone and dead-man.")
     @GetMapping("/leash")
@@ -810,6 +832,8 @@ public class RobotController {
             Set.of("limit", "since", "stored", "format");
     private static final Set<String> EXPORT_FILTERS =
             Set.of("limit", "since", "kind", "format");
+    private static final Set<String> COLLECTION_POINT_FILTERS =
+            Set.of("limit", "since", "until");
 
     private static String sampleQuery(Map<String, String> filters) {
         return query(filters, SAMPLE_FILTERS);
