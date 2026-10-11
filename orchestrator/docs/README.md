@@ -1,6 +1,6 @@
 # Docs
 
-Four sections. Every file under `docs/` has one line here; keep it that way.
+Five sections. Every file under `docs/` has one line here; keep it that way.
 
 ## `robot/` — the dog itself (reference, kept current)
 
@@ -31,7 +31,13 @@ Java orchestrator's structure.
 - [OBSERVABILITY_MIND_BRIEF.md](design/OBSERVABILITY_MIND_BRIEF.md) — 2026-09-01 brief: request metrics page and the per-robot Mind tab
 - [VOICE_RELAY_BRIEF.md](design/VOICE_RELAY_BRIEF.md) — 2026-09-01 brief: XIAO ESP32S3 Sense mic → host transcription → decision layer; Grove Speaker Plus output
 - [ARRIVAL_DAY_RUNBOOK.md](design/ARRIVAL_DAY_RUNBOOK.md) — 2026-09-03 checklist for the XIAO Sense, Speaker Plus and ultrasonic ranger: pin validation order, bench tests, power check
+- [AGENT_TOOL_COMPOSITION_DESIGN.md](design/AGENT_TOOL_COMPOSITION_DESIGN.md) — 2026-10-11 implementation design for agent tool calls: arbiter submission, outcome evaluation from sensor snapshots, learned tool-combination patterns (AGENT-01 … AGENT-19)
 - [FIRMWARE_QUEUE.md](design/FIRMWARE_QUEUE.md) — changes pooled for the next BiBoard / satellite flash, with their bench checks; flashing is a ritual, so it happens in batches
+
+## `api/` — the orchestrator's HTTP contracts (generated or kept current)
+
+- [openapi.json](api/openapi.json) — OpenAPI 3.1 spec generated from the controllers; `OpenApiSpecTest` fails when it is out of date
+- [AGENT_API.md](api/AGENT_API.md) — agent tool composition API: tools / patterns / submit-tool with examples, error codes and recovery, data model, lifecycle sequence, Claude integration guide, the adapter endpoints it relies on, metrics and configuration
 
 ## `reports/` — point-in-time status reports and reviews
 
