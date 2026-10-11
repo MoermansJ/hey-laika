@@ -18,6 +18,7 @@ import com.bittle.orchestrator.application.service.AgentBehaviorService;
 import com.bittle.orchestrator.application.service.BehaviorLoops;
 import com.bittle.orchestrator.application.service.FleetSweep;
 import com.bittle.orchestrator.application.service.GoalOutcomeEvaluator;
+import com.bittle.orchestrator.application.service.LearnedPatternQueries;
 import com.bittle.orchestrator.application.service.OrchestratorMetricsSnapshot;
 import com.bittle.orchestrator.application.service.PatternRollupService;
 import com.bittle.orchestrator.application.service.SensorStateService;
@@ -138,6 +139,13 @@ public class ApplicationConfig {
     PatternRollupService patternRollupService(BehaviorRunLogRepositoryPort runLogs,
                                               LearnedPatternRepositoryPort patterns) {
         return new PatternRollupService(runLogs, patterns, Clock.systemUTC());
+    }
+
+    @Bean
+    LearnedPatternQueries learnedPatternQueries(LearnedPatternRepositoryPort patterns,
+                                                Fleet fleet) {
+        return new LearnedPatternQueries(patterns, fleet, Clock.systemUTC(),
+                LearnedPatternQueries.DEFAULT_TTL);
     }
 
     @Bean
