@@ -10,7 +10,9 @@ Priority convention (docs/design/BEHAVIOR_FRAMEWORK_BRIEF.md, LOWER wins):
 """
 import json
 import uuid
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import String, Text, inspect, text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -84,6 +86,12 @@ class BehaviorRun(Base):
     preempted_by: Mapped[str] = mapped_column(String(36), nullable=True)
     started_at: Mapped[datetime] = mapped_column(default=utcnow)
     ended_at: Mapped[datetime] = mapped_column(nullable=True)
+    # Agent tool composition (AGENT-03): outcome evaluation written back by
+    # the Java orchestrator after the run, and the raw before/after sensor
+    # changes it judged. Both JSON text, NULL until the orchestrator syncs.
+    outcome_json: Mapped[str] = mapped_column("outcome", Text, nullable=True)
+    sensor_delta_json: Mapped[str] = mapped_column("sensor_delta", Text,
+                                                   nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -93,7 +101,113 @@ class BehaviorRun(Base):
             "preemptedBy": self.preempted_by,
             "startedAt": iso_utc(self.started_at),
             "endedAt": iso_utc(self.ended_at),
+            "outcome": json.loads(self.outcome_json) if self.outcome_json else None,
+            "sensorDelta": (json.loads(self.sensor_delta_json)
+                            if self.sensor_delta_json else None),
         }
+
+
+@dataclass
+class OutcomeEvaluation:
+    """Outcome of a run as judged by the Java orchestrator's
+    GoalOutcomeEvaluator. ``success`` is None when the goal could not be
+    evaluated (no goal declared / no checker registered)."""
+    success: bool | None
+    confidence: float = 0.0
+    reason: str = ""
+    evaluator_version: str = "1.0"
+    evaluated_at: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "OutcomeEvaluation":
+        """Accept both snake_case and the orchestrator's camelCase keys."""
+        if not isinstance(data, dict):
+            raise ValueError("outcome must be an object")
+        success = data.get("success")
+        if success is not None and not isinstance(success, bool):
+            raise ValueError("outcome.success must be a boolean or null")
+        confidence = float(data.get("confidence", 0.0) or 0.0)
+        if not 0.0 <= confidence <= 1.0:
+            raise ValueError("outcome.confidence must be between 0 and 1")
+        return cls(
+            success=success,
+            confidence=confidence,
+            reason=str(data.get("reason") or ""),
+            evaluator_version=str(data.get("evaluator_version")
+                                  or data.get("evaluatorVersion") or "1.0"),
+            evaluated_at=data.get("evaluated_at") or data.get("evaluatedAt"),
+        )
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class BehaviorRunLogEntry:
+    """Typed view of one framework_behavior_runs row, including the agent
+    outcome fields. Rows written before AGENT-03 read back with
+    ``outcome``/``sensor_delta`` = None."""
+    id: str
+    behavior_name: str
+    source: str
+    priority: int
+    status: str
+    detail: str = ""
+    cause: Any = None
+    preempted_by: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    outcome: OutcomeEvaluation | None = None
+    sensor_delta: dict | None = field(default=None)
+
+    @classmethod
+    def from_row(cls, row: "BehaviorRun") -> "BehaviorRunLogEntry":
+        outcome = (OutcomeEvaluation.from_dict(json.loads(row.outcome_json))
+                   if row.outcome_json else None)
+        return cls(
+            id=row.id, behavior_name=row.behavior_name, source=row.source,
+            priority=row.priority, status=row.status, detail=row.detail or "",
+            cause=json.loads(row.cause_json or "null"),
+            preempted_by=row.preempted_by,
+            started_at=iso_utc(row.started_at), ended_at=iso_utc(row.ended_at),
+            outcome=outcome,
+            sensor_delta=(json.loads(row.sensor_delta_json)
+                          if row.sensor_delta_json else None),
+        )
+
+
+def migrate_run_log(bind=None) -> list[str]:
+    """Bring an existing framework_behavior_runs table up to the current
+    schema in place. ``create_all`` never alters existing tables, so columns
+    added after a database was created are ALTERed in here. Idempotent:
+    every step checks first, so running it any number of times is safe.
+    Returns the names of the columns it added (empty when up to date)."""
+    bind = bind if bind is not None else engine
+    existing = {c["name"] for c in
+                inspect(bind).get_columns("framework_behavior_runs")}
+    added = []
+    with bind.begin() as conn:
+        for name, ddl in _RUN_LOG_COLUMNS:
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE framework_behavior_runs "
+                                  f"ADD COLUMN {name} {ddl}"))
+                added.append(name)
+        # Goal/outcome queries (pattern rollup) only ever look at runs that
+        # already carry an outcome, so keep the index partial and small.
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_framework_runs_outcome "
+            "ON framework_behavior_runs (source, behavior_name, started_at) "
+            "WHERE outcome IS NOT NULL"))
+    return added
+
+
+# (column, DDL) pairs added to framework_behavior_runs after its first release.
+_RUN_LOG_COLUMNS = [
+    ("cause_json", "TEXT DEFAULT 'null'"),
+    ("preempted_by", "VARCHAR(36)"),
+    ("outcome", "TEXT"),
+    ("sensor_delta", "TEXT"),
+]
 
 
 # ---- seeds (idempotent; keyed by name) -------------------------------------
@@ -272,16 +386,8 @@ class BehaviorStore:
     @staticmethod
     def _ensure_run_columns() -> None:
         # create_all never alters existing tables; run logs created before
-        # the provenance columns existed need them added in place.
-        existing = {c["name"] for c in
-                    inspect(engine).get_columns("framework_behavior_runs")}
-        with engine.begin() as conn:
-            if "cause_json" not in existing:
-                conn.execute(text("ALTER TABLE framework_behavior_runs "
-                                  "ADD COLUMN cause_json TEXT DEFAULT 'null'"))
-            if "preempted_by" not in existing:
-                conn.execute(text("ALTER TABLE framework_behavior_runs "
-                                  "ADD COLUMN preempted_by VARCHAR(36)"))
+        # the provenance/outcome columns existed need them added in place.
+        migrate_run_log(engine)
 
     # -- behaviors --
     def behaviors(self) -> list[dict]:
@@ -373,3 +479,46 @@ class BehaviorStore:
         with SessionLocal() as session:
             return [r.to_dict() for r in session.query(BehaviorRun)
                     .order_by(BehaviorRun.started_at.desc()).limit(limit)]
+
+    def run_entry(self, run_id: str) -> BehaviorRunLogEntry | None:
+        with SessionLocal() as session:
+            row = session.query(BehaviorRun).filter_by(id=run_id).first()
+            return BehaviorRunLogEntry.from_row(row) if row else None
+
+    def set_outcome(self, run_id: str, outcome: OutcomeEvaluation | dict,
+                    sensor_delta: dict | None = None) -> dict | None:
+        """Attach the orchestrator's outcome evaluation to a run.
+
+        Idempotent: writing the same outcome again leaves the row exactly as
+        it was; a later write replaces the earlier one (last writer wins).
+        ``sensor_delta`` is only overwritten when given. Returns the updated
+        run dict, or None when the run id is unknown."""
+        if isinstance(outcome, dict):
+            outcome = OutcomeEvaluation.from_dict(outcome)
+        if sensor_delta is not None and not isinstance(sensor_delta, dict):
+            raise ValueError("sensor_delta must be an object")
+        outcome_json = json.dumps(outcome.to_dict(), sort_keys=True)
+        with SessionLocal() as session:
+            row = session.query(BehaviorRun).filter_by(id=run_id).first()
+            if row is None:
+                return None
+            row.outcome_json = outcome_json
+            if sensor_delta is not None:
+                row.sensor_delta_json = json.dumps(sensor_delta, sort_keys=True)
+            session.commit()
+            return row.to_dict()
+
+    def runs_with_outcome(self, behavior_name: str | None = None,
+                          source: str | None = None,
+                          limit: int = 100) -> list[dict]:
+        """Runs that already carry an outcome, newest first (served by the
+        partial ix_framework_runs_outcome index)."""
+        with SessionLocal() as session:
+            query = session.query(BehaviorRun).filter(
+                BehaviorRun.outcome_json.isnot(None))
+            if source is not None:
+                query = query.filter(BehaviorRun.source == source)
+            if behavior_name is not None:
+                query = query.filter(BehaviorRun.behavior_name == behavior_name)
+            return [r.to_dict() for r in
+                    query.order_by(BehaviorRun.started_at.desc()).limit(limit)]
