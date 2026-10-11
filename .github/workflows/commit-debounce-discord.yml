@@ -1,49 +1,85 @@
-name: Commit Debounce - Discord Notification
+name: Commit Debounce - Smart Idle Detection
 
 on:
-  schedule:
-    # Run every 5 minutes
-    - cron: '*/5 * * * *'
+  push:
+    branches:
+      - main
 
 jobs:
-  check-commit-idle:
+  smart-idle-check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Check last commit time
-        id: last-commit
+      - name: Get latest commit info
+        id: commit-info
         run: |
-          # Get the timestamp of the last commit in the repo
-          LAST_COMMIT=$(git log -1 --format=%cI)
-          LAST_COMMIT_UNIX=$(date -d "$LAST_COMMIT" +%s)
+          LATEST_COMMIT=$(git rev-parse HEAD)
+          LATEST_COMMIT_TIME=$(git log -1 --format=%cI)
+          LATEST_COMMIT_UNIX=$(date -d "$LATEST_COMMIT_TIME" +%s)
           NOW_UNIX=$(date +%s)
-          DIFF_SECONDS=$((NOW_UNIX - LAST_COMMIT_UNIX))
-          DIFF_MINUTES=$((DIFF_SECONDS / 60))
+          MINUTES_SINCE=$(( (NOW_UNIX - LATEST_COMMIT_UNIX) / 60 ))
           
-          echo "last_commit=$LAST_COMMIT" >> $GITHUB_OUTPUT
-          echo "diff_minutes=$DIFF_MINUTES" >> $GITHUB_OUTPUT
+          echo "commit_hash=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+          echo "commit_time=$LATEST_COMMIT_TIME" >> $GITHUB_OUTPUT
+          echo "commit_unix=$LATEST_COMMIT_UNIX" >> $GITHUB_OUTPUT
+          echo "minutes_since=$MINUTES_SINCE" >> $GITHUB_OUTPUT
+
+      - name: Calculate wait time
+        id: wait-calc
+        run: |
+          MINUTES_SINCE=${{ steps.commit-info.outputs.minutes_since }}
+          TARGET_MINUTES=25
           
-          if [ $DIFF_MINUTES -gt 25 ]; then
-            echo "idle=true" >> $GITHUB_OUTPUT
+          if [ $MINUTES_SINCE -ge $TARGET_MINUTES ]; then
+            WAIT_SECONDS=0
           else
-            echo "idle=false" >> $GITHUB_OUTPUT
+            REMAINING_MINUTES=$((TARGET_MINUTES - MINUTES_SINCE))
+            WAIT_SECONDS=$((REMAINING_MINUTES * 60))
+          fi
+          
+          echo "wait_seconds=$WAIT_SECONDS" >> $GITHUB_OUTPUT
+
+      - name: Wait for remaining time
+        run: |
+          WAIT_SECONDS=${{ steps.wait-calc.outputs.wait_seconds }}
+          if [ $WAIT_SECONDS -gt 0 ]; then
+            sleep $WAIT_SECONDS
           fi
 
-      - name: Send Discord notification
-        if: steps.last-commit.outputs.idle == 'true'
+      - name: Check if commit is still the latest
+        id: idle-check
+        run: |
+          git fetch origin main
+          
+          ORIGINAL_COMMIT="${{ steps.commit-info.outputs.commit_hash }}"
+          CURRENT_COMMIT=$(git rev-parse origin/main)
+          
+          if [ "$ORIGINAL_COMMIT" = "$CURRENT_COMMIT" ]; then
+            echo "is_idle=true" >> $GITHUB_OUTPUT
+          else
+            LATEST_COMMIT_TIME=$(git log -1 --format=%cI origin/main)
+            LATEST_COMMIT_UNIX=$(date -d "$LATEST_COMMIT_TIME" +%s)
+            NOW_UNIX=$(date +%s)
+            NEW_MINUTES_SINCE=$(( (NOW_UNIX - LATEST_COMMIT_UNIX) / 60 ))
+            
+            if [ $NEW_MINUTES_SINCE -ge 25 ]; then
+              echo "is_idle=true" >> $GITHUB_OUTPUT
+            else
+              echo "is_idle=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Send Discord notification if idle
+        if: steps.idle-check.outputs.is_idle == 'true'
         run: |
           WEBHOOK_URL="${{ secrets.DISCORD_WEBHOOK_URL }}"
-          LAST_COMMIT="${{ steps.last-commit.outputs.last_commit }}"
-          DIFF_MINUTES="${{ steps.last-commit.outputs.diff_minutes }}"
+          CURRENT_COMMIT="${{ steps.commit-info.outputs.commit_hash }}"
+          CURRENT_COMMIT_SHORT="${CURRENT_COMMIT:0:7}"
           
           curl -X POST "$WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
-            -d @- << PAYLOAD
-          {
-            "content": "🤖 **Agent idle for $DIFF_MINUTES minutes**\n\nLast commit: $LAST_COMMIT\nWork batch may be complete.\n\n📋 Check project board: https://github.com/users/MoermansJ/projects/4"
-          }
-          PAYLOAD
+            -d "{\"content\": \"🤖 **Agent idle for 25+ minutes**\\n\\nLast commit: \`$CURRENT_COMMIT_SHORT\`\\n\\n📋 Check project board: https://github.com/users/MoermansJ/projects/4\"}"
