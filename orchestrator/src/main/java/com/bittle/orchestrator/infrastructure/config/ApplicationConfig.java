@@ -17,6 +17,7 @@ import com.bittle.orchestrator.application.service.BehaviorLoops;
 import com.bittle.orchestrator.application.service.FleetSweep;
 import com.bittle.orchestrator.application.service.GoalOutcomeEvaluator;
 import com.bittle.orchestrator.application.service.OrchestratorMetricsSnapshot;
+import com.bittle.orchestrator.application.service.SensorStateService;
 import com.bittle.orchestrator.domain.behavior.DecisionEngine;
 import com.bittle.orchestrator.domain.behavior.PersonalityStateManager;
 import com.bittle.orchestrator.domain.behavior.RuleBasedDecisionEngine;
@@ -26,6 +27,7 @@ import com.bittle.orchestrator.domain.fleet.Robot;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
@@ -113,6 +115,13 @@ public class ApplicationConfig {
     @Bean
     GoalOutcomeEvaluator goalOutcomeEvaluator(ObjectProvider<GoalOutcomeChecker> checkers) {
         return new GoalOutcomeEvaluator(checkers.orderedStream().toList(), Clock.systemUTC());
+    }
+
+    @Bean
+    SensorStateService sensorStateService(Fleet fleet, RobotAdapterPort adapter,
+                                          SensorSnapshotProperties properties) {
+        return new SensorStateService(fleet, adapter, Clock.systemUTC(),
+                Duration.ofMinutes(properties.sensorSnapshotTtlMinutes()));
     }
 
     @Bean
