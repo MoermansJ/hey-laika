@@ -2,6 +2,7 @@ package com.bittle.orchestrator.adapter.out.persistence;
 
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,6 +15,9 @@ import org.springframework.data.repository.query.Param;
 public interface BehaviorRunLogJpaRepository extends JpaRepository<BehaviorRunLogEntity, UUID> {
 
     List<BehaviorRunLogEntity> findByRobotIdAndSourceOrderByRunTimestampDesc(String robotId, String source);
+
+    List<BehaviorRunLogEntity> findBySourceAndCompletedAtIsNullOrderByRunTimestampAsc(String source,
+                                                                                    Pageable page);
 
     @Query("select r from BehaviorRunLogEntity r where r.robotId = :robotId and r.goal = :goal"
             + " and r.outcomeEvaluatedAt is not null order by r.runTimestamp desc")

@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,6 +67,16 @@ public class BehaviorRunLogRepositoryAdapter implements BehaviorRunLogRepository
     @Transactional(readOnly = true)
     public List<BehaviorRunLog> findByRobotIdAndSourceWithOutcome(String robotId, String source) {
         return toDomain(repository.findByRobotIdAndSourceAndOutcomeIsNotNull(robotId, source));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BehaviorRunLog> findPendingBySource(String source, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        return toDomain(repository.findBySourceAndCompletedAtIsNullOrderByRunTimestampAsc(source,
+                PageRequest.of(0, limit)));
     }
 
     @Override
