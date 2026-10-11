@@ -66,6 +66,7 @@ jobs:
               [ -n "$PR" ] && MSG="$MSG\n$PR"
             fi
           fi
+          echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
           jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
             | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
 
@@ -84,6 +85,7 @@ jobs:
           DELS: ${{ github.event.pull_request.deletions }}
         run: |
           MSG="🔀 **PR #$NUM opened → development**: $TITLE\nBranch \`$HEAD\` · +$ADDS / -$DELS\n$URL"
+          echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
           jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
             | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
 
@@ -119,6 +121,7 @@ jobs:
           fi
           REMAINING=$(gh api "repos/$REPO/issues?labels=status:to-do&state=open&per_page=100" --jq 'length')
           MSG="✅ **PR #$NUM merged into development**: $TITLE\n$DONE\n📊 $REMAINING tickets left in to-do.\n$URL"
+          echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
           jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
             | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
 
@@ -137,6 +140,7 @@ jobs:
           URL: ${{ github.event.workflow_run.html_url }}
         run: |
           MSG="❌ **CI failed** on \`$BRANCH\` (\`${SHA:0:7}\`)\n$URL"
+          echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
           jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
             | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
 
