@@ -98,6 +98,8 @@ arbiter:
 # Goal outcome checkers (AGENT-08): a run succeeds when the measured change
 # reaches the threshold; *-scale is the change that counts as confidence 1.0.
 agent:
+  # Sensor snapshots taken at agent run start/end (AGENT-09) stay cached this long.
+  sensor-snapshot-ttl-minutes: 10
   outcome:
     look-centroid-px: 30
     look-centroid-scale-px: 100
