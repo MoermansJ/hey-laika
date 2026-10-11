@@ -3637,6 +3637,37 @@
         "summary" : "Learned tool combinations for a goal",
         "tags" : [ "Agent" ]
       }
+    },
+    "/api/v1/agent/{robotId}/tools" : {
+      "get" : {
+        "description" : "stationary: look_left, look_right, look_upward, tilt_head, bark, sit, stand. roaming: every tool, walking included. fruitfly and phone: none. 404 robot_not_found for an unknown robot.",
+        "operationId" : "agentTools",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/ToolDescriptor"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Tools the agent may call in the robot's current mode",
+        "tags" : [ "Agent" ]
+      }
     }
   },
   "components" : {
@@ -4208,6 +4239,20 @@
           "totalActionsThisSession" : {
             "type" : "integer",
             "format" : "int64"
+          }
+        }
+      },
+      "ToolDescriptor" : {
+        "type" : "object",
+        "properties" : {
+          "category" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
           }
         }
       }

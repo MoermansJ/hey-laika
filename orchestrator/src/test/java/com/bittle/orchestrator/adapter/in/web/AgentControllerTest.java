@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 import com.bittle.orchestrator.application.port.out.OrchestratorMetricsPort;
+import com.bittle.orchestrator.application.usecase.GetAgentToolsUseCase;
 import com.bittle.orchestrator.application.usecase.GetLearnedPatternsUseCase;
+import com.bittle.orchestrator.domain.behavior.AgentToolCatalog;
+import com.bittle.orchestrator.domain.behavior.OperatingMode;
 import com.bittle.orchestrator.domain.behavior.LearnedPattern;
 import com.bittle.orchestrator.domain.fleet.RobotNotFoundException;
 import java.time.Instant;
@@ -17,7 +20,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
 @WebMvcTest(AgentController.class)
-@MockitoBean(types = {GetLearnedPatternsUseCase.class, OrchestratorMetricsPort.class})
+@MockitoBean(types = {GetLearnedPatternsUseCase.class, GetAgentToolsUseCase.class,
+        OrchestratorMetricsPort.class})
 class AgentControllerTest {
 
     private static final Instant T0 = Instant.parse("2026-10-11T21:00:00Z");
@@ -27,6 +31,32 @@ class AgentControllerTest {
 
     @Autowired
     private GetLearnedPatternsUseCase getLearnedPatterns;
+
+    @Autowired
+    private GetAgentToolsUseCase getAgentTools;
+
+    @Test
+    void givenStationaryRobot_whenToolsRequested_thenStationaryToolsAreReturned() {
+        when(getAgentTools.execute("bittle-1"))
+                .thenReturn(AgentToolCatalog.toolsFor(OperatingMode.STATIONARY));
+
+        var result = mvc.get().uri("/api/v1/agent/bittle-1/tools").exchange();
+
+        assertThat(result).hasStatusOk().bodyJson().extractingPath("$[0]").isEqualTo(
+                java.util.Map.of("name", "look_left", "description", "Face left",
+                        "category", "postural"));
+        assertThat(result).bodyJson().extractingPath("$.length()").isEqualTo(7);
+    }
+
+    @Test
+    void givenUnknownRobot_whenToolsRequested_thenNotFound() {
+        when(getAgentTools.execute("ghost")).thenThrow(new RobotNotFoundException("ghost"));
+
+        var result = mvc.get().uri("/api/v1/agent/ghost/tools").exchange();
+
+        assertThat(result).hasStatus(HttpStatus.NOT_FOUND)
+                .bodyJson().extractingPath("$.error").isEqualTo("robot_not_found");
+    }
 
     @Test
     void givenPatterns_whenQueried_thenTheyAreReturnedAsDtosInOrder() {
