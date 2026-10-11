@@ -1,6 +1,8 @@
 package com.bittle.orchestrator.adapter.in.web;
 
+import com.bittle.orchestrator.application.usecase.GetAgentToolsUseCase;
 import com.bittle.orchestrator.application.usecase.GetLearnedPatternsUseCase;
+import com.bittle.orchestrator.domain.behavior.ToolDescriptor;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -17,9 +19,21 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentController {
 
     private final GetLearnedPatternsUseCase getLearnedPatterns;
+    private final GetAgentToolsUseCase getAgentTools;
 
-    public AgentController(GetLearnedPatternsUseCase getLearnedPatterns) {
+    public AgentController(GetLearnedPatternsUseCase getLearnedPatterns,
+                           GetAgentToolsUseCase getAgentTools) {
         this.getLearnedPatterns = getLearnedPatterns;
+        this.getAgentTools = getAgentTools;
+    }
+
+    @Operation(summary = "Tools the agent may call in the robot's current mode",
+            description = "stationary: look_left, look_right, look_upward, tilt_head, bark, sit, "
+                    + "stand. roaming: every tool, walking included. fruitfly and phone: none. "
+                    + "404 robot_not_found for an unknown robot.")
+    @GetMapping("/{robotId}/tools")
+    public List<ToolDescriptor> agentTools(@PathVariable String robotId) {
+        return getAgentTools.execute(robotId);
     }
 
     @Operation(summary = "Learned tool combinations for a goal",
