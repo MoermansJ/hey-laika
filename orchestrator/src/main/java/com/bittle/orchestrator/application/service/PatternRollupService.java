@@ -1,6 +1,7 @@
 package com.bittle.orchestrator.application.service;
 
 import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
+import com.bittle.orchestrator.application.port.out.EventPublisherPort;
 import com.bittle.orchestrator.application.port.out.LearnedPatternRepositoryPort;
 import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionRequest;
 import com.bittle.orchestrator.domain.behavior.BehaviorRunLog;
@@ -34,6 +35,9 @@ import org.slf4j.LoggerFactory;
  * {@code false}. Attempts whose last outcome is undetermined ({@code success = null}:
  * no checker, missing sensor data, preempted, stale) are left out of the statistics.
  *
+ * <p>Every rollup logs discovered patterns and success-rate changes and publishes
+ * the goal's active patterns on {@link #topic(String)} for the Mind tab (AGENT-18).
+ *
  * <p>A stored pattern whose combination no longer appears (e.g. a decision that later
  * gained another tool) is reset to zero counts and marked {@link PatternStatus#INACTIVE}.
  */
@@ -43,13 +47,30 @@ public class PatternRollupService {
 
     private final BehaviorRunLogRepositoryPort runLogs;
     private final LearnedPatternRepositoryPort patterns;
+    private final EventPublisherPort publisher;
     private final Clock clock;
 
     public PatternRollupService(BehaviorRunLogRepositoryPort runLogs,
                                 LearnedPatternRepositoryPort patterns, Clock clock) {
+        this(runLogs, patterns, (topic, payload) -> { }, clock);
+    }
+
+    /**
+     * @param publisher receives every rollup's result on
+     *                  {@code /topic/robot/{robotId}/learned-patterns} (AGENT-18, Mind tab)
+     */
+    public PatternRollupService(BehaviorRunLogRepositoryPort runLogs,
+                                LearnedPatternRepositoryPort patterns,
+                                EventPublisherPort publisher, Clock clock) {
         this.runLogs = Objects.requireNonNull(runLogs, "runLogs");
         this.patterns = Objects.requireNonNull(patterns, "patterns");
+        this.publisher = Objects.requireNonNull(publisher, "publisher");
         this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    /** STOMP topic carrying a robot's rollup results. */
+    public static String topic(String robotId) {
+        return "/topic/robot/" + robotId + "/learned-patterns";
     }
 
     /**
@@ -86,11 +107,14 @@ public class PatternRollupService {
         for (var entry : byCombination.entrySet()) {
             Stats stats = entry.getValue();
             LearnedPattern base = existing.remove(entry.getKey());
-            if (base == null) {
+            boolean discovered = base == null;
+            if (discovered) {
                 base = LearnedPattern.discovered(robotId, goal, entry.getKey(), now);
             }
-            active.add(patterns.save(base.withStats(stats.attempts, stats.successes,
-                    stats.lastUsed, now)));
+            LearnedPattern saved = patterns.save(base.withStats(stats.attempts, stats.successes,
+                    stats.lastUsed, now));
+            logChange(robotId, goal, discovered ? null : base, saved);
+            active.add(saved);
         }
         for (LearnedPattern stale : existing.values()) {
             if (stale.attempts() != 0 || stale.status() != PatternStatus.INACTIVE) {
@@ -106,7 +130,53 @@ public class PatternRollupService {
         log.info("Pattern rollup {} goal {}: {} active pattern(s){}, {} retired in {} ms",
                 robotId, goal, active.size(), best(active), existing.size(),
                 String.format(Locale.ROOT, "%.2f", elapsedMs));
+        publish(robotId, goal, active, now);
         return List.copyOf(active);
+    }
+
+    private static void logChange(String robotId, String goal, LearnedPattern before,
+                                  LearnedPattern after) {
+        if (before == null || before.status() != PatternStatus.ACTIVE) {
+            log.info("Pattern {} goal {}: {} {} at {} over {} attempt(s)", robotId, goal,
+                    before == null ? "discovered" : "reactivated", after.toolCombination(),
+                    rate(after.successRate()), after.attempts());
+        } else if (before.attempts() != after.attempts()
+                || Double.compare(before.successRate(), after.successRate()) != 0) {
+            log.info("Pattern {} goal {}: {} success rate {} -> {} ({} -> {} attempts)",
+                    robotId, goal, after.toolCombination(), rate(before.successRate()),
+                    rate(after.successRate()), before.attempts(), after.attempts());
+        }
+    }
+
+    private static String rate(double value) {
+        return String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    /** Mind tab feed; a failing broker never fails the rollup. */
+    private void publish(String robotId, String goal, List<LearnedPattern> active, Instant now) {
+        try {
+            List<Map<String, Object>> items = new ArrayList<>();
+            for (LearnedPattern p : active) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("toolCombination", p.toolCombination());
+                item.put("successRate", p.successRate());
+                item.put("attempts", p.attempts());
+                item.put("successes", p.successes());
+                item.put("lastUsed", p.lastUsed() == null ? null : p.lastUsed().toString());
+                item.put("firstDiscovered",
+                        p.firstDiscovered() == null ? null : p.firstDiscovered().toString());
+                items.add(item);
+            }
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("robotId", robotId);
+            payload.put("goal", goal);
+            payload.put("rolledUpAt", now.toString());
+            payload.put("patterns", items);
+            publisher.publish(topic(robotId), payload);
+        } catch (RuntimeException e) {
+            log.debug("Learned-patterns update for {} not published: {}", robotId,
+                    e.getMessage());
+        }
     }
 
     /** Evaluated agent runs for the goal, grouped per decision, each group in start order. */

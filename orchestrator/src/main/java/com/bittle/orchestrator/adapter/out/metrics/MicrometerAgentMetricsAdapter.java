@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 /**
  * Micrometer meters for agent runs (AGENT-12), visible under /actuator/metrics:
  * <ul>
+ *   <li>{@code bittle.agent.submissions} — counter, tags tool and result
+ *       (accepted | rejected | mode_rejected)</li>
  *   <li>{@code bittle.agent.outcomes} — counter, tags goal and result
  *       (success | failure | undetermined)</li>
  *   <li>{@code bittle.agent.pattern.rollup} — timer per goal</li>
@@ -19,6 +21,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class MicrometerAgentMetricsAdapter implements AgentMetricsPort {
 
+    static final String SUBMISSIONS = "bittle.agent.submissions";
     static final String OUTCOMES = "bittle.agent.outcomes";
     static final String ROLLUP = "bittle.agent.pattern.rollup";
     static final String ROLLUP_PATTERNS = "bittle.agent.pattern.rollup.patterns";
@@ -28,6 +31,11 @@ public class MicrometerAgentMetricsAdapter implements AgentMetricsPort {
 
     public MicrometerAgentMetricsAdapter(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
+    }
+
+    @Override
+    public void recordSubmission(String tool, String result) {
+        meterRegistry.counter(SUBMISSIONS, "tool", tag(tool), "result", tag(result)).increment();
     }
 
     @Override

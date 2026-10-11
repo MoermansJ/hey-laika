@@ -40,4 +40,16 @@ class MicrometerAgentMetricsAdapterTest {
         assertThat(registry.counter(MicrometerAgentMetricsAdapter.ROLLUP_FAILURES, "goal", "bark")
                 .count()).isEqualTo(1.0);
     }
+
+    @Test
+    void givenSubmissions_whenRecorded_thenCountedPerToolAndResult() {
+        metrics.recordSubmission("bark", "accepted");
+        metrics.recordSubmission("bark", "accepted");
+        metrics.recordSubmission("other", "mode_rejected");
+
+        assertThat(registry.counter(MicrometerAgentMetricsAdapter.SUBMISSIONS, "tool", "bark",
+                "result", "accepted").count()).isEqualTo(2.0);
+        assertThat(registry.counter(MicrometerAgentMetricsAdapter.SUBMISSIONS, "tool", "other",
+                "result", "mode_rejected").count()).isEqualTo(1.0);
+    }
 }

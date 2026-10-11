@@ -164,6 +164,41 @@ class PatternRollupServiceTest {
         assertThat(elapsedMs).isLessThan(200);
     }
 
+    @Test
+    void givenRollup_whenFinished_thenTheGoalsActivePatternsArePublishedForTheMindTab() {
+        List<Object[]> published = new ArrayList<>();
+        var publishing = new PatternRollupService(runLogs, patterns,
+                (topic, payload) -> published.add(new Object[] {topic, payload}),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        runs(run("look_up", "d1", 0, true), run("look_up", "d2", 10, false));
+
+        publishing.rollupPatternsForGoal("bittle-1", GOAL);
+
+        assertThat(published).hasSize(1);
+        assertThat(published.get(0)[0]).isEqualTo("/topic/robot/bittle-1/learned-patterns");
+        @SuppressWarnings("unchecked")
+        var payload = (Map<String, Object>) published.get(0)[1];
+        assertThat(payload).containsEntry("robotId", "bittle-1").containsEntry("goal", GOAL)
+                .containsEntry("rolledUpAt", NOW.toString());
+        @SuppressWarnings("unchecked")
+        var items = (List<Map<String, Object>>) payload.get("patterns");
+        assertThat(items).singleElement().satisfies(item -> {
+            assertThat(item).containsEntry("toolCombination", List.of("look_up"))
+                    .containsEntry("successRate", 0.5).containsEntry("attempts", 2)
+                    .containsEntry("firstDiscovered", NOW.toString());
+        });
+    }
+
+    @Test
+    void givenBrokerFailure_whenRolledUp_thenTheRollupStillSucceeds() {
+        var failing = new PatternRollupService(runLogs, patterns, (topic, payload) -> {
+            throw new IllegalStateException("broker down");
+        }, Clock.fixed(NOW, ZoneOffset.UTC));
+        runs(run("look_up", "d1", 0, true));
+
+        assertThat(failing.rollupPatternsForGoal("bittle-1", GOAL)).hasSize(1);
+    }
+
     private void runs(BehaviorRunLog... runs) {
         when(runLogs.findByRobotIdAndGoalWithOutcome("bittle-1", GOAL)).thenReturn(List.of(runs));
     }

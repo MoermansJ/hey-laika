@@ -94,6 +94,7 @@ public class AgentBehaviorService {
         if (refusal != null) {
             log.warn("Agent tool call {} for {} (goal {}) rejected before the arbiter: {}",
                     toolName, robotId, declaredGoal, refusal);
+            recordSubmission(toolName, "mode_rejected");
             return ArbiterSubmissionResponse.rejected(refusal);
         }
         UUID decision = decisionId != null ? decisionId : UUID.randomUUID();
@@ -104,8 +105,10 @@ public class AgentBehaviorService {
         captureQuietly(robotId);
         ArbiterSubmissionResponse response = arbiter.submit(robotId, request);
         if (response == null) {
+            recordSubmission(toolName, "rejected");
             return ArbiterSubmissionResponse.rejected("Empty arbiter response");
         }
+        recordSubmission(toolName, response.isAccepted() ? "accepted" : "rejected");
         if (!response.isAccepted()) {
             log.info("Agent tool call {} for {} (goal {}) rejected: {}", toolName, robotId,
                     declaredGoal, response.message());
@@ -147,8 +150,8 @@ public class AgentBehaviorService {
                     closed++;
                 }
             } catch (RuntimeException e) {
-                log.warn("Evaluating agent run {} for {} failed: {}", entry.id(),
-                        entry.robotId(), e.toString());
+                log.warn("Evaluating agent run {} for {} (goal {}) failed: {}", entry.id(),
+                        entry.robotId(), entry.goal(), e.toString(), e);
             }
         }
         return closed;
@@ -228,6 +231,13 @@ public class AgentBehaviorService {
                     entry.goal(), entry.id(), e.toString());
             recordQuietly(() -> metrics.recordRollupFailure(entry.goal()));
         }
+    }
+
+    private void recordSubmission(String toolName, String result) {
+        // Tool names come from the agent; only catalog tools become their own tag.
+        String tool = AgentToolCatalog.isAllowed(OperatingMode.ROAMING, toolName)
+                ? toolName : "other";
+        recordQuietly(() -> metrics.recordSubmission(tool, result));
     }
 
     private static void recordQuietly(Runnable record) {

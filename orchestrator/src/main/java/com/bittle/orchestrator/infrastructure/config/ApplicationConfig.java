@@ -139,8 +139,9 @@ public class ApplicationConfig {
 
     @Bean
     PatternRollupService patternRollupService(BehaviorRunLogRepositoryPort runLogs,
-                                              LearnedPatternRepositoryPort patterns) {
-        return new PatternRollupService(runLogs, patterns, Clock.systemUTC());
+                                              LearnedPatternRepositoryPort patterns,
+                                              EventPublisherPort publisher) {
+        return new PatternRollupService(runLogs, patterns, publisher, Clock.systemUTC());
     }
 
     @Bean

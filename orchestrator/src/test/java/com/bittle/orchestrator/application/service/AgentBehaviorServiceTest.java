@@ -40,9 +40,10 @@ class AgentBehaviorServiceTest {
     private final BehaviorRunLogRepositoryPort runLogs = mock(BehaviorRunLogRepositoryPort.class);
     private final SensorStateService sensors = mock(SensorStateService.class);
     private final RobotModeRepositoryPort modes = mock(RobotModeRepositoryPort.class);
+    private final AgentMetricsPort metrics = mock(AgentMetricsPort.class);
     private final AgentBehaviorService service = new AgentBehaviorService(arbiter, runLogs,
             sensors, new GoalOutcomeEvaluator(List.of(), Clock.fixed(NOW, ZoneOffset.UTC)),
-            mock(PatternRollupService.class), mock(AgentMetricsPort.class), modes,
+            mock(PatternRollupService.class), metrics, modes,
             Clock.fixed(NOW, ZoneOffset.UTC), 20, Duration.ofMinutes(10));
 
     @Test
@@ -224,5 +225,24 @@ class AgentBehaviorServiceTest {
         assertThat(response.isAccepted()).isFalse();
         assertThat(response.message()).contains("Operating mode unavailable");
         verifyNoInteractions(arbiter);
+    }
+
+    // ---- AGENT-18: submission metrics -------------------------------------------
+
+    @Test
+    void givenSubmissions_whenAnswered_thenEachResultIsCountedPerTool() {
+        when(arbiter.submit(anyString(), any()))
+                .thenReturn(new ArbiterSubmissionResponse(RUN, "executing", null, 0))
+                .thenReturn(ArbiterSubmissionResponse.rejected("cooldown"));
+
+        service.submitToolCall("bittle-1", "bark", null, DECISION);
+        service.submitToolCall("bittle-1", "bark", null, DECISION);
+        service.submitToolCall("bittle-1", "move_forward", null, DECISION);
+        service.submitToolCall("bittle-1", "backflip", null, DECISION);
+
+        verify(metrics).recordSubmission("bark", "accepted");
+        verify(metrics).recordSubmission("bark", "rejected");
+        verify(metrics).recordSubmission("move_forward", "mode_rejected");
+        verify(metrics).recordSubmission("other", "mode_rejected");
     }
 }
