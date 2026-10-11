@@ -143,10 +143,12 @@ class Arbiter:
                 metrics.inc("behavior.preemptions")
             self._work.notify_all()
             position = self._queue.index(submission)
+            # runId is the id the run-log row will carry once the run starts,
+            # so a caller (the orchestrator's ArbiterClient) can poll it.
             return {"status": "preempting" if preempting else
                     ("executing" if self._current is None and position == 0
                      else "queued"),
-                    "position": position}
+                    "position": position, "runId": submission["run_id"]}
 
     def stop_current(self) -> dict:
         with self._lock:

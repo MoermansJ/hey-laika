@@ -89,6 +89,12 @@ metrics:
       input-usd-per-mtok: 1.0
       output-usd-per-mtok: 5.0
 
+# Agent tool calls to the adapter's behavior arbiter (ArbiterClient, AGENT-04).
+# The adapter URL is each robot's service-url below; these are the timeouts.
+arbiter:
+  connect-timeout-ms: 2000
+  read-timeout-ms: 5000
+
 # Robot instances managed by this platform. Each entry points at the Python
 # adapter service that implements the robot's hardware/AI logic. Override in
 # Docker via e.g. BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000

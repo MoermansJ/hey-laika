@@ -20,6 +20,12 @@ public class RestClientConfig {
         return client(2_000, 8_000);
     }
 
+    /** Agent tool calls to the adapter's arbiter (AGENT-04); timeouts from arbiter.*. */
+    @Bean
+    public RestClient arbiterRestClient(ArbiterProperties properties) {
+        return client(properties.connectTimeoutMs(), properties.readTimeoutMs());
+    }
+
     private static RestClient client(int connectTimeoutMs, int readTimeoutMs) {
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(connectTimeoutMs);
