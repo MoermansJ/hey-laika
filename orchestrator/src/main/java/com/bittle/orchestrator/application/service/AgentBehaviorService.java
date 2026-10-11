@@ -1,5 +1,6 @@
 package com.bittle.orchestrator.application.service;
 
+import com.bittle.orchestrator.application.port.out.AgentMetricsPort;
 import com.bittle.orchestrator.application.port.out.ArbiterPort;
 import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
 import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionRequest;
@@ -27,27 +28,36 @@ import org.slf4j.LoggerFactory;
  *       about pending agent runs; a finished run gets an "after" snapshot, an outcome
  *       from the {@link GoalOutcomeEvaluator}, an updated run-log entry and the outcome
  *       synced back to the adapter.</li>
+ *   <li>Learning (AGENT-12): each saved outcome triggers the goal's pattern rollup and
+ *       agent metrics.</li>
  * </ul>
  */
 public class AgentBehaviorService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentBehaviorService.class);
+    /** Rollups slower than this are logged (design target: under 2 ms per goal). */
+    private static final long SLOW_ROLLUP_NANOS = 50_000_000L;
 
     private final ArbiterPort arbiter;
     private final BehaviorRunLogRepositoryPort runLogs;
     private final SensorStateService sensors;
     private final GoalOutcomeEvaluator evaluator;
+    private final PatternRollupService rollups;
+    private final AgentMetricsPort metrics;
     private final Clock clock;
     private final int pollBatchSize;
     private final Duration staleAfter;
 
     public AgentBehaviorService(ArbiterPort arbiter, BehaviorRunLogRepositoryPort runLogs,
                                 SensorStateService sensors, GoalOutcomeEvaluator evaluator,
+                                PatternRollupService rollups, AgentMetricsPort metrics,
                                 Clock clock, int pollBatchSize, Duration staleAfter) {
         this.arbiter = Objects.requireNonNull(arbiter, "arbiter");
         this.runLogs = Objects.requireNonNull(runLogs, "runLogs");
         this.sensors = Objects.requireNonNull(sensors, "sensors");
         this.evaluator = Objects.requireNonNull(evaluator, "evaluator");
+        this.rollups = Objects.requireNonNull(rollups, "rollups");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.staleAfter = Objects.requireNonNull(staleAfter, "staleAfter");
         if (pollBatchSize <= 0) {
@@ -162,7 +172,7 @@ public class AgentBehaviorService {
         log.info("Agent run {} ({} for goal {}) finished: success={} confidence={} ({})",
                 entry.id(), entry.behaviorName(), entry.goal(), outcome.success(),
                 outcome.confidence(), outcome.reason());
-        // Pattern rollup on outcome write is wired in by AGENT-11/12.
+        afterOutcomeSaved(entry, outcome);
         return true;
     }
 
@@ -176,6 +186,41 @@ public class AgentBehaviorService {
                 entry.preemptedBy(), entry.goal(), outcome, entry.sensorDelta(),
                 entry.createdAt(), now));
         log.warn("Agent run {} for {} closed as stale: {}", entry.id(), entry.robotId(), reason);
+        afterOutcomeSaved(entry, outcome);
+    }
+
+    /**
+     * Every outcome write refreshes the goal's learned patterns right away (design §3.4:
+     * rollup on write, not periodic). A failing rollup is logged and counted; it never
+     * stops the polling pass.
+     */
+    private void afterOutcomeSaved(BehaviorRunLog entry, OutcomeEvaluation outcome) {
+        recordQuietly(() -> metrics.recordOutcome(entry.goal(), outcome.success()));
+        if (entry.goal() == null || entry.goal().isBlank()) {
+            return;
+        }
+        long started = System.nanoTime();
+        try {
+            int active = rollups.rollupPatternsForGoal(entry.robotId(), entry.goal()).size();
+            long elapsed = System.nanoTime() - started;
+            recordQuietly(() -> metrics.recordRollup(entry.goal(), active, elapsed));
+            if (elapsed > SLOW_ROLLUP_NANOS) {
+                log.warn("Pattern rollup for {} goal {} took {} ms", entry.robotId(),
+                        entry.goal(), elapsed / 1_000_000);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Pattern rollup for {} goal {} failed after run {}: {}", entry.robotId(),
+                    entry.goal(), entry.id(), e.toString());
+            recordQuietly(() -> metrics.recordRollupFailure(entry.goal()));
+        }
+    }
+
+    private static void recordQuietly(Runnable record) {
+        try {
+            record.run();
+        } catch (RuntimeException e) {
+            log.debug("Agent metric not recorded: {}", e.getMessage());
+        }
     }
 
     private static OutcomeEvaluation undetermined(String reason, Instant now) {

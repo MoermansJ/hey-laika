@@ -3,16 +3,21 @@ package com.bittle.orchestrator.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.bittle.orchestrator.application.port.out.AgentMetricsPort;
 import com.bittle.orchestrator.application.port.out.ArbiterPort;
 import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
 import com.bittle.orchestrator.domain.behavior.BehaviorRunLog;
+import com.bittle.orchestrator.domain.behavior.LearnedPattern;
 import com.bittle.orchestrator.domain.behavior.OutcomeEvaluation;
 import com.bittle.orchestrator.domain.behavior.outcome.GoalCheck;
 import com.bittle.orchestrator.domain.behavior.outcome.GoalOutcomeChecker;
@@ -50,9 +55,11 @@ class AgentRunPollingTest {
                     : GoalCheck.failed(0.9, "moved " + moved);
         }
     };
+    private final PatternRollupService rollups = mock(PatternRollupService.class);
+    private final AgentMetricsPort metrics = mock(AgentMetricsPort.class);
     private final AgentBehaviorService service = new AgentBehaviorService(arbiter, runLogs,
-            sensors, new GoalOutcomeEvaluator(List.of(moveForward), CLOCK), CLOCK, 20,
-            Duration.ofMinutes(10));
+            sensors, new GoalOutcomeEvaluator(List.of(moveForward), CLOCK), rollups, metrics,
+            CLOCK, 20, Duration.ofMinutes(10));
 
     @Test
     void givenFinishedRun_whenPolled_thenOutcomeIsEvaluatedSavedAndSynced() {
@@ -185,6 +192,80 @@ class AgentRunPollingTest {
                 .thenThrow(new IllegalStateException("db down"));
 
         assertThat(service.pollAndEvaluateCompletions()).isZero();
+    }
+
+    @Test
+    void givenFinishedRun_whenPolled_thenPatternsAreRolledUpAfterTheOutcomeIsSaved() {
+        var entry = finishedRun();
+        when(rollups.rollupPatternsForGoal("bittle-1", "move_forward"))
+                .thenReturn(List.of(LearnedPattern.discovered("bittle-1", "move_forward",
+                        List.of("walk_forward"), NOW)));
+
+        service.pollAndEvaluateCompletions();
+
+        var order = inOrder(runLogs, rollups);
+        order.verify(runLogs).save(any());
+        order.verify(rollups).rollupPatternsForGoal("bittle-1", "move_forward");
+        verify(metrics).recordOutcome("move_forward", true);
+        verify(metrics).recordRollup(eq("move_forward"), eq(1), anyLong());
+    }
+
+    @Test
+    void givenRollupFails_whenPolled_thenTheRunStillCountsAndTheFailureIsRecorded() {
+        finishedRun();
+        when(rollups.rollupPatternsForGoal(any(), any()))
+                .thenThrow(new IllegalStateException("db down"));
+
+        assertThat(service.pollAndEvaluateCompletions()).isEqualTo(1);
+        verify(metrics).recordRollupFailure("move_forward");
+        verify(metrics, never()).recordRollup(any(), anyInt(), anyLong());
+    }
+
+    @Test
+    void givenMetricsFail_whenPolled_thenPollingContinues() {
+        finishedRun();
+        org.mockito.Mockito.doThrow(new IllegalStateException("registry"))
+                .when(metrics).recordOutcome(any(), any());
+
+        assertThat(service.pollAndEvaluateCompletions()).isEqualTo(1);
+        verify(rollups).rollupPatternsForGoal("bittle-1", "move_forward");
+    }
+
+    @Test
+    void givenRunWithoutGoal_whenPolled_thenNoRollupButOutcomeMetric() {
+        var entry = pending(null, STARTED);
+        when(runLogs.findPendingBySource("agent", 20)).thenReturn(List.of(entry));
+        when(arbiter.getRunLog("bittle-1", entry.id()))
+                .thenReturn(Optional.of(remote(entry, STARTED.plusSeconds(3), null)));
+        when(sensors.captureSnapshot("bittle-1")).thenReturn(at(1));
+        when(sensors.getSnapshotAt("bittle-1", STARTED)).thenReturn(Optional.of(at(0)));
+
+        assertThat(service.pollAndEvaluateCompletions()).isEqualTo(1);
+        verifyNoInteractions(rollups);
+        verify(metrics).recordOutcome(null, null);
+    }
+
+    @Test
+    void givenStaleRun_whenClosed_thenPatternsAreRolledUpToo() {
+        var entry = pending("move_forward", NOW.minus(Duration.ofMinutes(11)));
+        when(runLogs.findPendingBySource("agent", 20)).thenReturn(List.of(entry));
+        when(arbiter.getRunLog("bittle-1", entry.id())).thenReturn(Optional.empty());
+
+        service.pollAndEvaluateCompletions();
+
+        verify(rollups).rollupPatternsForGoal("bittle-1", "move_forward");
+        verify(metrics).recordOutcome("move_forward", null);
+    }
+
+    private BehaviorRunLog finishedRun() {
+        var entry = pending("move_forward", STARTED);
+        when(runLogs.findPendingBySource("agent", 20)).thenReturn(List.of(entry));
+        when(arbiter.getRunLog("bittle-1", entry.id()))
+                .thenReturn(Optional.of(remote(entry, STARTED.plusSeconds(3), null)));
+        when(sensors.getSnapshotAt("bittle-1", STARTED)).thenReturn(Optional.of(at(0)));
+        when(sensors.captureSnapshot("bittle-1")).thenReturn(at(12));
+        when(arbiter.syncOutcome(any(), any(), any())).thenReturn(true);
+        return entry;
     }
 
     private static BehaviorRunLog pending(String goal, Instant startedAt) {

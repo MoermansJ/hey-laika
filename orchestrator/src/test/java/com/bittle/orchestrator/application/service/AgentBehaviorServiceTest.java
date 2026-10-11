@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.bittle.orchestrator.application.port.out.AgentMetricsPort;
 import com.bittle.orchestrator.application.port.out.ArbiterPort;
 import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
 import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionRequest;
@@ -36,6 +37,7 @@ class AgentBehaviorServiceTest {
     private final SensorStateService sensors = mock(SensorStateService.class);
     private final AgentBehaviorService service = new AgentBehaviorService(arbiter, runLogs,
             sensors, new GoalOutcomeEvaluator(List.of(), Clock.fixed(NOW, ZoneOffset.UTC)),
+            mock(PatternRollupService.class), mock(AgentMetricsPort.class),
             Clock.fixed(NOW, ZoneOffset.UTC), 20, Duration.ofMinutes(10));
 
     @Test
