@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 import com.bittle.orchestrator.application.port.out.AgentMetricsPort;
 import com.bittle.orchestrator.application.port.out.ArbiterPort;
 import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
+import com.bittle.orchestrator.application.port.out.RobotModeRepositoryPort;
 import com.bittle.orchestrator.domain.behavior.BehaviorRunLog;
 import com.bittle.orchestrator.domain.behavior.LearnedPattern;
 import com.bittle.orchestrator.domain.behavior.OutcomeEvaluation;
@@ -59,7 +60,7 @@ class AgentRunPollingTest {
     private final AgentMetricsPort metrics = mock(AgentMetricsPort.class);
     private final AgentBehaviorService service = new AgentBehaviorService(arbiter, runLogs,
             sensors, new GoalOutcomeEvaluator(List.of(moveForward), CLOCK), rollups, metrics,
-            CLOCK, 20, Duration.ofMinutes(10));
+            mock(RobotModeRepositoryPort.class), CLOCK, 20, Duration.ofMinutes(10));
 
     @Test
     void givenFinishedRun_whenPolled_thenOutcomeIsEvaluatedSavedAndSynced() {

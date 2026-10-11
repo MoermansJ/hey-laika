@@ -13,6 +13,7 @@ import com.bittle.orchestrator.application.port.out.LeasePort;
 import com.bittle.orchestrator.application.port.out.OrchestratorMetricsPort;
 import com.bittle.orchestrator.application.port.out.PersonalityStateRepositoryPort;
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
+import com.bittle.orchestrator.application.port.out.RobotModeRepositoryPort;
 import com.bittle.orchestrator.application.service.ActionExecutor;
 import com.bittle.orchestrator.application.service.AgentBehaviorService;
 import com.bittle.orchestrator.application.service.BehaviorLoops;
@@ -116,9 +117,10 @@ public class ApplicationConfig {
                                               GoalOutcomeEvaluator evaluator,
                                               PatternRollupService rollups,
                                               AgentMetricsPort agentMetrics,
+                                              RobotModeRepositoryPort modes,
                                               AgentPollingProperties polling) {
         return new AgentBehaviorService(arbiter, runLogs, sensors, evaluator, rollups,
-                agentMetrics, Clock.systemUTC(), polling.pollBatchSize(),
+                agentMetrics, modes, Clock.systemUTC(), polling.pollBatchSize(),
                 Duration.ofMinutes(polling.runStaleAfterMinutes()));
     }
 

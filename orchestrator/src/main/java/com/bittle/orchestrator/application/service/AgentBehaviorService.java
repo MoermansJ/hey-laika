@@ -3,10 +3,14 @@ package com.bittle.orchestrator.application.service;
 import com.bittle.orchestrator.application.port.out.AgentMetricsPort;
 import com.bittle.orchestrator.application.port.out.ArbiterPort;
 import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
+import com.bittle.orchestrator.application.port.out.RobotModeRepositoryPort;
+import com.bittle.orchestrator.domain.behavior.AgentToolCatalog;
 import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionRequest;
 import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionResponse;
 import com.bittle.orchestrator.domain.behavior.BehaviorRunLog;
+import com.bittle.orchestrator.domain.behavior.OperatingMode;
 import com.bittle.orchestrator.domain.behavior.OutcomeEvaluation;
+import com.bittle.orchestrator.domain.behavior.RobotMode;
 import com.bittle.orchestrator.domain.behavior.outcome.SensorSnapshot;
 import java.time.Clock;
 import java.time.Duration;
@@ -28,6 +32,8 @@ import org.slf4j.LoggerFactory;
  *       about pending agent runs; a finished run gets an "after" snapshot, an outcome
  *       from the {@link GoalOutcomeEvaluator}, an updated run-log entry and the outcome
  *       synced back to the adapter.</li>
+ *   <li>Mode constraints (AGENT-16): a tool outside the current operating mode's
+ *       allowlist is rejected before it reaches the arbiter.</li>
  *   <li>Learning (AGENT-12): each saved outcome triggers the goal's pattern rollup and
  *       agent metrics.</li>
  * </ul>
@@ -44,6 +50,7 @@ public class AgentBehaviorService {
     private final GoalOutcomeEvaluator evaluator;
     private final PatternRollupService rollups;
     private final AgentMetricsPort metrics;
+    private final RobotModeRepositoryPort modes;
     private final Clock clock;
     private final int pollBatchSize;
     private final Duration staleAfter;
@@ -51,13 +58,15 @@ public class AgentBehaviorService {
     public AgentBehaviorService(ArbiterPort arbiter, BehaviorRunLogRepositoryPort runLogs,
                                 SensorStateService sensors, GoalOutcomeEvaluator evaluator,
                                 PatternRollupService rollups, AgentMetricsPort metrics,
-                                Clock clock, int pollBatchSize, Duration staleAfter) {
+                                RobotModeRepositoryPort modes, Clock clock, int pollBatchSize,
+                                Duration staleAfter) {
         this.arbiter = Objects.requireNonNull(arbiter, "arbiter");
         this.runLogs = Objects.requireNonNull(runLogs, "runLogs");
         this.sensors = Objects.requireNonNull(sensors, "sensors");
         this.evaluator = Objects.requireNonNull(evaluator, "evaluator");
         this.rollups = Objects.requireNonNull(rollups, "rollups");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.modes = Objects.requireNonNull(modes, "modes");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.staleAfter = Objects.requireNonNull(staleAfter, "staleAfter");
         if (pollBatchSize <= 0) {
@@ -80,6 +89,12 @@ public class AgentBehaviorService {
         Objects.requireNonNull(robotId, "robotId");
         if (toolName == null || toolName.isBlank()) {
             return ArbiterSubmissionResponse.rejected("toolName is required");
+        }
+        String refusal = modeRefusal(robotId, toolName);
+        if (refusal != null) {
+            log.warn("Agent tool call {} for {} (goal {}) rejected before the arbiter: {}",
+                    toolName, robotId, declaredGoal, refusal);
+            return ArbiterSubmissionResponse.rejected(refusal);
         }
         UUID decision = decisionId != null ? decisionId : UUID.randomUUID();
         var request = ArbiterSubmissionRequest.forAgent(toolName, declaredGoal,
@@ -226,6 +241,30 @@ public class AgentBehaviorService {
     private static OutcomeEvaluation undetermined(String reason, Instant now) {
         return new OutcomeEvaluation(null, 0.0, reason, GoalOutcomeEvaluator.EVALUATOR_VERSION,
                 now);
+    }
+
+    /**
+     * AGENT-16: the tool must be in the current operating mode's allowlist
+     * ({@link AgentToolCatalog}); a robot without a stored mode is stationary. When
+     * the mode cannot be read the call is refused rather than risking motion.
+     *
+     * @return why the call is refused, or null when it may go to the arbiter
+     */
+    private String modeRefusal(String robotId, String toolName) {
+        OperatingMode mode;
+        try {
+            mode = modes.find(robotId).orElseGet(() -> RobotMode.initial(robotId)).mode();
+        } catch (RuntimeException e) {
+            log.warn("Operating mode of {} unavailable: {}", robotId, e.getMessage());
+            return "Operating mode unavailable; tool calls are refused until it can be read";
+        }
+        if (AgentToolCatalog.isAllowed(mode, toolName)) {
+            return null;
+        }
+        var allowed = AgentToolCatalog.toolsFor(mode).stream().map(t -> t.name()).toList();
+        return "Tool '" + toolName + "' is not available in " + mode.wireId() + " mode"
+                + (allowed.isEmpty() ? " (no agent tools in this mode)"
+                        : "; available: " + String.join(", ", allowed));
     }
 
     private void captureQuietly(String robotId) {
