@@ -7,6 +7,7 @@ import com.bittle.orchestrator.application.port.out.ArbiterPort;
 import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
 import com.bittle.orchestrator.application.port.out.DecisionHistoryRepositoryPort;
 import com.bittle.orchestrator.application.port.out.EventPublisherPort;
+import com.bittle.orchestrator.application.port.out.LearnedPatternRepositoryPort;
 import com.bittle.orchestrator.application.port.out.LeasePort;
 import com.bittle.orchestrator.application.port.out.OrchestratorMetricsPort;
 import com.bittle.orchestrator.application.port.out.PersonalityStateRepositoryPort;
@@ -17,6 +18,7 @@ import com.bittle.orchestrator.application.service.BehaviorLoops;
 import com.bittle.orchestrator.application.service.FleetSweep;
 import com.bittle.orchestrator.application.service.GoalOutcomeEvaluator;
 import com.bittle.orchestrator.application.service.OrchestratorMetricsSnapshot;
+import com.bittle.orchestrator.application.service.PatternRollupService;
 import com.bittle.orchestrator.application.service.SensorStateService;
 import com.bittle.orchestrator.domain.behavior.DecisionEngine;
 import com.bittle.orchestrator.domain.behavior.PersonalityStateManager;
@@ -126,6 +128,12 @@ public class ApplicationConfig {
                                           SensorSnapshotProperties properties) {
         return new SensorStateService(fleet, adapter, Clock.systemUTC(),
                 Duration.ofMinutes(properties.sensorSnapshotTtlMinutes()));
+    }
+
+    @Bean
+    PatternRollupService patternRollupService(BehaviorRunLogRepositoryPort runLogs,
+                                              LearnedPatternRepositoryPort patterns) {
+        return new PatternRollupService(runLogs, patterns, Clock.systemUTC());
     }
 
     @Bean
