@@ -480,6 +480,12 @@ class BehaviorStore:
             return [r.to_dict() for r in session.query(BehaviorRun)
                     .order_by(BehaviorRun.started_at.desc()).limit(limit)]
 
+    def run(self, run_id: str) -> dict | None:
+        """One run as the API dict (same shape as recent_runs items)."""
+        with SessionLocal() as session:
+            row = session.query(BehaviorRun).filter_by(id=run_id).first()
+            return row.to_dict() if row else None
+
     def run_entry(self, run_id: str) -> BehaviorRunLogEntry | None:
         with SessionLocal() as session:
             row = session.query(BehaviorRun).filter_by(id=run_id).first()

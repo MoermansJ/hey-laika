@@ -1522,12 +1522,27 @@ def arbiter_invoke(robot_id: str):
         PRIORITY_AGENT if source == "agent" else PRIORITY_MANUAL, lo=1, hi=9)
     if source == "agent":
         cause = {"type": "agent", "decisionId": data.get("decisionId")}
+        if data.get("goal"):
+            # Declared goal travels in the provenance so the run log keeps it.
+            cause["goal"] = str(data["goal"])
     else:
         cause = {"type": "manual", "via": data.get("via", "api")}
     event_binder.reset_idle()
     result = arbiter.submit(name, source=source, priority=priority, cause=cause)
     log_activity("behavior", f"invoke {name} ({source}): {result['status']}")
     return jsonify({"robotId": robot_id, "behavior": name, **result})
+
+
+@app.get("/api/robots/<robot_id>/behavior/run-log/<run_id>")
+@robot_scoped
+def behavior_run_log_entry(robot_id: str, run_id: str):
+    """One run-log entry (orchestrator ArbiterClient.getRunLog). 404 until the
+    arbiter has started the run (queued submissions have no row yet)."""
+    run = behavior_store.run(run_id)
+    if run is None:
+        return jsonify({"error": "not_found",
+                        "message": f"no run '{run_id}'"}), 404
+    return jsonify({"robotId": robot_id, **run})
 
 
 @app.post("/api/robots/<robot_id>/arbiter/stop")
