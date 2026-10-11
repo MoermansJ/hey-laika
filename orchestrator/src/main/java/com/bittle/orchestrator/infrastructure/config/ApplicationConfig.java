@@ -3,6 +3,8 @@ package com.bittle.orchestrator.infrastructure.config;
 import com.bittle.orchestrator.application.BehaviorSettings;
 import com.bittle.orchestrator.application.InstanceIdentity;
 import com.bittle.orchestrator.application.MetricsSettings;
+import com.bittle.orchestrator.application.port.out.ArbiterPort;
+import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
 import com.bittle.orchestrator.application.port.out.DecisionHistoryRepositoryPort;
 import com.bittle.orchestrator.application.port.out.EventPublisherPort;
 import com.bittle.orchestrator.application.port.out.LeasePort;
@@ -10,6 +12,7 @@ import com.bittle.orchestrator.application.port.out.OrchestratorMetricsPort;
 import com.bittle.orchestrator.application.port.out.PersonalityStateRepositoryPort;
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
 import com.bittle.orchestrator.application.service.ActionExecutor;
+import com.bittle.orchestrator.application.service.AgentBehaviorService;
 import com.bittle.orchestrator.application.service.BehaviorLoops;
 import com.bittle.orchestrator.application.service.FleetSweep;
 import com.bittle.orchestrator.application.service.OrchestratorMetricsSnapshot;
@@ -20,6 +23,7 @@ import com.bittle.orchestrator.domain.fleet.Fleet;
 import com.bittle.orchestrator.domain.fleet.Robot;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.context.annotation.Bean;
@@ -94,6 +98,12 @@ public class ApplicationConfig {
                                 InstanceIdentity identity) {
         return new BehaviorLoops(fleet, stateManager, decisionEngine, executor, publisher,
                 settings, states, decisions, leases, identity);
+    }
+
+    @Bean
+    AgentBehaviorService agentBehaviorService(ArbiterPort arbiter,
+                                              BehaviorRunLogRepositoryPort runLogs) {
+        return new AgentBehaviorService(arbiter, runLogs, Clock.systemUTC());
     }
 
     @Bean
