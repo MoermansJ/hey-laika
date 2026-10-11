@@ -44,6 +44,8 @@ jobs:
           TITLE: ${{ github.event.issue.title }}
           URL: ${{ github.event.issue.html_url }}
           ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
           case "$LABEL" in
             status:to-do)        ICON="📋" ;;
@@ -54,6 +56,16 @@ jobs:
             *)                   ICON="🔖" ;;
           esac
           MSG="$ICON **#$NUM $TITLE** → \`$LABEL\`  (by $ACTOR)\n$URL"
+          # PRs opened by Claude sessions (GitHub MCP) don't fire pull_request
+          # workflows, so the in-review alert carries the PR link itself.
+          if [ "$LABEL" = "status:in-review" ]; then
+            TICKET=$(gh api "repos/$REPO/issues/$NUM" --jq '[.labels[].name | select(test("^AGENT-[0-9]+$"))][0] // empty')
+            if [ -n "$TICKET" ]; then
+              PR=$(gh api "repos/$REPO/pulls?state=open&base=development&per_page=100" \
+                | jq -r --arg t "$TICKET" '[.[] | select((.head.ref + " " + .title) | ascii_upcase | contains($t))][0] | if . then "🔀 PR #\(.number): \(.html_url) (branch \(.head.ref))" else empty end')
+              [ -n "$PR" ] && MSG="$MSG\n$PR"
+            fi
+          fi
           jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
             | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
 
