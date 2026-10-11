@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - development
 
 jobs:
   smart-idle-check:
@@ -53,15 +54,15 @@ jobs:
       - name: Check if commit is still the latest
         id: idle-check
         run: |
-          git fetch origin main
+          git fetch origin "${{ github.ref_name }}"
           
           ORIGINAL_COMMIT="${{ steps.commit-info.outputs.commit_hash }}"
-          CURRENT_COMMIT=$(git rev-parse origin/main)
+          CURRENT_COMMIT=$(git rev-parse "origin/${{ github.ref_name }}")
           
           if [ "$ORIGINAL_COMMIT" = "$CURRENT_COMMIT" ]; then
             echo "is_idle=true" >> $GITHUB_OUTPUT
           else
-            LATEST_COMMIT_TIME=$(git log -1 --format=%cI origin/main)
+            LATEST_COMMIT_TIME=$(git log -1 --format=%cI "origin/${{ github.ref_name }}")
             LATEST_COMMIT_UNIX=$(date -d "$LATEST_COMMIT_TIME" +%s)
             NOW_UNIX=$(date +%s)
             NEW_MINUTES_SINCE=$(( (NOW_UNIX - LATEST_COMMIT_UNIX) / 60 ))
@@ -82,4 +83,4 @@ jobs:
           
           curl -X POST "$WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
-            -d "{\"content\": \"🤖 **Agent idle for 25+ minutes**\\n\\nLast commit: \`$CURRENT_COMMIT_SHORT\`\\n\\n📋 Check project board: https://github.com/users/MoermansJ/projects/4\"}"
+            -d "{\"content\": \"🤖 **No pushes to \`${{ github.ref_name }}\` for 25+ minutes**\\n\\nLast commit: \`$CURRENT_COMMIT_SHORT\`\\n\\n📋 Open tickets: https://github.com/MoermansJ/hey-laika/issues?q=is%3Aopen+label%3Aagent-tool-composition\"}"

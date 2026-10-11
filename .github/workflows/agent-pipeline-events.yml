@@ -1,0 +1,121 @@
+name: Agent Pipeline - Discord Reporting
+
+# Reports every state change of the AGENT code factory to Discord:
+#   - an issue gets a status:* label   (to-do / in-progress / in-review / blocked / done)
+#   - an agent PR is opened against development
+#   - an agent PR is merged into development -> issue labelled status:done + closed
+#   - CI fails on development or on an agent PR
+# Runs on GitHub's runners, which can read the DISCORD_WEBHOOK_URL secret
+# (Claude sessions cannot).
+
+on:
+  issues:
+    types: [labeled]
+  pull_request:
+    types: [opened, reopened, closed]
+    branches: [development]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  issues: write
+  pull-requests: read
+  actions: read
+
+jobs:
+  status-label:
+    if: github.event_name == 'issues' && startsWith(github.event.label.name, 'status:')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post status change
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          LABEL: ${{ github.event.label.name }}
+          NUM: ${{ github.event.issue.number }}
+          TITLE: ${{ github.event.issue.title }}
+          URL: ${{ github.event.issue.html_url }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          case "$LABEL" in
+            status:to-do)        ICON="📋" ;;
+            status:in-progress)  ICON="🛠️" ;;
+            status:in-review)    ICON="👀" ;;
+            status:done)         ICON="✅" ;;
+            status:blocked)      ICON="🚫" ;;
+            *)                   ICON="🔖" ;;
+          esac
+          MSG="$ICON **#$NUM $TITLE** → \`$LABEL\`  (by $ACTOR)\n$URL"
+          jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
+            | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
+
+  pr-opened:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post PR opened
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          NUM: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          URL: ${{ github.event.pull_request.html_url }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+          ADDS: ${{ github.event.pull_request.additions }}
+          DELS: ${{ github.event.pull_request.deletions }}
+        run: |
+          MSG="🔀 **PR #$NUM opened → development**: $TITLE\nBranch \`$HEAD\` · +$ADDS / -$DELS\n$URL"
+          jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
+            | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
+
+  pr-merged:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark ticket done and post
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          NUM: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+          URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          TICKET=$(printf '%s %s' "$HEAD" "$TITLE" | grep -oiE 'AGENT-[0-9]+' | head -1 | tr a-z A-Z)
+          ISSUE=""
+          if [ -n "$TICKET" ]; then
+            ISSUE=$(gh api "repos/$REPO/issues?labels=$TICKET&state=all" --jq '.[0].number // empty')
+          fi
+          if [ -n "$ISSUE" ]; then
+            for L in status:to-do status:in-progress status:in-review status:blocked; do
+              gh api -X DELETE "repos/$REPO/issues/$ISSUE/labels/$L" >/dev/null 2>&1 || true
+            done
+            gh api -X POST "repos/$REPO/issues/$ISSUE/labels" -f 'labels[]=status:done' >/dev/null
+            gh api -X PATCH "repos/$REPO/issues/$ISSUE" -f state=closed -f state_reason=completed >/dev/null
+            gh api -X POST "repos/$REPO/issues/$ISSUE/comments" -f body="Merged into \`development\` via #$NUM." >/dev/null
+            DONE="Ticket #$ISSUE ($TICKET) → \`status:done\`, closed."
+          else
+            DONE="⚠️ No AGENT ticket found for this PR — status not updated."
+          fi
+          REMAINING=$(gh api "repos/$REPO/issues?labels=status:to-do&state=open&per_page=100" --jq 'length')
+          MSG="✅ **PR #$NUM merged into development**: $TITLE\n$DONE\n📊 $REMAINING tickets left in to-do.\n$URL"
+          jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
+            | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
+
+  ci-failed:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      (github.event.workflow_run.head_branch == 'development' || startsWith(github.event.workflow_run.head_branch, 'agent/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post CI failure
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          MSG="❌ **CI failed** on \`$BRANCH\` (\`${SHA:0:7}\`)\n$URL"
+          jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
+            | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
