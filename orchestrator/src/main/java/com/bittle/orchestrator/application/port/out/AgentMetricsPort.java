@@ -3,6 +3,12 @@ package com.bittle.orchestrator.application.port.out;
 /** Metrics for the agent tool-call lifecycle (AGENT-12). Implementations must not throw. */
 public interface AgentMetricsPort {
 
+    /**
+     * An agent tool call was answered: {@code result} is accepted, rejected (by the
+     * arbiter or a connection error) or mode_rejected (not allowed in the mode).
+     */
+    void recordSubmission(String tool, String result);
+
     /** An agent run was closed with an outcome; {@code success} null = undetermined. */
     void recordOutcome(String goal, Boolean success);
 

@@ -71,7 +71,7 @@ public class GoalOutcomeEvaluator {
             check = checker.evaluate(before, after);
         } catch (RuntimeException e) {
             log.warn("Outcome checker for goal {} failed on run {}: {}", goal, runLog.id(),
-                    e.toString());
+                    e.toString(), e);
             return toOutcome(GoalCheck.undetermined("Evaluator failed: " + e.getMessage()));
         }
         if (check == null) {

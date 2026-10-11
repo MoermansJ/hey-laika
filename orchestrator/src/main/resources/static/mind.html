@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="console.css">
   <script src="common.js"></script>
   <script src="cards.js"></script>
+  <script src="vendor/stomp.umd.min.js"></script>
+  <script src="learned-patterns.js"></script>
   <script src="nav.js" defer></script>
 </head>
 <body>
@@ -25,12 +27,14 @@
       <div id="thoughts" class="empty">…</div>
     </section>
 
+    <section class="card" id="learned-card"></section>
+
     <div class="hint">Her position and the WiFi senses live on the Map tab; the signal leash on the Leash tab.</div>
   </div>
 
   <script>
     const $ = (sel) => document.querySelector(sel);
-    const state = { base: "", arbiter: null };
+    const state = { base: "", robotId: null, arbiter: null, learned: null };
 
     // The orchestrator's behavior loop stores every decision with its
     // reasoning (/behavior/history); this is the loop thinking out loud.
@@ -67,19 +71,24 @@
       if (state.arbiter) state.arbiter.stop();
       state.arbiter = hlArbiterCard($("#arbiter-card"), state.base,
           { title: "What I'm doing, and why", runs: 12, why: true, intervalMs: 2000 });
+      if (state.learned) state.learned.stop();
+      state.learned = hlLearnedPatternsCard($("#learned-card"), state.robotId);
       refresh();
     }
 
     async function boot() {
       let page;
       try {
-        page = await hlPage({ onRobotChange: (id) => { state.base = `/api/robots/${id}`; mount(); } });
+        page = await hlPage({ onRobotChange: (id) => {
+          state.base = `/api/robots/${id}`; state.robotId = id; mount();
+        } });
       } catch (err) {
         $("#mind-chip").textContent = "orchestrator unreachable";
         return;
       }
       if (!page.robotId) return;
       state.base = page.base;
+      state.robotId = page.robotId;
       mount();
       hlPoll(refresh, 2000, { immediate: false });
     }
