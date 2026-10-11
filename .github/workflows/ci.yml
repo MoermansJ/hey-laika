@@ -42,4 +42,13 @@ jobs:
       - run: pip install -r requirements-dev.txt
       # tests/conftest.py forces MOCK_MODE and the mock decision engine, so no
       # hardware, Ollama or API key is needed.
-      - run: pytest -q
+      # Failures are re-emitted as annotations so they're readable through the
+      # checks API (agent sessions can't download raw job logs).
+      - name: pytest
+        run: |
+          set -o pipefail
+          pytest -q -rfE 2>&1 | tee pytest.log
+      - name: Annotate pytest failures
+        if: failure()
+        run: |
+          grep -E "^(ERROR|FAILED|E )|Error:|error:" pytest.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
