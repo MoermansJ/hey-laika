@@ -25,7 +25,8 @@ from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
 from app.arbiter import Arbiter
 from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
-                                PRIORITY_MANUAL, BehaviorStore)
+                                PRIORITY_MANUAL, BehaviorStore,
+                                OutcomeEvaluation)
 from app.conversation import ConversationService, InfoTool, battery_sentence
 from app.power_saver import PowerSaver
 from app.ears import EarsService, build_transcriber
@@ -1543,6 +1544,52 @@ def behavior_run_log_entry(robot_id: str, run_id: str):
         return jsonify({"error": "not_found",
                         "message": f"no run '{run_id}'"}), 404
     return jsonify({"robotId": robot_id, **run})
+
+
+@app.put("/api/robots/<robot_id>/behavior/run-log/<run_id>/outcome")
+@robot_scoped
+def behavior_run_log_outcome(robot_id: str, run_id: str):
+    """Attach the orchestrator's outcome evaluation to a run (AGENT-06;
+    called by the orchestrator's ArbiterClient.syncOutcome).
+
+    Body: {"success": true|false|null, "confidence": 0.0-1.0, "reason": "...",
+    "evaluator_version": "1.0", "evaluated_at": "<iso>"?, "sensor_delta": {}?}
+    (camelCase keys accepted too). Idempotent: the same body twice leaves the
+    run unchanged; when evaluated_at is omitted it is stamped on the first
+    write and kept on identical repeats."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "bad_request",
+                        "message": "JSON object body required"}), 400
+    sensor_delta = data.get("sensor_delta", data.get("sensorDelta"))
+    try:
+        outcome = OutcomeEvaluation.from_dict(data)
+    except (TypeError, ValueError) as exc:
+        logger.warning("Outcome for run %s rejected: %s", run_id, exc)
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    if outcome.evaluated_at is None:
+        existing = behavior_store.run_entry(run_id)
+        prior = existing.outcome if existing else None
+        if prior is not None and _same_outcome(prior, outcome):
+            outcome.evaluated_at = prior.evaluated_at
+        else:
+            outcome.evaluated_at = datetime.now(timezone.utc).isoformat()
+    try:
+        run = behavior_store.set_outcome(run_id, outcome, sensor_delta)
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+    if run is None:
+        logger.warning("Outcome for unknown run %s", run_id)
+        return jsonify({"error": "not_found",
+                        "message": f"no run '{run_id}'"}), 404
+    logger.info("Outcome for run %s (%s): success=%s confidence=%.2f",
+                run_id, run["behavior"], outcome.success, outcome.confidence)
+    return jsonify({"status": "updated", "robotId": robot_id, "run": run}), 200
+
+
+def _same_outcome(a: OutcomeEvaluation, b: OutcomeEvaluation) -> bool:
+    return (a.success, a.confidence, a.reason, a.evaluator_version) == \
+        (b.success, b.confidence, b.reason, b.evaluator_version)
 
 
 @app.post("/api/robots/<robot_id>/arbiter/stop")
