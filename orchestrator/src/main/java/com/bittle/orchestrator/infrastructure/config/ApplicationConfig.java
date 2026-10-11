@@ -107,8 +107,12 @@ public class ApplicationConfig {
 
     @Bean
     AgentBehaviorService agentBehaviorService(ArbiterPort arbiter,
-                                              BehaviorRunLogRepositoryPort runLogs) {
-        return new AgentBehaviorService(arbiter, runLogs, Clock.systemUTC());
+                                              BehaviorRunLogRepositoryPort runLogs,
+                                              SensorStateService sensors,
+                                              GoalOutcomeEvaluator evaluator,
+                                              AgentPollingProperties polling) {
+        return new AgentBehaviorService(arbiter, runLogs, sensors, evaluator, Clock.systemUTC(),
+                polling.pollBatchSize(), Duration.ofMinutes(polling.runStaleAfterMinutes()));
     }
 
     /** Every GoalOutcomeChecker bean is registered by its goal (none is fine). */

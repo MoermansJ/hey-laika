@@ -163,4 +163,23 @@ class BehaviorRunLogRepositoryAdapterTest {
         assertThat(read.completedAt()).isEqualTo(T0.plusSeconds(2));
         assertThat(read.outcome()).isEqualTo(outcome(true));
     }
+
+    @Test
+    void givenMixedRuns_whenPendingQueried_thenOnlyUncompletedRunsOfTheSourceOldestFirst() {
+        var older = runLogs.save(run("bittle-1", "agent", "look_upward", T0));
+        var newer = runLogs.save(run("bittle-1", "agent", "bark", T0.plusSeconds(10)));
+        var done = run("bittle-1", "agent", "bark", T0.plusSeconds(5));
+        runLogs.save(new BehaviorRunLog(done.id(), done.robotId(), done.timestamp(),
+                T0.plusSeconds(6), done.behaviorName(), done.source(), done.priority(),
+                done.cause(), 1000L, null, done.goal(), null, null, null, null));
+        runLogs.save(run("bittle-1", "manual", null, T0.plusSeconds(1)));
+
+        assertThat(runLogs.findPendingBySource("agent", 10))
+                .extracting(BehaviorRunLog::id)
+                .containsExactly(older.id(), newer.id());
+        assertThat(runLogs.findPendingBySource("agent", 1))
+                .extracting(BehaviorRunLog::id)
+                .containsExactly(older.id());
+        assertThat(runLogs.findPendingBySource("agent", 0)).isEmpty();
+    }
 }

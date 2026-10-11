@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -16,8 +17,10 @@ import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionRequest;
 import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionResponse;
 import com.bittle.orchestrator.domain.behavior.BehaviorRunLog;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -30,8 +33,10 @@ class AgentBehaviorServiceTest {
 
     private final ArbiterPort arbiter = mock(ArbiterPort.class);
     private final BehaviorRunLogRepositoryPort runLogs = mock(BehaviorRunLogRepositoryPort.class);
+    private final SensorStateService sensors = mock(SensorStateService.class);
     private final AgentBehaviorService service = new AgentBehaviorService(arbiter, runLogs,
-            Clock.fixed(NOW, ZoneOffset.UTC));
+            sensors, new GoalOutcomeEvaluator(List.of(), Clock.fixed(NOW, ZoneOffset.UTC)),
+            Clock.fixed(NOW, ZoneOffset.UTC), 20, Duration.ofMinutes(10));
 
     @Test
     void givenToolCall_whenSubmitted_thenArbiterGetsAgentPriorityThreeWithDecisionInCause() {
@@ -78,6 +83,18 @@ class AgentBehaviorServiceTest {
     }
 
     @Test
+    void givenToolCall_whenSubmitted_thenBeforeSnapshotIsCapturedBeforeTheArbiterIsCalled() {
+        when(arbiter.submit(anyString(), any()))
+                .thenReturn(new ArbiterSubmissionResponse(RUN, "executing", null, 0));
+
+        service.submitToolCall("bittle-1", "look_up", "look_upward", DECISION);
+
+        var order = inOrder(sensors, arbiter);
+        order.verify(sensors).captureSnapshot("bittle-1");
+        order.verify(arbiter).submit(eq("bittle-1"), any());
+    }
+
+    @Test
     void givenRejectedSubmission_whenSubmitted_thenNothingIsSavedAndRejectionIsReturned() {
         when(arbiter.submit(anyString(), any()))
                 .thenReturn(ArbiterSubmissionResponse.rejected("cooldown"));
@@ -118,7 +135,7 @@ class AgentBehaviorServiceTest {
         var response = service.submitToolCall("bittle-1", " ", "look_upward", DECISION);
 
         assertThat(response.isAccepted()).isFalse();
-        verifyNoInteractions(arbiter, runLogs);
+        verifyNoInteractions(arbiter, runLogs, sensors);
     }
 
     @Test

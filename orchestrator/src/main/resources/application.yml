@@ -98,6 +98,13 @@ arbiter:
 # Goal outcome checkers (AGENT-08): a run succeeds when the measured change
 # reaches the threshold; *-scale is the change that counts as confidence 1.0.
 agent:
+  # Agent run completion polling (AGENT-10): every poll-interval-ms the
+  # orchestrator asks the arbiter about up to poll-batch-size pending agent
+  # runs; one with no completion after run-stale-after-minutes is closed.
+  polling-enabled: true
+  poll-interval-ms: 500
+  poll-batch-size: 20
+  run-stale-after-minutes: 10
   # Sensor snapshots taken at agent run start/end (AGENT-09) stay cached this long.
   sensor-snapshot-ttl-minutes: 10
   outcome:

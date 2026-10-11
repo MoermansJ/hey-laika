@@ -5,18 +5,29 @@ import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort
 import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionRequest;
 import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionResponse;
 import com.bittle.orchestrator.domain.behavior.BehaviorRunLog;
+import com.bittle.orchestrator.domain.behavior.OutcomeEvaluation;
+import com.bittle.orchestrator.domain.behavior.outcome.SensorSnapshot;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Agent tool-call lifecycle in the orchestrator (AGENT_TOOL_COMPOSITION_DESIGN.md §3.3).
- * AGENT-05 covers submission: a tool call from Claude goes to the robot's arbiter at
- * priority 3 with agent provenance, and an accepted run gets a local run-log entry
- * under the arbiter's run id so later polling and outcome evaluation can find it.
+ * <ul>
+ *   <li>Submission (AGENT-05): a tool call from Claude goes to the robot's arbiter at
+ *       priority 3 with agent provenance; an accepted run gets a local run-log entry under
+ *       the arbiter's run id, and a "before" sensor snapshot is captured.</li>
+ *   <li>Completion (AGENT-10): {@link #pollAndEvaluateCompletions()} asks the arbiter
+ *       about pending agent runs; a finished run gets an "after" snapshot, an outcome
+ *       from the {@link GoalOutcomeEvaluator}, an updated run-log entry and the outcome
+ *       synced back to the adapter.</li>
+ * </ul>
  */
 public class AgentBehaviorService {
 
@@ -24,13 +35,25 @@ public class AgentBehaviorService {
 
     private final ArbiterPort arbiter;
     private final BehaviorRunLogRepositoryPort runLogs;
+    private final SensorStateService sensors;
+    private final GoalOutcomeEvaluator evaluator;
     private final Clock clock;
+    private final int pollBatchSize;
+    private final Duration staleAfter;
 
     public AgentBehaviorService(ArbiterPort arbiter, BehaviorRunLogRepositoryPort runLogs,
-                                Clock clock) {
+                                SensorStateService sensors, GoalOutcomeEvaluator evaluator,
+                                Clock clock, int pollBatchSize, Duration staleAfter) {
         this.arbiter = Objects.requireNonNull(arbiter, "arbiter");
         this.runLogs = Objects.requireNonNull(runLogs, "runLogs");
+        this.sensors = Objects.requireNonNull(sensors, "sensors");
+        this.evaluator = Objects.requireNonNull(evaluator, "evaluator");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.staleAfter = Objects.requireNonNull(staleAfter, "staleAfter");
+        if (pollBatchSize <= 0) {
+            throw new IllegalArgumentException("pollBatchSize must be positive: " + pollBatchSize);
+        }
+        this.pollBatchSize = pollBatchSize;
     }
 
     /**
@@ -52,6 +75,8 @@ public class AgentBehaviorService {
         var request = ArbiterSubmissionRequest.forAgent(toolName, declaredGoal,
                 decision.toString());
 
+        // The "before" state must be read before the arbiter can start moving.
+        captureQuietly(robotId);
         ArbiterSubmissionResponse response = arbiter.submit(robotId, request);
         if (response == null) {
             return ArbiterSubmissionResponse.rejected("Empty arbiter response");
@@ -71,6 +96,99 @@ public class AgentBehaviorService {
         log.info("Agent tool call {} for {} (goal {}, decision {}) -> {} run {}", toolName,
                 robotId, declaredGoal, decision, response.status(), response.runLogId());
         return response;
+    }
+
+    /**
+     * One polling pass over pending agent runs (oldest first, at most the batch size).
+     * A run the arbiter reports as finished is evaluated and saved; a run with no
+     * completion after the stale timeout is closed as undetermined so it stops being
+     * polled. Failures on one run are logged and do not stop the others.
+     *
+     * @return how many runs were closed in this pass
+     */
+    public int pollAndEvaluateCompletions() {
+        List<BehaviorRunLog> pending;
+        try {
+            pending = runLogs.findPendingBySource(ArbiterSubmissionRequest.SOURCE_AGENT,
+                    pollBatchSize);
+        } catch (RuntimeException e) {
+            log.warn("Could not load pending agent runs: {}", e.getMessage());
+            return 0;
+        }
+        int closed = 0;
+        for (BehaviorRunLog entry : pending) {
+            try {
+                if (pollOne(entry)) {
+                    closed++;
+                }
+            } catch (RuntimeException e) {
+                log.warn("Evaluating agent run {} for {} failed: {}", entry.id(),
+                        entry.robotId(), e.toString());
+            }
+        }
+        return closed;
+    }
+
+    private boolean pollOne(BehaviorRunLog entry) {
+        Instant now = clock.instant();
+        Optional<BehaviorRunLog> remote = arbiter.getRunLog(entry.robotId(), entry.id());
+        Instant completedAt = remote.map(BehaviorRunLog::completedAt).orElse(null);
+        if (completedAt == null) {
+            if (Duration.between(entry.timestamp(), now).compareTo(staleAfter) > 0) {
+                closeStale(entry, now, remote.isPresent());
+                return true;
+            }
+            return false;
+        }
+        BehaviorRunLog finished = remote.get();
+        OutcomeEvaluation outcome;
+        if (finished.preemptedBy() != null) {
+            outcome = undetermined("Run did not finish: preempted by " + finished.preemptedBy(),
+                    now);
+        } else {
+            SensorSnapshot before = sensors.getSnapshotAt(entry.robotId(), entry.timestamp())
+                    .orElse(null);
+            SensorSnapshot after = sensors.captureSnapshot(entry.robotId());
+            outcome = evaluator.evaluateOutcome(entry, before, after);
+        }
+        var updated = new BehaviorRunLog(entry.id(), entry.robotId(), entry.timestamp(),
+                completedAt, entry.behaviorName(), entry.source(), entry.priority(),
+                entry.cause(), finished.executionTimeMs(), finished.preemptedBy(), entry.goal(),
+                outcome, entry.sensorDelta(), entry.createdAt(), now);
+        runLogs.save(updated);
+        if (!arbiter.syncOutcome(entry.robotId(), entry.id(), outcome)) {
+            log.warn("Outcome of run {} saved but not synced to the adapter", entry.id());
+        }
+        log.info("Agent run {} ({} for goal {}) finished: success={} confidence={} ({})",
+                entry.id(), entry.behaviorName(), entry.goal(), outcome.success(),
+                outcome.confidence(), outcome.reason());
+        // Pattern rollup on outcome write is wired in by AGENT-11/12.
+        return true;
+    }
+
+    private void closeStale(BehaviorRunLog entry, Instant now, boolean adapterKnowsRun) {
+        String reason = adapterKnowsRun
+                ? "No completion reported within " + staleAfter.toMinutes() + " min"
+                : "Run unknown to the adapter after " + staleAfter.toMinutes() + " min";
+        var outcome = undetermined(reason, now);
+        runLogs.save(new BehaviorRunLog(entry.id(), entry.robotId(), entry.timestamp(), now,
+                entry.behaviorName(), entry.source(), entry.priority(), entry.cause(), null,
+                entry.preemptedBy(), entry.goal(), outcome, entry.sensorDelta(),
+                entry.createdAt(), now));
+        log.warn("Agent run {} for {} closed as stale: {}", entry.id(), entry.robotId(), reason);
+    }
+
+    private static OutcomeEvaluation undetermined(String reason, Instant now) {
+        return new OutcomeEvaluation(null, 0.0, reason, GoalOutcomeEvaluator.EVALUATOR_VERSION,
+                now);
+    }
+
+    private void captureQuietly(String robotId) {
+        try {
+            sensors.captureSnapshot(robotId);
+        } catch (RuntimeException e) {
+            log.debug("Before-snapshot for {} failed: {}", robotId, e.getMessage());
+        }
     }
 
     private void record(String robotId, ArbiterSubmissionRequest request, UUID runLogId) {

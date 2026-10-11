@@ -21,6 +21,12 @@ public interface BehaviorRunLogRepositoryPort {
     /** Runs from a source (e.g. "agent") that already carry an outcome evaluation, newest first. */
     List<BehaviorRunLog> findByRobotIdAndSourceWithOutcome(String robotId, String source);
 
+    /**
+     * Runs from a source that have not completed yet (no {@code completedAt}),
+     * oldest first, at most {@code limit}.
+     */
+    List<BehaviorRunLog> findPendingBySource(String source, int limit);
+
     /** Attaches an outcome to an existing run; empty when no run has that id. */
     Optional<BehaviorRunLog> attachOutcome(UUID id, OutcomeEvaluation outcome);
 }
