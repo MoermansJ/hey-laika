@@ -81,6 +81,6 @@ jobs:
           CURRENT_COMMIT="${{ steps.commit-info.outputs.commit_hash }}"
           CURRENT_COMMIT_SHORT="${CURRENT_COMMIT:0:7}"
           
-          curl -X POST "$WEBHOOK_URL" \
+          curl -fsS -X POST "$WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
             -d "{\"content\": \"🤖 **No pushes to \`${{ github.ref_name }}\` for 25+ minutes**\\n\\nLast commit: \`$CURRENT_COMMIT_SHORT\`\\n\\n📋 Open tickets: https://github.com/MoermansJ/hey-laika/issues?q=is%3Aopen+label%3Aagent-tool-composition\"}"
