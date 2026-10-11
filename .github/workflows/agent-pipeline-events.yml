@@ -5,6 +5,8 @@ name: Agent Pipeline - Discord Reporting
 #   - an agent PR is opened against development
 #   - an agent PR is merged into development -> issue labelled status:done + closed
 #   - CI fails on development or on an agent PR
+# It also deletes agent/* branches once their PR is closed, plus a sweep of
+# stale agent/* branches with no open PR (Claude sessions can't delete refs).
 # Runs on GitHub's runners, which can read the DISCORD_WEBHOOK_URL secret
 # (Claude sessions cannot).
 
@@ -17,11 +19,17 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+  # Branch sweep: Claude sessions cannot delete branches, so Actions does it.
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
 
 permissions:
   issues: write
   pull-requests: read
   actions: read
+  contents: write
 
 jobs:
   status-label:
@@ -119,3 +127,36 @@ jobs:
           MSG="❌ **CI failed** on \`$BRANCH\` (\`${SHA:0:7}\`)\n$URL"
           jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
             | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
+
+  delete-closed-agent-branch:
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      startsWith(github.event.pull_request.head.ref, 'agent/') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.event.pull_request.head.ref }}
+        run: gh api -X DELETE "repos/$REPO/git/refs/heads/$REF"
+
+  sweep-agent-branches:
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete agent/* branches with no open PR (self-tests now, others after 6h)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          OPEN=$(gh api "repos/$REPO/pulls?state=open&per_page=100" --jq '[.[].head.ref]')
+          NOW=$(date +%s)
+          gh api "repos/$REPO/branches?per_page=100" --paginate --jq '.[].name | select(startswith("agent/"))' | while read -r B; do
+            if echo "$OPEN" | jq -e --arg b "$B" 'index($b)' >/dev/null; then echo "keep $B (open PR)"; continue; fi
+            WHEN=$(gh api "repos/$REPO/commits/$B" --jq '.commit.committer.date')
+            AGE=$(( NOW - $(date -d "$WHEN" +%s) ))
+            case "$B" in agent/AGENT-00-*) ;; *) [ "$AGE" -lt 21600 ] && { echo "keep $B (young, may be mid-run)"; continue; } ;; esac
+            gh api -X DELETE "repos/$REPO/git/refs/heads/$B" && echo "deleted $B"
+          done
