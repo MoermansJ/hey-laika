@@ -31,6 +31,17 @@ def wait_idle(arbiter, timeout=5.0):
     return False
 
 
+def wait_for(predicate, timeout=5.0):
+    """The arbiter clears `current` before it logs the run end and calls
+    on_end, so "idle" alone doesn't mean the callback has fired yet."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False
+
+
 def test_generator_steps_run_and_report_completion():
     ctrl, arbiter = build()
     ends = []
@@ -46,6 +57,7 @@ def test_generator_steps_run_and_report_completion():
     assert out["status"] == "executing"
     assert wait_idle(arbiter)
     assert seen == ["kup", "kwkF 2"]
+    assert wait_for(lambda: ends)
     assert ends == ["complete"]
     run = arbiter.status()["recentRuns"][0]
     assert run["behavior"] == "walk_a_bit" and run["status"] == "complete"
@@ -70,6 +82,7 @@ def test_preemption_closes_the_generator_and_names_the_preemptor():
     assert result["status"] == "preempting"
     assert closed.wait(3.0)
     assert wait_idle(arbiter)
+    assert wait_for(lambda: ends)
     assert ends == ["interrupted"]
     runs = {r["behavior"]: r for r in arbiter.status()["recentRuns"]}
     assert runs["forever"]["status"] == "interrupted"
@@ -85,6 +98,7 @@ def test_generator_may_end_the_run_with_its_own_status():
 
     arbiter.submit_generator("plan", steps, on_end=lambda s, d: ends.append((s, d)))
     assert wait_idle(arbiter)
+    assert wait_for(lambda: ends)
     assert ends == [("failed", "no route")]
 
 
