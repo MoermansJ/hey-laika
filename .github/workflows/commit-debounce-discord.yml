@@ -1,0 +1,49 @@
+name: Commit Debounce - Discord Notification
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+
+jobs:
+  check-commit-idle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Check last commit time
+        id: last-commit
+        run: |
+          # Get the timestamp of the last commit in the repo
+          LAST_COMMIT=$(git log -1 --format=%cI)
+          LAST_COMMIT_UNIX=$(date -d "$LAST_COMMIT" +%s)
+          NOW_UNIX=$(date +%s)
+          DIFF_SECONDS=$((NOW_UNIX - LAST_COMMIT_UNIX))
+          DIFF_MINUTES=$((DIFF_SECONDS / 60))
+          
+          echo "last_commit=$LAST_COMMIT" >> $GITHUB_OUTPUT
+          echo "diff_minutes=$DIFF_MINUTES" >> $GITHUB_OUTPUT
+          
+          if [ $DIFF_MINUTES -gt 25 ]; then
+            echo "idle=true" >> $GITHUB_OUTPUT
+          else
+            echo "idle=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Discord notification
+        if: steps.last-commit.outputs.idle == 'true'
+        run: |
+          WEBHOOK_URL="${{ secrets.DISCORD_WEBHOOK_URL }}"
+          LAST_COMMIT="${{ steps.last-commit.outputs.last_commit }}"
+          DIFF_MINUTES="${{ steps.last-commit.outputs.diff_minutes }}"
+          
+          curl -X POST "$WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d @- << PAYLOAD
+          {
+            "content": "🤖 **Agent idle for $DIFF_MINUTES minutes**\n\nLast commit: $LAST_COMMIT\nWork batch may be complete.\n\n📋 Check project board: https://github.com/users/MoermansJ/projects/4"
+          }
+          PAYLOAD
