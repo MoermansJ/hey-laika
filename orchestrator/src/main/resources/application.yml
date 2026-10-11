@@ -95,6 +95,25 @@ arbiter:
   connect-timeout-ms: 2000
   read-timeout-ms: 5000
 
+# Goal outcome checkers (AGENT-08): a run succeeds when the measured change
+# reaches the threshold; *-scale is the change that counts as confidence 1.0.
+agent:
+  outcome:
+    look-centroid-px: 30
+    look-centroid-scale-px: 100
+    look-imu-deg: 10
+    look-imu-scale-deg: 30
+    move-forward-cm: 5
+    move-forward-scale-cm: 20
+    listen-amplitude-delta: 0.1
+    listen-amplitude-scale: 0.3
+    bark-amplitude: 0.3
+    bark-amplitude-scale: 0.6
+    bark-min-hz: 250
+    bark-max-hz: 2000
+    tilt-head-deg: 10
+    tilt-head-scale-deg: 30
+
 # Robot instances managed by this platform. Each entry points at the Python
 # adapter service that implements the robot's hardware/AI logic. Override in
 # Docker via e.g. BITTLE_ROBOTS_0_SERVICEURL=http://python-bittle-1:5000
