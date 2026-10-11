@@ -3,6 +3,7 @@ package com.bittle.orchestrator.infrastructure.config;
 import com.bittle.orchestrator.application.BehaviorSettings;
 import com.bittle.orchestrator.application.InstanceIdentity;
 import com.bittle.orchestrator.application.MetricsSettings;
+import com.bittle.orchestrator.application.port.out.AgentMetricsPort;
 import com.bittle.orchestrator.application.port.out.ArbiterPort;
 import com.bittle.orchestrator.application.port.out.BehaviorRunLogRepositoryPort;
 import com.bittle.orchestrator.application.port.out.DecisionHistoryRepositoryPort;
@@ -112,9 +113,12 @@ public class ApplicationConfig {
                                               BehaviorRunLogRepositoryPort runLogs,
                                               SensorStateService sensors,
                                               GoalOutcomeEvaluator evaluator,
+                                              PatternRollupService rollups,
+                                              AgentMetricsPort agentMetrics,
                                               AgentPollingProperties polling) {
-        return new AgentBehaviorService(arbiter, runLogs, sensors, evaluator, Clock.systemUTC(),
-                polling.pollBatchSize(), Duration.ofMinutes(polling.runStaleAfterMinutes()));
+        return new AgentBehaviorService(arbiter, runLogs, sensors, evaluator, rollups,
+                agentMetrics, Clock.systemUTC(), polling.pollBatchSize(),
+                Duration.ofMinutes(polling.runStaleAfterMinutes()));
     }
 
     /** Every GoalOutcomeChecker bean is registered by its goal (none is fine). */
