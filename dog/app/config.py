@@ -29,6 +29,10 @@ class Config:
     # orchestrator addresses services by this id; requests for any other id
     # are rejected with 404.
     ROBOT_ID = os.getenv("ROBOT_ID", "bittle-1").strip()
+    # Agent tool composition (AGENT-15): the orchestrator's base URL, e.g.
+    # http://orchestrator:8080. Empty = the conversation offers no agent tools.
+    ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "").strip().rstrip("/")
+    AGENT_TIMEOUT_S = float(os.getenv("AGENT_TIMEOUT_S", "2.0"))
 
     # Hardware
     MOCK_MODE = _bool("MOCK_MODE", True)

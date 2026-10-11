@@ -6,6 +6,10 @@ import static org.mockito.Mockito.when;
 import com.bittle.orchestrator.application.port.out.OrchestratorMetricsPort;
 import com.bittle.orchestrator.application.usecase.GetAgentToolsUseCase;
 import com.bittle.orchestrator.application.usecase.GetLearnedPatternsUseCase;
+import com.bittle.orchestrator.application.usecase.SubmitAgentToolCallUseCase;
+import com.bittle.orchestrator.domain.behavior.ArbiterSubmissionResponse;
+import java.util.UUID;
+import org.springframework.http.MediaType;
 import com.bittle.orchestrator.domain.behavior.AgentToolCatalog;
 import com.bittle.orchestrator.domain.behavior.OperatingMode;
 import com.bittle.orchestrator.domain.behavior.LearnedPattern;
@@ -21,7 +25,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
 @WebMvcTest(AgentController.class)
 @MockitoBean(types = {GetLearnedPatternsUseCase.class, GetAgentToolsUseCase.class,
-        OrchestratorMetricsPort.class})
+        SubmitAgentToolCallUseCase.class, OrchestratorMetricsPort.class})
 class AgentControllerTest {
 
     private static final Instant T0 = Instant.parse("2026-10-11T21:00:00Z");
@@ -34,6 +38,59 @@ class AgentControllerTest {
 
     @Autowired
     private GetAgentToolsUseCase getAgentTools;
+
+    @Autowired
+    private SubmitAgentToolCallUseCase submitToolCall;
+
+    @Test
+    void givenToolCall_whenSubmitted_thenTheArbiterAnswerIsReturned() {
+        var run = UUID.fromString("0f8fad5b-d9cb-469f-a165-70867728950e");
+        when(submitToolCall.execute("bittle-1", "look_upward", "look_upward",
+                "7c9e6679-7425-40de-944b-e07fc1f90ae7"))
+                .thenReturn(new ArbiterSubmissionResponse(run, "queued", null, 1));
+
+        var result = mvc.post().uri("/api/v1/agent/bittle-1/submit-tool")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"toolName": "look_upward", "goal": "look_upward",
+                         "decisionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7"}
+                        """)
+                .exchange();
+
+        assertThat(result).hasStatusOk().bodyJson().isLenientlyEqualTo("""
+                {"runLogId": "0f8fad5b-d9cb-469f-a165-70867728950e", "status": "queued",
+                 "position": 1}
+                """);
+    }
+
+    @Test
+    void givenRejectedCall_whenSubmitted_thenRejectionIsReturnedWithItsMessage() {
+        when(submitToolCall.execute("bittle-1", "bark", null, null))
+                .thenReturn(ArbiterSubmissionResponse.rejected("cooldown"));
+
+        var result = mvc.post().uri("/api/v1/agent/bittle-1/submit-tool")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"toolName\": \"bark\"}")
+                .exchange();
+
+        assertThat(result).hasStatusOk().bodyJson().isLenientlyEqualTo("""
+                {"status": "rejected", "message": "cooldown"}
+                """);
+    }
+
+    @Test
+    void givenBadDecisionId_whenSubmitted_thenBadRequest() {
+        when(submitToolCall.execute("bittle-1", "bark", null, "nope"))
+                .thenThrow(new IllegalArgumentException("decisionId must be a UUID: nope"));
+
+        var result = mvc.post().uri("/api/v1/agent/bittle-1/submit-tool")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"toolName\": \"bark\", \"decisionId\": \"nope\"}")
+                .exchange();
+
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST)
+                .bodyJson().extractingPath("$.error").isEqualTo("bad_request");
+    }
 
     @Test
     void givenStationaryRobot_whenToolsRequested_thenStationaryToolsAreReturned() {

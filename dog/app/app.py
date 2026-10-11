@@ -27,6 +27,7 @@ from app.arbiter import Arbiter
 from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
                                 PRIORITY_MANUAL, BehaviorStore,
                                 OutcomeEvaluation)
+from app.agent_client import AgentToolsClient
 from app.conversation import ConversationService, InfoTool, battery_sentence
 from app.power_saver import PowerSaver
 from app.ears import EarsService, build_transcriber
@@ -135,8 +136,11 @@ def _battery_reading() -> dict:
     return {"battery": battery, "minutesLeft": summary.get("predictedMinutesLeft")}
 
 
+agent_tools = AgentToolsClient(Config.ORCHESTRATOR_URL, Config.ROBOT_ID,
+                              timeout_s=Config.AGENT_TIMEOUT_S)
 conversation = ConversationService(
     ears, mood, mouth, event_binder, behavior_store,
+    agent=agent_tools,
     info_tools=[InfoTool("battery", "say the battery level and how long it will last",
                          lambda: battery_sentence(_battery_reading),
                          keywords=r"\bbatter(y|ies)\b|\bcharge\b|\bpower level\b")],

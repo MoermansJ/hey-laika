@@ -3638,6 +3638,44 @@
         "tags" : [ "Agent" ]
       }
     },
+    "/api/v1/agent/{robotId}/submit-tool" : {
+      "post" : {
+        "description" : "Runs the tool through the robot's arbiter at agent priority 3. The status is executing, queued, preempting or rejected (with a message); an accepted call carries the runLogId whose outcome is evaluated and learned from. 404 robot_not_found for an unknown robot, 400 bad_request for a decisionId that is not a UUID.",
+        "operationId" : "submitTool",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ToolCallRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ToolCallResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Submit a tool call for a goal",
+        "tags" : [ "Agent" ]
+      }
+    },
     "/api/v1/agent/{robotId}/tools" : {
       "get" : {
         "description" : "stationary: look_left, look_right, look_upward, tilt_head, bark, sit, stand. roaming: every tool, walking included. fruitfly and phone: none. 404 robot_not_found for an unknown robot.",
@@ -4239,6 +4277,39 @@
           "totalActionsThisSession" : {
             "type" : "integer",
             "format" : "int64"
+          }
+        }
+      },
+      "ToolCallRequest" : {
+        "type" : "object",
+        "properties" : {
+          "decisionId" : {
+            "type" : "string"
+          },
+          "goal" : {
+            "type" : "string"
+          },
+          "toolName" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ToolCallResponse" : {
+        "type" : "object",
+        "properties" : {
+          "message" : {
+            "type" : "string"
+          },
+          "position" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "runLogId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string"
           }
         }
       },

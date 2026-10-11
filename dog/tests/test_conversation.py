@@ -295,3 +295,82 @@ def test_parse_router_reply_tolerates_prose_and_bad_json():
     assert parse_router_reply('Sure: {"tool": "sit", "say": "Ok"}', {"sit", "answer"}) == ("sit", "Ok")
     assert parse_router_reply('{"tool": "dance", "say": "Ok"}', {"sit", "answer"}) == ("answer", "Ok")
     assert parse_router_reply("Paris is the capital.", {"answer"}) == ("answer", "Paris is the capital.")
+
+
+# ---- AGENT-15: orchestrator agent tools in the stationary assistant ---------
+
+class FakeAgent:
+    enabled = True
+
+    def __init__(self, tools=None, accept=True):
+        self._tools = tools if tools is not None else [
+            {"name": "look_upward", "description": "Face upward", "category": "postural"},
+            {"name": "sit", "description": "Sit down", "category": "postural"}]
+        self.accept = accept
+        self.runs = []
+
+    def tools(self):
+        return list(self._tools)
+
+    def run(self, tool, goal=None):
+        self.runs.append((tool, goal))
+        if self.accept:
+            return {"decisionId": "d-1", "goal": goal, "tools": [tool],
+                    "results": [{"tool": tool, "status": "queued"}], "accepted": True,
+                    "message": None}
+        return {"decisionId": "d-1", "goal": goal, "tools": [tool],
+                "results": [{"tool": tool, "status": "rejected", "message": "cooldown"}],
+                "accepted": False, "message": "cooldown"}
+
+    def status(self):
+        return {"enabled": True}
+
+
+def _agent_service(llm, agent):
+    init_db()
+    binder = FakeBinder()
+    svc = ConversationService(FakeEars(), FakeMood(), FakeMouth(), binder, FakeStore(), llm,
+                              agent=agent)
+    svc.warm_up = lambda: None
+    svc.init()
+    return svc, binder
+
+
+def test_agent_tools_are_offered_to_the_router_without_shadowing_voice_intents():
+    agent = FakeAgent()
+    svc, _ = _agent_service(FakeLlm(), agent)
+    tools = svc._tools()
+    kinds = {t["name"]: t["kind"] for t in tools}
+    assert kinds["look_upward"] == "agent"
+    assert kinds["sit"] == "behavior"                 # the voice.intent binding keeps "sit"
+    assert [t["name"] for t in tools].count("sit") == 1
+    assert svc.status()["agent"] == {"enabled": True}
+
+
+def test_agent_tool_choice_is_submitted_through_the_orchestrator():
+    agent = FakeAgent()
+    svc, binder = _agent_service(FakeLlm('{"tool": "look_upward", "say": "Looking up."}'),
+                                 agent)
+    svc.start("look up at the ceiling", source="text")
+    _finish(svc)
+    assert agent.runs == [("look_upward", "look_upward")]
+    assert not any(e == "voice.intent" for e, _ in binder.events)
+    assert svc.mouth.said == ["Looking up."]
+    assert svc.stats["agentRuns"] == 1 and svc.stats["toolRuns"] == 0
+    assert svc.turns(1)[0]["tool"] == "look_upward"
+
+
+def test_rejected_agent_tool_says_so():
+    agent = FakeAgent(accept=False)
+    svc, _ = _agent_service(FakeLlm('{"tool": "look_upward", "say": "Looking up."}'), agent)
+    svc.start("look up", source="text")
+    _finish(svc)
+    assert svc.mouth.said == ["I can't do that right now."]
+    turn = svc.turns(1)[0]
+    assert turn["tool"] == "look_upward (rejected)" and turn["error"] == "cooldown"
+    assert svc.stats["agentRuns"] == 0
+
+
+def test_no_agent_tools_when_the_orchestrator_offers_none():
+    svc, _ = _agent_service(FakeLlm(), FakeAgent(tools=[]))
+    assert all(t["kind"] != "agent" for t in svc._tools())

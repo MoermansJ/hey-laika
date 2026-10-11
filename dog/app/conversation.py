@@ -73,6 +73,7 @@ BARK_GAP_S = 0.15
 SAY_NOT_HEARD = "I didn't catch that."
 SAY_NO_LLM = "I can't think right now."
 SAY_ACK = "Okay."
+SAY_AGENT_REJECTED = "I can't do that right now."
 
 
 class ConversationTurn(Base):
@@ -161,10 +162,12 @@ def battery_sentence(reading) -> str:
 
 class ConversationService:
     def __init__(self, ears, mood, mouth, binder, store, llm, beep=None,
-                 info_tools: list | None = None,
+                 info_tools: list | None = None, agent=None,
                  enabled: bool = True, listen_s: float = DEFAULT_LISTEN_S,
                  reply_chars: int = DEFAULT_REPLY_CHARS, clock=time.time):
         self.info_tools = {t.name: t for t in (info_tools or [])}
+        # AGENT-15: orchestrator agent tools (AgentToolsClient); None = off.
+        self.agent = agent
         self.motion_allowed = lambda: None   # battery saver: a refusal sentence, or None
         self.ears = ears
         self.mood = mood
@@ -184,8 +187,8 @@ class ConversationService:
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_turn_at = 0.0
-        self.stats = {"turns": 0, "toolRuns": 0, "answers": 0, "infoAnswers": 0,
-                      "failures": 0, "lastError": None}
+        self.stats = {"turns": 0, "toolRuns": 0, "agentRuns": 0, "answers": 0,
+                      "infoAnswers": 0, "failures": 0, "lastError": None}
 
     # -- lifecycle --
 
@@ -288,6 +291,7 @@ class ConversationService:
                 self._speak(SAY_NO_LLM, turn)
                 return
             tool, say = parse_router_reply(raw, {t["name"] for t in tools} | {ANSWER_TOOL})
+            agent_tools = {t["name"] for t in tools if t["kind"] == "agent"}
             turn["tool"] = tool
             self._bark(2, turn)                        # terminal step reached
             if self._cancel.is_set():
@@ -300,6 +304,19 @@ class ConversationService:
                 if refusal:
                     turn["tool"] = f"{tool} (refused)"
                     say = refusal
+                elif tool in agent_tools:
+                    # Orchestrator-managed: arbiter priority 3, outcome judged and
+                    # learned from; a learned combination may replace the pick.
+                    result = self.agent.run(tool, goal=tool)
+                    turn["agent"] = result
+                    if result["accepted"]:
+                        self.stats["agentRuns"] += 1
+                        turn["tool"] = ("+".join(result["tools"]) or tool)[:64]
+                        say = say or SAY_ACK
+                    else:
+                        turn["tool"] = f"{tool} (rejected)"
+                        turn["error"] = result.get("message")
+                        say = SAY_AGENT_REJECTED
                 else:
                     self.stats["toolRuns"] += 1
                     self.binder.trigger("voice.intent", {"intent": tool, "text": question})
@@ -389,6 +406,18 @@ class ConversationService:
             tools.append({"name": str(name).lower(), "behavior": binding["behavior"],
                           "description": behavior.get("description") or binding["behavior"],
                           "kind": "behavior"})
+        if self.agent is not None and getattr(self.agent, "enabled", False):
+            # Agent tools for the current mode; a voice.intent tool of the same
+            # name keeps priority (its binding is the established path).
+            taken = {t["name"] for t in tools} | {ANSWER_TOOL}
+            for agent_tool in self.agent.tools():
+                name = str(agent_tool.get("name") or "").lower()
+                if not name or name in taken:
+                    continue
+                taken.add(name)
+                tools.append({"name": name, "behavior": name,
+                              "description": agent_tool.get("description") or name,
+                              "kind": "agent"})
         return tools
 
     def _router_system(self, tools: list[dict]) -> str:
@@ -491,4 +520,5 @@ class ConversationService:
             current["elapsedS"] = round(self._clock() - current.pop("startedAt"), 1)
         return {"enabled": self.enabled, "state": state, "current": current,
                 "listenS": self.listen_s, "tools": self._tools(),
+                "agent": self.agent.status() if self.agent is not None else None,
                 **self.prompt_view(), **self.stats}
