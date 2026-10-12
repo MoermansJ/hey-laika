@@ -64,6 +64,10 @@ jobs:
               PR=$(gh api "repos/$REPO/pulls?state=open&base=development&per_page=100" \
                 | jq -r --arg t "$TICKET" '[.[] | select((.head.ref + " " + .title) | ascii_upcase | contains($t))][0] | if . then "🔀 PR #\(.number): \(.html_url) (branch \(.head.ref))" else empty end')
               [ -n "$PR" ] && MSG="$MSG\n$PR"
+            else
+              PR=$(gh api "repos/$REPO/pulls?state=open&base=development&per_page=100" \
+                | jq -r --arg n "#$NUM" '[.[] | select((.body // "") | ascii_downcase | test("implements " + $n + "\\b"))][0] | if . then "🔀 PR #\(.number): \(.html_url) (branch \(.head.ref))" else empty end')
+              [ -n "$PR" ] && MSG="$MSG\n$PR"
             fi
           fi
           echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
@@ -102,11 +106,18 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
           HEAD: ${{ github.event.pull_request.head.ref }}
           URL: ${{ github.event.pull_request.html_url }}
+          BODY: ${{ github.event.pull_request.body }}
         run: |
           TICKET=$(printf '%s %s' "$HEAD" "$TITLE" | grep -oiE 'AGENT-[0-9]+' | head -1 | tr a-z A-Z)
           ISSUE=""
           if [ -n "$TICKET" ]; then
             ISSUE=$(gh api "repos/$REPO/issues?labels=$TICKET&state=all" --jq '.[0].number // empty')
+          fi
+          # Tickets without an AGENT-NN id (e.g. report tickets): every factory
+          # PR body starts with "Implements #N".
+          if [ -z "$ISSUE" ]; then
+            ISSUE=$(printf '%s' "$BODY" | grep -oiE 'implements #[0-9]+' | head -1 | grep -oE '[0-9]+')
+            [ -n "$ISSUE" ] && TICKET="#$ISSUE"
           fi
           if [ -n "$ISSUE" ]; then
             for L in status:to-do status:in-progress status:in-review status:blocked; do
