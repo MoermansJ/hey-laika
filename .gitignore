@@ -1,6 +1,12 @@
 # Third-party reference clones (not ours to version)
 petoi/
 opencat-esp32/
+sim/bittle-simulation/
+
+# Local Python env for the PyBullet sim (conda; no Windows wheel on PyPI)
+sim/conda-env/
+sim/__pycache__/
+sim/*.png
 
 # Local scratch / non-code assets
 noncodefiles/

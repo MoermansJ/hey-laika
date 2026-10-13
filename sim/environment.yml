@@ -1,0 +1,23 @@
+name: bittle-sim
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python>=3.12
+  - pybullet>=3.25
+  - numpy>=2.0
+  - pillow>=12.0
+
+# Create (into a project-local path, not a named env — keeps it gitignored
+# alongside the rest of sim/):
+#   conda env create -f environment.yml -p ./conda-env
+#
+# Run scripts without activating:
+#   ./conda-env/python.exe bittle_walk.py      (Windows)
+#   ./conda-env/bin/python bittle_walk.py      (Mac/Linux, if you use conda here too)
+#
+# --override-channels is implied by the explicit `channels:` list above, but
+# if you ever `conda create` by hand instead of from this file, pass
+# --override-channels -c conda-forge yourself — otherwise conda consults the
+# default Anaconda channels and a non-interactive create hangs on a Terms of
+# Service prompt.
