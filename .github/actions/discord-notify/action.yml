@@ -1,0 +1,26 @@
+name: Discord notify
+description: >-
+  The single place that posts to Discord. Mirrors the message as a `discord`
+  check annotation (for auditing through the checks API) and POSTs it to the
+  webhook. Every workflow uses this; do not copy-paste curl calls.
+inputs:
+  webhook:
+    description: Discord webhook URL (pass secrets.DISCORD_WEBHOOK_URL)
+    required: true
+  message:
+    description: Message text (real newlines or literal \n sequences)
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        WEBHOOK: ${{ inputs.webhook }}
+        RAW: ${{ inputs.message }}
+      run: |
+        MSG=$(printf '%b' "$RAW")
+        # Discord rejects content > 2000 chars.
+        MSG="${MSG:0:1900}"
+        echo "::notice title=discord::$(printf '%s' "$MSG" | tr '\n' ' ')"
+        jq -n --arg c "$MSG" '{content:$c}' \
+          | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-

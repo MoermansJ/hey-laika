@@ -5,10 +5,20 @@ name: Agent Pipeline - Discord Reporting
 #   - an agent PR is opened against development
 #   - an agent PR is merged into development -> issue labelled status:done + closed
 #   - CI fails on development or on an agent PR
+#   - a ticket is flagged `needs-jon` (review loop gave up, or a human is needed)
 # It also deletes agent/* branches once their PR is closed, plus a sweep of
 # stale agent/* branches with no open PR (Claude sessions can't delete refs).
 # Runs on GitHub's runners, which can read the DISCORD_WEBHOOK_URL secret
 # (Claude sessions cannot).
+#
+# EXACTLY-ONCE RULES (one logical event = one Discord message):
+#   * every post goes through .github/actions/discord-notify (single mechanism)
+#   * one owner per event: ticket PRs are announced by the status:in-review
+#     alert (it carries the PR link), so pr-opened only posts for non-agent PRs
+#   * status:done is announced by pr-merged; the label itself is not re-announced
+#   * status:blocked is not announced when needs-jon is set (needs-jon owns it)
+#   * CI failures on agent/* are reported from the pull_request run only
+#   * each job has a concurrency group keyed on event + issue/PR/sha number
 
 on:
   issues:
@@ -32,13 +42,25 @@ permissions:
   contents: write
 
 jobs:
-  status-label:
-    if: github.event_name == 'issues' && startsWith(github.event.label.name, 'status:')
+  label-alert:
+    # status:* label added, or needs-jon added. (A status change is "remove
+    # old label + add new label"; only the add fires `labeled`, so one change
+    # = one run.)
+    if: >-
+      github.event_name == 'issues' &&
+      (startsWith(github.event.label.name, 'status:') || github.event.label.name == 'needs-jon') &&
+      !(github.event.label.name == 'status:done' && github.actor == 'github-actions[bot]')
     runs-on: ubuntu-latest
+    concurrency:
+      group: discord-label-${{ github.event.issue.number }}-${{ github.event.label.name }}
+      cancel-in-progress: false
     steps:
-      - name: Post status change
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - name: Build message
+        id: msg
         env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           LABEL: ${{ github.event.label.name }}
           NUM: ${{ github.event.issue.number }}
           TITLE: ${{ github.event.issue.title }}
@@ -47,68 +69,103 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
+          ISSUE_LABELS=$(gh api "repos/$REPO/issues/$NUM" --jq '[.labels[].name] | join(",")')
+          # needs-jon owns the alert; the accompanying status:blocked stays quiet.
+          if [ "$LABEL" = "status:blocked" ] && echo ",$ISSUE_LABELS," | grep -q ',needs-jon,'; then
+            echo "send=false" >> "$GITHUB_OUTPUT"; echo "blocked+needs-jon: needs-jon alert covers this"; exit 0
+          fi
           case "$LABEL" in
             status:to-do)        ICON="📋" ;;
             status:in-progress)  ICON="🛠️" ;;
             status:in-review)    ICON="👀" ;;
             status:done)         ICON="✅" ;;
             status:blocked)      ICON="🚫" ;;
+            needs-jon)           ICON="🙋" ;;
             *)                   ICON="🔖" ;;
           esac
           MSG="$ICON **#$NUM $TITLE** → \`$LABEL\`  (by $ACTOR)\n$URL"
-          # PRs opened by Claude sessions (GitHub MCP) don't fire pull_request
-          # workflows, so the in-review alert carries the PR link itself.
-          if [ "$LABEL" = "status:in-review" ]; then
-            TICKET=$(gh api "repos/$REPO/issues/$NUM" --jq '[.labels[].name | select(test("^AGENT-[0-9]+$"))][0] // empty')
-            if [ -n "$TICKET" ]; then
-              PR=$(gh api "repos/$REPO/pulls?state=open&base=development&per_page=100" \
-                | jq -r --arg t "$TICKET" '[.[] | select((.head.ref + " " + .title) | ascii_upcase | contains($t))][0] | if . then "🔀 PR #\(.number): \(.html_url) (branch \(.head.ref))" else empty end')
-              [ -n "$PR" ] && MSG="$MSG\n$PR"
-            else
-              PR=$(gh api "repos/$REPO/pulls?state=open&base=development&per_page=100" \
-                | jq -r --arg n "#$NUM" '[.[] | select((.body // "") | ascii_downcase | test("implements " + $n + "\\b"))][0] | if . then "🔀 PR #\(.number): \(.html_url) (branch \(.head.ref))" else empty end')
-              [ -n "$PR" ] && MSG="$MSG\n$PR"
-            fi
+          if [ "$LABEL" = "needs-jon" ]; then
+            FAILS=$(echo "$ISSUE_LABELS" | tr ',' '\n' | grep -E '^review-failed:' | sort | tail -1 || true)
+            LAST=$(gh api "repos/$REPO/issues/$NUM/comments?per_page=100" --jq '[.[] | select(.body | contains("<!-- agent-review-feedback"))] | last | .body // ""' | head -c 600)
+            MSG="🙋 **NEEDS JON — #$NUM $TITLE**  (${FAILS:-no review counter})\nThe factory stopped working on this ticket.\n$URL"
+            [ -n "$LAST" ] && MSG="$MSG\n> $(printf '%s' "$LAST" | tr '\n' ' ' | head -c 500)"
           fi
-          echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
-          jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
-            | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
+          # The in-review alert carries the PR link (it is the ONLY announcement
+          # of a ticket PR opening). The PR may be created a few seconds after
+          # the label, so retry the lookup.
+          if [ "$LABEL" = "status:in-review" ]; then
+            TICKET=$(echo "$ISSUE_LABELS" | tr ',' '\n' | grep -E '^AGENT-[0-9]+$' | head -1 || true)
+            PR=""
+            for i in 1 2 3 4; do
+              if [ -n "$TICKET" ]; then
+                PR=$(gh api "repos/$REPO/pulls?state=open&base=development&per_page=100" \
+                  | jq -r --arg t "$TICKET" '[.[] | select((.head.ref + " " + .title) | ascii_upcase | contains($t))][0] | if . then "🔀 PR #\(.number): \(.html_url) (branch \(.head.ref), +\(.additions // 0)/-\(.deletions // 0))" else empty end')
+              else
+                PR=$(gh api "repos/$REPO/pulls?state=open&base=development&per_page=100" \
+                  | jq -r --arg n "#$NUM" '[.[] | select((.body // "") | ascii_downcase | test("implements " + $n + "\\b"))][0] | if . then "🔀 PR #\(.number): \(.html_url) (branch \(.head.ref))" else empty end')
+              fi
+              [ -n "$PR" ] && break
+              sleep 10
+            done
+            [ -n "$PR" ] && MSG="$MSG\n$PR"
+          fi
+          {
+            echo "send=true"
+            echo "text<<EOF_MSG"
+            printf '%s\n' "$MSG"
+            echo "EOF_MSG"
+          } >> "$GITHUB_OUTPUT"
+      - name: Post to Discord
+        if: steps.msg.outputs.send == 'true'
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          message: ${{ steps.msg.outputs.text }}
 
   pr-opened:
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    # Ticket PRs (agent/*) are announced once, by the status:in-review alert.
+    # This job only covers PRs that have no such alert.
+    if: >-
+      github.event_name == 'pull_request' && github.event.action != 'closed' &&
+      !startsWith(github.event.pull_request.head.ref, 'agent/')
     runs-on: ubuntu-latest
+    concurrency:
+      group: discord-pr-opened-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     steps:
-      - name: Post PR opened
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          NUM: ${{ github.event.pull_request.number }}
-          TITLE: ${{ github.event.pull_request.title }}
-          URL: ${{ github.event.pull_request.html_url }}
-          HEAD: ${{ github.event.pull_request.head.ref }}
-          ADDS: ${{ github.event.pull_request.additions }}
-          DELS: ${{ github.event.pull_request.deletions }}
-        run: |
-          MSG="🔀 **PR #$NUM opened → development**: $TITLE\nBranch \`$HEAD\` · +$ADDS / -$DELS\n$URL"
-          echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
-          jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
-            | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          message: |
+            🔀 **PR #${{ github.event.pull_request.number }} ${{ github.event.action }} → development**: ${{ github.event.pull_request.title }}
+            Branch `${{ github.event.pull_request.head.ref }}` · +${{ github.event.pull_request.additions }} / -${{ github.event.pull_request.deletions }}
+            ${{ github.event.pull_request.html_url }}
 
   pr-merged:
     if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged
     runs-on: ubuntu-latest
+    concurrency:
+      group: discord-pr-merged-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     steps:
-      - name: Mark ticket done and post
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - name: Mark ticket done
+        id: done
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           NUM: ${{ github.event.pull_request.number }}
           TITLE: ${{ github.event.pull_request.title }}
           HEAD: ${{ github.event.pull_request.head.ref }}
           URL: ${{ github.event.pull_request.html_url }}
           BODY: ${{ github.event.pull_request.body }}
         run: |
-          TICKET=$(printf '%s %s' "$HEAD" "$TITLE" | grep -oiE 'AGENT-[0-9]+' | head -1 | tr a-z A-Z)
+          TICKET=$(printf '%s %s' "$HEAD" "$TITLE" | grep -oiE 'AGENT-[0-9]+' | head -1 | tr a-z A-Z || true)
           ISSUE=""
           if [ -n "$TICKET" ]; then
             ISSUE=$(gh api "repos/$REPO/issues?labels=$TICKET&state=all" --jq '.[0].number // empty')
@@ -116,11 +173,13 @@ jobs:
           # Tickets without an AGENT-NN id (e.g. report tickets): every factory
           # PR body starts with "Implements #N".
           if [ -z "$ISSUE" ]; then
-            ISSUE=$(printf '%s' "$BODY" | grep -oiE 'implements #[0-9]+' | head -1 | grep -oE '[0-9]+')
+            ISSUE=$(printf '%s' "$BODY" | grep -oiE 'implements #[0-9]+' | head -1 | grep -oE '[0-9]+' || true)
             [ -n "$ISSUE" ] && TICKET="#$ISSUE"
           fi
           if [ -n "$ISSUE" ]; then
-            for L in status:to-do status:in-progress status:in-review status:blocked; do
+            # Clear every workflow label (status:*, review-failed:*, needs-jon);
+            # the review failure counter resets when a ticket is done.
+            for L in status:to-do status:in-progress status:in-review status:blocked review-failed:1 review-failed:2 review-failed:3 needs-jon; do
               gh api -X DELETE "repos/$REPO/issues/$ISSUE/labels/$L" >/dev/null 2>&1 || true
             done
             gh api -X POST "repos/$REPO/issues/$ISSUE/labels" -f 'labels[]=status:done' >/dev/null
@@ -132,28 +191,41 @@ jobs:
           fi
           REMAINING=$(gh api "repos/$REPO/issues?labels=status:to-do&state=open&per_page=100" --jq 'length')
           MSG="✅ **PR #$NUM merged into development**: $TITLE\n$DONE\n📊 $REMAINING tickets left in to-do.\n$URL"
-          echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
-          jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
-            | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
+          {
+            echo "text<<EOF_MSG"
+            printf '%s\n' "$MSG"
+            echo "EOF_MSG"
+          } >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          message: ${{ steps.done.outputs.text }}
 
   ci-failed:
+    # A pushed agent/* commit with an open PR produces TWO failing CI runs
+    # (push + pull_request). Report agent branches from the pull_request run
+    # only; development has no PR run, so it is reported from the push run.
     if: >-
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'failure' &&
-      (github.event.workflow_run.head_branch == 'development' || startsWith(github.event.workflow_run.head_branch, 'agent/'))
+      (
+        (github.event.workflow_run.head_branch == 'development' && github.event.workflow_run.event == 'push') ||
+        (startsWith(github.event.workflow_run.head_branch, 'agent/') && github.event.workflow_run.event == 'pull_request')
+      )
     runs-on: ubuntu-latest
+    concurrency:
+      group: discord-ci-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
     steps:
-      - name: Post CI failure
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
-          URL: ${{ github.event.workflow_run.html_url }}
-        run: |
-          MSG="❌ **CI failed** on \`$BRANCH\` (\`${SHA:0:7}\`)\n$URL"
-          echo "::notice title=discord::$(printf '%b' "$MSG" | tr '\n' ' ')"
-          jq -n --arg c "$(printf '%b' "$MSG")" '{content:$c}' \
-            | curl -fsS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d @-
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          message: |
+            ❌ **CI failed** on `${{ github.event.workflow_run.head_branch }}` (`${{ github.event.workflow_run.head_sha }}`)
+            ${{ github.event.workflow_run.html_url }}
 
   delete-closed-agent-branch:
     if: >-

@@ -54,33 +54,35 @@ jobs:
       - name: Check if commit is still the latest
         id: idle-check
         run: |
-          git fetch origin "${{ github.ref_name }}"
-          
+          git fetch origin main development
           ORIGINAL_COMMIT="${{ steps.commit-info.outputs.commit_hash }}"
           CURRENT_COMMIT=$(git rev-parse "origin/${{ github.ref_name }}")
-          
-          if [ "$ORIGINAL_COMMIT" = "$CURRENT_COMMIT" ]; then
-            echo "is_idle=true" >> $GITHUB_OUTPUT
+
+          # Exactly-once rules:
+          # 1. Only the run for the CURRENT tip may alert. (The old rule also
+          #    let superseded runs alert once the newer commit was 25 min old,
+          #    so a burst of pushes could alert several times.)
+          # 2. `Merge main into development` pushes the same content to both
+          #    branches, which used to alert twice for one idle period. When
+          #    development has the same tree as main, main's alert covers it.
+          if [ "$ORIGINAL_COMMIT" != "$CURRENT_COMMIT" ]; then
+            echo "is_idle=false" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_name }}" = "development" ] \
+            && [ "$(git rev-parse origin/development^{tree})" = "$(git rev-parse origin/main^{tree})" ]; then
+            echo "development tree == main tree: main's alert covers this"
+            echo "is_idle=false" >> $GITHUB_OUTPUT
           else
-            LATEST_COMMIT_TIME=$(git log -1 --format=%cI "origin/${{ github.ref_name }}")
-            LATEST_COMMIT_UNIX=$(date -d "$LATEST_COMMIT_TIME" +%s)
-            NOW_UNIX=$(date +%s)
-            NEW_MINUTES_SINCE=$(( (NOW_UNIX - LATEST_COMMIT_UNIX) / 60 ))
-            
-            if [ $NEW_MINUTES_SINCE -ge 25 ]; then
-              echo "is_idle=true" >> $GITHUB_OUTPUT
-            else
-              echo "is_idle=false" >> $GITHUB_OUTPUT
-            fi
+            echo "is_idle=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Send Discord notification if idle
         if: steps.idle-check.outputs.is_idle == 'true'
-        run: |
-          WEBHOOK_URL="${{ secrets.DISCORD_WEBHOOK_URL }}"
-          CURRENT_COMMIT="${{ steps.commit-info.outputs.commit_hash }}"
-          CURRENT_COMMIT_SHORT="${CURRENT_COMMIT:0:7}"
-          
-          curl -fsS -X POST "$WEBHOOK_URL" \
-            -H 'Content-Type: application/json' \
-            -d "{\"content\": \"🤖 **No pushes to \`${{ github.ref_name }}\` for 25+ minutes**\\n\\nLast commit: \`$CURRENT_COMMIT_SHORT\`\\n\\n📋 Open tickets: https://github.com/MoermansJ/hey-laika/issues?q=is%3Aopen+label%3Aagent-tool-composition\"}"
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          message: |
+            🤖 **No pushes to `${{ github.ref_name }}` for 25+ minutes**
+
+            Last commit: `${{ steps.commit-info.outputs.commit_hash }}`
+
+            📋 Open tickets: https://github.com/${{ github.repository }}/issues?q=is%3Aopen+label%3Aagent-tool-composition

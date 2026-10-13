@@ -1,0 +1,53 @@
+name: Agent Pipeline - Status Digest
+
+# Hourly snapshot of the AGENT code factory, posted to Discord at :50 UTC
+# (the factory runs at :31, so this follows it). Posts only when something
+# changed since the last posted digest, or every 6h as a heartbeat.
+# Logic lives in .github/scripts/pipeline-digest.sh (bash + gh api, no extra
+# runtime). State between runs is kept in `digest-state` job annotations.
+# Needs the schedule/workflow_dispatch to exist on the default branch (main).
+
+on:
+  schedule:
+    - cron: "50 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Post even if nothing changed"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  actions: read
+  checks: read
+
+# One digest at a time; a run that overlaps a slow predecessor waits (never cancels).
+concurrency:
+  group: agent-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
+      - name: Build snapshot
+        id: snap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          FORCE: ${{ inputs.force || 'false' }}
+        run: bash .github/scripts/pipeline-digest.sh
+      - name: Post digest to Discord
+        if: steps.snap.outputs.post == 'true'
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          message: ${{ steps.snap.outputs.text }}
