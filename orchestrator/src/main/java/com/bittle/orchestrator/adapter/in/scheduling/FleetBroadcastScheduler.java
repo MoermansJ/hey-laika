@@ -1,7 +1,9 @@
 package com.bittle.orchestrator.adapter.in.scheduling;
 
+import com.bittle.orchestrator.application.usecase.BroadcastActionFeedUseCase;
 import com.bittle.orchestrator.application.usecase.BroadcastActivityUseCase;
 import com.bittle.orchestrator.application.usecase.BroadcastFleetStatusUseCase;
+import com.bittle.orchestrator.application.usecase.BroadcastFruitflyUseCase;
 import com.bittle.orchestrator.application.usecase.BroadcastPersonalityAndDisplayUseCase;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,14 +21,20 @@ public class FleetBroadcastScheduler {
     private final BroadcastFleetStatusUseCase broadcastStatus;
     private final BroadcastPersonalityAndDisplayUseCase broadcastPersonalityAndDisplay;
     private final BroadcastActivityUseCase broadcastActivity;
+    private final BroadcastFruitflyUseCase broadcastFruitfly;
+    private final BroadcastActionFeedUseCase broadcastActionFeed;
     private final Set<String> sessions = ConcurrentHashMap.newKeySet();
 
     public FleetBroadcastScheduler(BroadcastFleetStatusUseCase broadcastStatus,
                                    BroadcastPersonalityAndDisplayUseCase broadcastPersonalityAndDisplay,
-                                   BroadcastActivityUseCase broadcastActivity) {
+                                   BroadcastActivityUseCase broadcastActivity,
+                                   BroadcastFruitflyUseCase broadcastFruitfly,
+                                   BroadcastActionFeedUseCase broadcastActionFeed) {
         this.broadcastStatus = broadcastStatus;
         this.broadcastPersonalityAndDisplay = broadcastPersonalityAndDisplay;
         this.broadcastActivity = broadcastActivity;
+        this.broadcastFruitfly = broadcastFruitfly;
+        this.broadcastActionFeed = broadcastActionFeed;
     }
 
     @EventListener
@@ -67,6 +75,23 @@ public class FleetBroadcastScheduler {
     public void broadcastActivity() {
         if (hasClients()) {
             broadcastActivity.execute();
+        }
+    }
+
+    @Scheduled(fixedRate = 2000)
+    public void broadcastFruitfly() {
+        if (hasClients()) {
+            broadcastFruitfly.execute();
+        }
+    }
+
+    // Actions land about once a second while a mode is driving, so this
+    // sweeps faster than the others — at 4s the console would miss most of
+    // them between updates.
+    @Scheduled(fixedRate = 1000)
+    public void broadcastActionFeed() {
+        if (hasClients()) {
+            broadcastActionFeed.execute();
         }
     }
 

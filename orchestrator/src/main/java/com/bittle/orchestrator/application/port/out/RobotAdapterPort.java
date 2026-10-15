@@ -1,6 +1,7 @@
 package com.bittle.orchestrator.application.port.out;
 
 import com.bittle.orchestrator.domain.fleet.Robot;
+import com.bittle.orchestrator.domain.robot.ActionFeed;
 import com.bittle.orchestrator.domain.robot.ActionResult;
 import com.bittle.orchestrator.domain.robot.ActivityLog;
 import com.bittle.orchestrator.domain.robot.AnimationList;
@@ -10,6 +11,7 @@ import com.bittle.orchestrator.domain.robot.BinaryContent;
 import com.bittle.orchestrator.domain.robot.CommandResult;
 import com.bittle.orchestrator.domain.robot.DisplayContent;
 import com.bittle.orchestrator.domain.robot.ExecuteActionRequest;
+import com.bittle.orchestrator.domain.robot.FruitflyStatus;
 import com.bittle.orchestrator.domain.robot.InteractionResult;
 import com.bittle.orchestrator.domain.robot.RobotBehavior;
 import com.bittle.orchestrator.domain.robot.RobotPersonality;
@@ -44,6 +46,10 @@ public interface RobotAdapterPort {
     AutonomousState autonomousStatus(Robot robot);
 
     ActivityLog activity(Robot robot);
+
+    FruitflyStatus fruitflyStatus(Robot robot);
+
+    ActionFeed actionFeed(Robot robot);
 
     ActionResult executeAction(Robot robot, ExecuteActionRequest request);
 

@@ -4,6 +4,7 @@ import com.bittle.orchestrator.application.port.out.AdapterErrorException;
 import com.bittle.orchestrator.application.port.out.AdapterUnavailableException;
 import com.bittle.orchestrator.application.port.out.RobotAdapterPort;
 import com.bittle.orchestrator.domain.fleet.Robot;
+import com.bittle.orchestrator.domain.robot.ActionFeed;
 import com.bittle.orchestrator.domain.robot.ActionResult;
 import com.bittle.orchestrator.domain.robot.ActivityLog;
 import com.bittle.orchestrator.domain.robot.AnimationList;
@@ -14,6 +15,7 @@ import com.bittle.orchestrator.domain.robot.CommandRequest;
 import com.bittle.orchestrator.domain.robot.CommandResult;
 import com.bittle.orchestrator.domain.robot.DisplayContent;
 import com.bittle.orchestrator.domain.robot.ExecuteActionRequest;
+import com.bittle.orchestrator.domain.robot.FruitflyStatus;
 import com.bittle.orchestrator.domain.robot.InteractionResult;
 import com.bittle.orchestrator.domain.robot.RobotBehavior;
 import com.bittle.orchestrator.domain.robot.RobotPersonality;
@@ -115,6 +117,18 @@ public class PythonAdapterHttpClient implements RobotAdapterPort {
     public ActivityLog activity(Robot robot) {
         return exchange(() -> polling.get().uri(robotUri(robot, "/activity"))
                 .retrieve().body(ActivityLog.class));
+    }
+
+    @Override
+    public ActionFeed actionFeed(Robot robot) {
+        return exchange(() -> polling.get().uri(robotUri(robot, "/actions/feed"))
+                .retrieve().body(ActionFeed.class));
+    }
+
+    @Override
+    public FruitflyStatus fruitflyStatus(Robot robot) {
+        return exchange(() -> polling.get().uri(robotUri(robot, "/fruitfly/status"))
+                .retrieve().body(FruitflyStatus.class));
     }
 
     @Override

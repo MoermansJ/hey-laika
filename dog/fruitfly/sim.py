@@ -123,6 +123,21 @@ def sensory_mask(index) -> np.ndarray:
     return index["superclass"].isin(SENSORY_SUPERCLASSES).to_numpy()
 
 
+def tick(matrix, activity: np.ndarray, readout: Readout, drive_idx: np.ndarray,
+         n: int, gain: float, bias: float, alpha: float, drive_mean: float,
+         drive_noise: float, rng: np.random.Generator) -> tuple[np.ndarray, str, dict]:
+    """One leaky-rate update + decode. Factored out of `run()` so the F2 live
+    server (server.py) ticks the exact same model instead of a reimplemented
+    copy that could drift from the calibrated bench-spike behavior."""
+    drive = np.zeros(n, dtype=np.float32)
+    drive[drive_idx] = drive_mean + drive_noise * rng.standard_normal(len(drive_idx))
+    x = np.clip(gain * (matrix @ activity) + drive - bias, -30.0, 30.0)
+    fired = 1.0 / (1.0 + np.exp(-x))
+    activity = (1 - alpha) * activity + alpha * fired
+    state, signals = readout.decode(activity)
+    return activity, state, signals
+
+
 def run(seconds: float, hz: float, gain: float, bias: float, tau: float,
         drive_mean: float, drive_noise: float, seed: int, out_path: Path,
         quiet: bool) -> None:
@@ -151,17 +166,12 @@ def run(seconds: float, hz: float, gain: float, bias: float, tau: float,
               f"(gain={gain} bias={bias} tau={tau}s) -> {out_path}")
         start = time.time()
         prev_state = readout.state
-        for tick in range(ticks):
-            drive = np.zeros(n, dtype=np.float32)
-            drive[drive_idx] = drive_mean + drive_noise * rng.standard_normal(len(drive_idx))
-            x = np.clip(gain * (matrix @ activity) + drive - bias, -30.0, 30.0)
-            fired = 1.0 / (1.0 + np.exp(-x))
-            activity = (1 - alpha) * activity + alpha * fired
-
-            state, signals = readout.decode(activity)
-            t = tick * dt
-            writer.writerow([tick, f"{t:.3f}", state, *(f"{v:.4f}" for v in signals.values())])
-            if not quiet and (tick == 0 or state != prev_state or tick % int(hz) == 0):
+        for tick_i in range(ticks):
+            activity, state, signals = tick(matrix, activity, readout, drive_idx, n,
+                                             gain, bias, alpha, drive_mean, drive_noise, rng)
+            t = tick_i * dt
+            writer.writerow([tick_i, f"{t:.3f}", state, *(f"{v:.4f}" for v in signals.values())])
+            if not quiet and (tick_i == 0 or state != prev_state or tick_i % int(hz) == 0):
                 print(f"t={t:6.2f}s  state={state:8s}  "
                       f"fwd={signals['forward']:.3f} bwd={signals['backward']:.3f} "
                       f"turn={signals['turn']:+.3f}")

@@ -141,6 +141,12 @@ class Config:
     ROAMING_BATTERY_FLOOR = float(os.getenv("ROAMING_BATTERY_FLOOR", "20"))
     ROAMING_MIN_SCORE = float(os.getenv("ROAMING_MIN_SCORE", "0.15"))
 
+    # Fruitfly drive (PERSONALITY_MODES_BRIEF.md §6.3, F2): where the
+    # connectome sim (dog/fruitfly/server.py, a separate process) serves its
+    # currently decoded command, and how long each gait burst holds.
+    FRUITFLY_SIM_URL = os.getenv("FRUITFLY_SIM_URL", "http://127.0.0.1:8765").rstrip("/")
+    FRUITFLY_BURST_S = float(os.getenv("FRUITFLY_BURST_S", "1.0"))
+
     @classmethod
     def sqlalchemy_url(cls) -> str:
         if cls.DATABASE_TYPE == "postgres" and cls.DATABASE_URL:

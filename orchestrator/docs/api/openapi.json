@@ -10,6 +10,9 @@
     "description" : "Generated server url"
   } ],
   "tags" : [ {
+    "description" : "Read-only catalog of robot actions and their voice/GUI metadata",
+    "name" : "Actions"
+  }, {
     "description" : "The orchestrator-owned brain: behavior loop and personality",
     "name" : "Behavior"
   }, {
@@ -29,6 +32,60 @@
     "name" : "Robot"
   } ],
   "paths" : {
+    "/api/actions" : {
+      "get" : {
+        "description" : "Every known action with its aliases, description and tags.",
+        "operationId" : "actions",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "array",
+                    "items" : {
+                      "$ref" : "#/components/schemas/ActionRegistryEntry"
+                    }
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "List the action registry",
+        "tags" : [ "Actions" ]
+      }
+    },
+    "/api/actions/{actionName}" : {
+      "get" : {
+        "description" : "404 action_not_found for an unknown action name.",
+        "operationId" : "action",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "actionName",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ActionRegistryEntry"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Get a single action registry entry",
+        "tags" : [ "Actions" ]
+      }
+    },
     "/api/fleet/autonomous/start" : {
       "post" : {
         "deprecated" : true,
@@ -253,6 +310,34 @@
           }
         },
         "summary" : "Stop the current motion immediately",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/actions/feed" : {
+      "get" : {
+        "description" : "Every step the arbiter dispatched, newest first, tagged with the mode that generated it — a finer grain than the behavior run log, and the only place a continuous generator's individual decisions appear.",
+        "operationId" : "actionFeed",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ActionFeed"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Per-action feed",
         "tags" : [ "Robot" ]
       }
     },
@@ -1692,6 +1777,34 @@
           }
         },
         "summary" : "Latest cached camera frame",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/fruitfly/status" : {
+      "get" : {
+        "description" : "Observability only — read-only snapshot of fruitfly_drive.py's last decoded state; the arbiter submission it drove has already happened by the time this is read.",
+        "operationId" : "fruitflyStatus",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FruitflyStatus"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Fruitfly's last decoded command",
         "tags" : [ "Robot" ]
       }
     },
@@ -3600,6 +3713,81 @@
   },
   "components" : {
     "schemas" : {
+      "Action" : {
+        "type" : "object",
+        "properties" : {
+          "action" : {
+            "type" : "string"
+          },
+          "at" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "behavior" : {
+            "type" : "string"
+          },
+          "command" : {
+            "type" : "string"
+          },
+          "endedAt" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "runId" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "step" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "tag" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ActionFeed" : {
+        "type" : "object",
+        "properties" : {
+          "actions" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Action"
+            }
+          },
+          "robotId" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ActionRegistryEntry" : {
+        "type" : "object",
+        "properties" : {
+          "actionName" : {
+            "type" : "string"
+          },
+          "aliases" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "tags" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }
+      },
       "ActionResult" : {
         "type" : "object",
         "properties" : {
@@ -3866,6 +4054,23 @@
           "totalRobots" : {
             "type" : "integer",
             "format" : "int32"
+          }
+        }
+      },
+      "FruitflyStatus" : {
+        "type" : "object",
+        "properties" : {
+          "lastSignals" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "object"
+            }
+          },
+          "lastState" : {
+            "type" : "string"
+          },
+          "robotId" : {
+            "type" : "string"
           }
         }
       },

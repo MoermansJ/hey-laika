@@ -2,6 +2,8 @@ package com.bittle.orchestrator.adapter.in.web;
 
 import com.bittle.orchestrator.application.usecase.ExecuteAnimationUseCase;
 import com.bittle.orchestrator.application.usecase.ExecuteRobotActionUseCase;
+import com.bittle.orchestrator.application.usecase.GetActionFeedUseCase;
+import com.bittle.orchestrator.application.usecase.GetFruitflyStatusUseCase;
 import com.bittle.orchestrator.application.usecase.GetNextBehaviorUseCase;
 import com.bittle.orchestrator.application.usecase.GetRobotActivityUseCase;
 import com.bittle.orchestrator.application.usecase.GetRobotAutonomousStatusUseCase;
@@ -23,6 +25,7 @@ import com.bittle.orchestrator.application.usecase.RunVoiceDemoUseCase;
 import com.bittle.orchestrator.application.usecase.SendRobotCommandUseCase;
 import com.bittle.orchestrator.application.usecase.StartRobotAutonomousUseCase;
 import com.bittle.orchestrator.application.usecase.StopRobotAutonomousUseCase;
+import com.bittle.orchestrator.domain.robot.ActionFeed;
 import com.bittle.orchestrator.domain.robot.ActionResult;
 import com.bittle.orchestrator.domain.robot.ActivityLog;
 import com.bittle.orchestrator.domain.robot.AnimationList;
@@ -33,6 +36,7 @@ import com.bittle.orchestrator.domain.robot.CommandRequest;
 import com.bittle.orchestrator.domain.robot.CommandResult;
 import com.bittle.orchestrator.domain.robot.DisplayContent;
 import com.bittle.orchestrator.domain.robot.ExecuteActionRequest;
+import com.bittle.orchestrator.domain.robot.FruitflyStatus;
 import com.bittle.orchestrator.domain.robot.InteractionResult;
 import com.bittle.orchestrator.domain.robot.RobotBehavior;
 import com.bittle.orchestrator.domain.robot.RobotPersonality;
@@ -80,6 +84,8 @@ public class RobotController {
     private final StopRobotAutonomousUseCase stopAutonomous;
     private final GetRobotAutonomousStatusUseCase getAutonomousStatus;
     private final GetRobotActivityUseCase getActivity;
+    private final GetFruitflyStatusUseCase getFruitflyStatus;
+    private final GetActionFeedUseCase getActionFeed;
     private final GetRobotDisplayUseCase getDisplay;
     private final GetRobotCapabilitiesUseCase getCapabilities;
     private final GetServoStateUseCase getServoState;
@@ -104,6 +110,8 @@ public class RobotController {
                            StopRobotAutonomousUseCase stopAutonomous,
                            GetRobotAutonomousStatusUseCase getAutonomousStatus,
                            GetRobotActivityUseCase getActivity,
+                           GetFruitflyStatusUseCase getFruitflyStatus,
+                           GetActionFeedUseCase getActionFeed,
                            GetRobotDisplayUseCase getDisplay,
                            GetRobotCapabilitiesUseCase getCapabilities,
                            GetServoStateUseCase getServoState,
@@ -127,6 +135,8 @@ public class RobotController {
         this.stopAutonomous = stopAutonomous;
         this.getAutonomousStatus = getAutonomousStatus;
         this.getActivity = getActivity;
+        this.getFruitflyStatus = getFruitflyStatus;
+        this.getActionFeed = getActionFeed;
         this.getDisplay = getDisplay;
         this.getCapabilities = getCapabilities;
         this.getServoState = getServoState;
@@ -216,6 +226,24 @@ public class RobotController {
     @GetMapping("/activity")
     public ActivityLog activity(@PathVariable String robotId) {
         return getActivity.execute(robotId);
+    }
+
+    @Operation(summary = "Per-action feed",
+            description = "Every step the arbiter dispatched, newest first, tagged with the mode "
+                    + "that generated it — a finer grain than the behavior run log, and the only "
+                    + "place a continuous generator's individual decisions appear.")
+    @GetMapping("/actions/feed")
+    public ActionFeed actionFeed(@PathVariable String robotId) {
+        return getActionFeed.execute(robotId);
+    }
+
+    @Operation(summary = "Fruitfly's last decoded command",
+            description = "Observability only — read-only snapshot of fruitfly_drive.py's last "
+                    + "decoded state; the arbiter submission it drove has already happened by the "
+                    + "time this is read.")
+    @GetMapping("/fruitfly/status")
+    public FruitflyStatus fruitflyStatus(@PathVariable String robotId) {
+        return getFruitflyStatus.execute(robotId);
     }
 
     @Operation(summary = "What the robot is currently saying")

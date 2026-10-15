@@ -9,7 +9,7 @@ Semantics:
 - Busy: a strictly higher-priority submission preempts an interruptible
   current behavior AT THE NEXT STEP BOUNDARY; non-interruptible behaviors
   finish first (the submission waits at the front of the queue).
-- Equal/lower priority queues (bounded, max 3) or is explicitly rejected —
+- Equal/lower priority queues (bounded, max 10) or is explicitly rejected —
   never silently dropped.
 - Per-behavior cooldowns reject rapid re-triggers.
 - Every run and transition lands in the store's run log and is pushed to
@@ -23,18 +23,25 @@ import threading
 import time
 import uuid
 
+from app import action_feed as action_feed_mod
+
 logger = logging.getLogger(__name__)
 
-QUEUE_MAX = 3
+QUEUE_MAX = 10
 
 
 class Arbiter:
     def __init__(self, controller, store, on_change=None,
-                 sleep_fn=time.sleep):
+                 sleep_fn=time.sleep, action_feed=None):
         self.controller = controller
         self.store = store
         self.on_change = on_change or (lambda status: None)
         self._sleep = sleep_fn
+        # Optional per-step feed (action_feed.py). The store's run log is one
+        # row per submission; this is one entry per step actually dispatched,
+        # which is the only place a continuous generator's individual
+        # decisions (a Fruitfly burst, a route leg) are ever visible.
+        self.action_feed = action_feed
 
         self._lock = threading.RLock()
         self._work = threading.Condition(self._lock)
@@ -222,6 +229,7 @@ class Arbiter:
         status, detail = "complete", ""
         steps = behavior["steps"]
         generated = steps is None
+        entry = None
         try:
             if generated:
                 steps = submission["factory"]()
@@ -232,12 +240,16 @@ class Arbiter:
                         break
                     submission["step"] = index + 1
                 command = (step or {}).get("command")
+                # One feed entry per dispatched step, labelled by whatever the
+                # generator called it ("FORWARD") or the raw skill it sent.
+                entry = self._feed_push(submission, behavior, step, index + 1, command)
                 if command:
                     sent = self.controller.send_command(command)
                     self.last_motion_at = time.time()
                     if not sent and command != "kup":
                         logger.warning("Behavior %s step failed: %s",
                                        behavior["name"], command)
+                        self._feed_finish(entry, "failed")
                         if generated:
                             step["failed"] = True   # the generator decides
                         else:
@@ -246,11 +258,16 @@ class Arbiter:
                 if step and step.get("status"):
                     status, detail = step["status"], step.get("detail", "")
                 self._sleep(float((step or {}).get("settleS", 1.0)))
+                self._feed_finish(entry, "done")
+                entry = None
                 self._notify()
         except Exception as exc:
             logger.exception("Behavior %s crashed", behavior["name"])
             status, detail = "failed", str(exc)
         finally:
+            # A step still in flight when the run ends (crash, or a stop that
+            # landed mid-settle) must not be left reading "executing" forever.
+            self._feed_finish(entry, "interrupted" if status == "interrupted" else status)
             if generated and hasattr(steps, "close"):
                 try:
                     steps.close()
@@ -272,6 +289,38 @@ class Arbiter:
                 except Exception:
                     logger.exception("on_end for %s failed", behavior["name"])
             self._notify()
+
+    # ---- per-action feed ---------------------------------------------------
+
+    def _feed_push(self, submission: dict, behavior: dict, step: dict | None,
+                   index: int, command: str | None) -> dict | None:
+        """One entry per dispatched step. `label` lets a generator name what
+        it decided ("FORWARD") instead of the raw skill token it maps to."""
+        if self.action_feed is None:
+            return None
+        label = (step or {}).get("label")
+        if not label and not command:
+            return None          # a pure pause/status step isn't an action
+        try:
+            return self.action_feed.push(
+                tag=action_feed_mod.source_tag(submission.get("cause"),
+                                               submission.get("source", "")),
+                action=label or command,
+                command=command,
+                behavior=behavior["name"],
+                run_id=submission.get("run_id"),
+                step=index)
+        except Exception:
+            logger.exception("Action feed push failed")
+            return None
+
+    def _feed_finish(self, entry: dict | None, status: str) -> None:
+        if self.action_feed is None or entry is None:
+            return
+        try:
+            self.action_feed.finish(entry, status)
+        except Exception:
+            logger.exception("Action feed finish failed")
 
     def _notify(self) -> None:
         try:

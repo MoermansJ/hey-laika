@@ -23,6 +23,7 @@ from pathlib import Path
 from app.action_executor import execute_action
 from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
+from app.action_feed import ActionFeed
 from app.arbiter import Arbiter
 from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
                                 PRIORITY_MANUAL, BehaviorStore)
@@ -31,6 +32,7 @@ from app.power_saver import PowerSaver
 from app.ears import EarsService, build_transcriber
 from app.event_binder import EventBinder
 from app.explorer import ExplorerService
+from app.fruitfly_drive import FruitflyDriveService
 from app.eyes import EyesService, build_detector
 from app.mode import ModeService
 from app.mood import MoodService
@@ -73,7 +75,12 @@ instrument_controller(bittle)
 # BEFORE the first connect so startup counts as a came-online event.
 behavior_store = BehaviorStore()
 behavior_store.init()
-arbiter = Arbiter(bittle, behavior_store)
+# Per-step action feed (action_feed.py): the run log records one row per
+# submission, so a continuous generator's individual decisions — every
+# Fruitfly burst, every leg of a route — are invisible there. The arbiter
+# pushes each dispatched step here instead, tagged by what generated it.
+action_feed = ActionFeed()
+arbiter = Arbiter(bittle, behavior_store, action_feed=action_feed)
 # Adaptive polling: idle postures (rest/sit/lie) stretch dog-facing pings.
 poll_policy = PollPolicy()
 bittle.telemetry_ttl = poll_policy.telemetry_ttl
@@ -190,10 +197,18 @@ explorer = ExplorerService(
             "batteryFloor": Config.ROAMING_BATTERY_FLOOR,
             "minScore": Config.ROAMING_MIN_SCORE})
 explorer.init()
+# Fruitfly's connectome bridge (PERSONALITY_MODES_BRIEF.md §6.3, F2): polls
+# the live sim (a separate dog/fruitfly/server.py process) and submits one
+# short gait burst per decoded command at `agent` priority. Started/stopped
+# by mode switches, same as the explorer above.
+fruitfly_drive = FruitflyDriveService(
+    arbiter, Config.FRUITFLY_SIM_URL, trigger=event_binder.trigger,
+    config={"burstS": Config.FRUITFLY_BURST_S})
 # Personality modes (docs/design/PERSONALITY_MODES_BRIEF.md): the
 # orchestrator owns the mode itself and pushes changes here; this mirror
 # flips conversation/eyes/arbiter on the adapter side.
-mode = ModeService(arbiter, conversation, eyes, event_binder, behavior_store, explorer)
+mode = ModeService(arbiter, conversation, eyes, event_binder, behavior_store, explorer,
+                   fruitfly_drive=fruitfly_drive)
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -1508,6 +1523,15 @@ def arbiter_status(robot_id: str):
     return jsonify({"robotId": robot_id, **arbiter.status()})
 
 
+@app.get("/api/robots/<robot_id>/actions/feed")
+@robot_scoped
+def actions_feed(robot_id: str):
+    """Every step the arbiter has dispatched, newest first, tagged with the
+    mode that generated it — the grain the run log doesn't have."""
+    limit = _num_param(request.args, "limit", 20, lo=1, hi=50)
+    return jsonify({"robotId": robot_id, "actions": action_feed.recent(int(limit))})
+
+
 @app.post("/api/robots/<robot_id>/arbiter/invoke")
 @robot_scoped
 def arbiter_invoke(robot_id: str):
@@ -1761,6 +1785,17 @@ def robot_voice_speak(robot_id: str):
 def robot_activity(robot_id: str):
     with _activity_lock:
         return jsonify({"robotId": robot_id, "activity": list(reversed(_activity_log))})
+
+
+@app.get("/api/robots/<robot_id>/fruitfly/status")
+@robot_scoped
+def robot_fruitfly_status(robot_id: str):
+    """Observability only (PERSONALITY_MODES_BRIEF.md §3.3/§7c): the last
+    decoded command fruitfly_drive.py submitted. The orchestrator polls this
+    to rebroadcast over STOMP for the Mind/Fruitfly GUI card; it never
+    drives anything from here — the arbiter submission already happened by
+    the time this is read."""
+    return jsonify({"robotId": robot_id, **fruitfly_drive.status()})
 
 
 @app.get("/api/robots/<robot_id>/display")

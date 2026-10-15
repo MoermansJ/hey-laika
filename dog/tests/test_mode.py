@@ -75,6 +75,20 @@ class FakeHandInput:
         return True
 
 
+class FakeFruitflyDrive:
+    def __init__(self):
+        self.starts = 0
+        self.stops = 0
+
+    def start(self):
+        self.starts += 1
+        return {"status": "executing"}
+
+    def stop(self):
+        self.stops += 1
+        return True
+
+
 class FakeBehaviorStore:
     def __init__(self):
         self.idle_enabled = {"idle_sit": True, "idle_rest": True}
@@ -92,10 +106,11 @@ def build():
     behavior_store = FakeBehaviorStore()
     explorer = FakeExplorer()
     hand_input = FakeHandInput()
+    fruitfly_drive = FakeFruitflyDrive()
     mode = ModeService(arbiter, conversation, eyes, event_binder, behavior_store,
-                       explorer, hand_input)
+                       explorer, hand_input, fruitfly_drive)
     return (mode, arbiter, conversation, eyes, event_binder, explorer, hand_input,
-            behavior_store)
+            fruitfly_drive, behavior_store)
 
 
 def test_given_a_fresh_service_when_asked_then_the_default_mode_is_stationary():
@@ -105,7 +120,8 @@ def test_given_a_fresh_service_when_asked_then_the_default_mode_is_stationary():
 
 
 def test_given_the_current_mode_when_reselected_then_nothing_is_reapplied():
-    mode, arbiter, _, eyes, event_binder, explorer, hand_input, behavior_store = build()
+    (mode, arbiter, _, eyes, event_binder, explorer, hand_input,
+     fruitfly_drive, behavior_store) = build()
 
     mode.set_mode("stationary")  # already the default; this must be a no-op
 
@@ -114,11 +130,13 @@ def test_given_the_current_mode_when_reselected_then_nothing_is_reapplied():
     assert event_binder.triggered == []
     assert explorer.starts == 0 and explorer.stops == 0
     assert hand_input.starts == 0 and hand_input.stops == 0
+    assert fruitfly_drive.starts == 0 and fruitfly_drive.stops == 0
     assert behavior_store.idle_enabled == {"idle_sit": True, "idle_rest": True}
 
 
 def test_given_stationary_when_selected_then_she_sits_once_and_nothing_moves_her_after():
-    mode, arbiter, conversation, eyes, event_binder, explorer, hand_input, behavior_store = build()
+    (mode, arbiter, conversation, eyes, event_binder, explorer, hand_input,
+     fruitfly_drive, behavior_store) = build()
 
     mode.set_mode("roaming")  # move off the default first
     mode.set_mode("stationary")
@@ -130,13 +148,15 @@ def test_given_stationary_when_selected_then_she_sits_once_and_nothing_moves_her
     assert event_binder.triggered[-1] == ("mode.changed", {"mode": "stationary"})
     assert explorer.stops == 1   # stopped on the way out of roaming
     assert hand_input.starts == 0   # never entered phone mode
+    assert fruitfly_drive.starts == 0   # never entered fruitfly mode
     # No autonomous movement after the one-time sit: the idle ladder (sit/rest
     # ticking) is silenced too, not just the orchestrator's personality loop.
     assert behavior_store.idle_enabled == {"idle_sit": False, "idle_rest": False}
 
 
 def test_given_roaming_when_selected_then_listening_stays_on_and_the_explorer_starts():
-    mode, arbiter, conversation, eyes, _, explorer, hand_input, behavior_store = build()
+    (mode, arbiter, conversation, eyes, _, explorer, hand_input,
+     fruitfly_drive, behavior_store) = build()
 
     mode.set_mode("roaming")
 
@@ -145,27 +165,41 @@ def test_given_roaming_when_selected_then_listening_stays_on_and_the_explorer_st
     assert arbiter.submitted == []
     assert explorer.starts == 1
     assert hand_input.starts == 0   # never entered phone mode
+    assert fruitfly_drive.starts == 0   # never entered fruitfly mode
     assert behavior_store.idle_enabled == {"idle_sit": True, "idle_rest": True}
 
 
-def test_given_fruitfly_when_selected_then_conversation_and_eyes_are_cut_and_the_arbiter_is_freed():
-    mode, arbiter, conversation, eyes, event_binder, explorer, hand_input, behavior_store = build()
+def test_given_fruitfly_when_selected_then_conversation_and_eyes_are_cut_and_the_drive_starts():
+    (mode, arbiter, conversation, eyes, event_binder, explorer, hand_input,
+     fruitfly_drive, behavior_store) = build()
 
     mode.set_mode("roaming")
     mode.set_mode("fruitfly")
 
     assert conversation.enabled is False
     assert eyes.calls[-1] is False
-    assert arbiter.stopped == 1
+    assert arbiter.stopped == 1   # the arbiter is freed before the drive takes it back
     assert event_binder.triggered[-1] == ("mode.changed", {"mode": "fruitfly"})
     assert explorer.stops == 1   # stopped on the way out of roaming
     assert hand_input.starts == 0   # never entered phone mode
-    # Stubbed: nothing drives her yet, so nothing should nudge her either.
+    assert fruitfly_drive.starts == 1
+    # No idle-ladder nudging while the connectome bridge owns her motion.
     assert behavior_store.idle_enabled == {"idle_sit": False, "idle_rest": False}
 
 
+def test_given_fruitfly_when_left_then_the_drive_stops():
+    mode, *_rest, fruitfly_drive, _behavior_store = build()
+
+    mode.set_mode("fruitfly")
+    mode.set_mode("stationary")
+
+    assert fruitfly_drive.starts == 1
+    assert fruitfly_drive.stops == 1
+
+
 def test_given_phone_when_selected_then_conversation_and_eyes_are_cut_and_hand_input_starts():
-    mode, arbiter, conversation, eyes, event_binder, explorer, hand_input, behavior_store = build()
+    (mode, arbiter, conversation, eyes, event_binder, explorer, hand_input,
+     fruitfly_drive, behavior_store) = build()
 
     mode.set_mode("roaming")
     mode.set_mode("phone")
@@ -175,10 +209,12 @@ def test_given_phone_when_selected_then_conversation_and_eyes_are_cut_and_hand_i
     assert event_binder.triggered[-1] == ("mode.changed", {"mode": "phone"})
     assert explorer.stops == 1   # stopped on the way out of roaming
     assert hand_input.starts == 1
+    assert fruitfly_drive.starts == 0   # never entered fruitfly mode
 
 
 def test_given_phone_when_left_then_hand_input_stops():
-    mode, arbiter, conversation, eyes, event_binder, explorer, hand_input, behavior_store = build()
+    (mode, arbiter, conversation, eyes, event_binder, explorer, hand_input,
+     fruitfly_drive, behavior_store) = build()
 
     mode.set_mode("phone")
     mode.set_mode("stationary")

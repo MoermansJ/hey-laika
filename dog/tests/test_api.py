@@ -114,3 +114,13 @@ def test_activity_and_display(client):
     display = client.get(f"/api/robots/{RID}/display").get_json()
     assert display["type"] == "text"
     assert "value" in display
+
+
+def test_fruitfly_status_endpoint_reports_the_drive_s_last_decoded_state(client):
+    """Observability only (§3.3/§7c of PERSONALITY_MODES_BRIEF.md): this is
+    what the orchestrator polls to rebroadcast over STOMP. It must answer
+    even when fruitfly mode has never run (nothing started the drive)."""
+    status = client.get(f"/api/robots/{RID}/fruitfly/status").get_json()
+    assert status["robotId"] == RID
+    assert "lastState" in status
+    assert "lastSignals" in status

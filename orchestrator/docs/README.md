@@ -32,6 +32,7 @@ Java orchestrator's structure.
 - [VOICE_RELAY_BRIEF.md](design/VOICE_RELAY_BRIEF.md) — 2026-09-01 brief: XIAO ESP32S3 Sense mic → host transcription → decision layer; Grove Speaker Plus output
 - [ARRIVAL_DAY_RUNBOOK.md](design/ARRIVAL_DAY_RUNBOOK.md) — 2026-09-03 checklist for the XIAO Sense, Speaker Plus and ultrasonic ranger: pin validation order, bench tests, power check
 - [FIRMWARE_QUEUE.md](design/FIRMWARE_QUEUE.md) — changes pooled for the next BiBoard / satellite flash, with their bench checks; flashing is a ritual, so it happens in batches
+- [LESSONS.md](design/LESSONS.md) — living list of traps hit while building and the rules that came out of them: where per-action detail lives vs the arbiter queue, MOCK_MODE before booting the real dog, the sim's route into compose, static assets in the JAR, FLIP measurement, the self-healing OpenAPI test
 
 ## `reports/` — point-in-time status reports and reviews
 
