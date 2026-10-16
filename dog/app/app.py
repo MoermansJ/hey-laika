@@ -145,7 +145,14 @@ conversation = ConversationService(
     ears, mood, mouth, event_binder, behavior_store,
     info_tools=[InfoTool("battery", "say the battery level and how long it will last",
                          lambda: battery_sentence(_battery_reading),
-                         keywords=r"\bbatter(y|ies)\b|\bcharge\b|\bpower level\b")],
+                         keywords=r"\bbatter(y|ies)\b|\bcharge\b|\bpower level\b"),
+                # "Hey Laika, introduce yourself". The keyword pattern answers
+                # it without the LLM, so the demo says the same words every
+                # time; the LLM can still pick the tool for phrasings it misses.
+                InfoTool("introduce", "introduce yourself: say who you are and what you can do",
+                         lambda: conversation.introduction,
+                         keywords=r"introduce (your ?self|her ?self)|tell (me|us) about your ?self"
+                                  r"|\bwho are you\b|\bwhat are you\b")],
     llm=lambda prompt, system, as_json: query_ollama(prompt, system=system,
                                                      format_json=as_json, max_tokens=160,
                                                      temperature=0.2),
@@ -1030,6 +1037,25 @@ def conversation_prompt_set(robot_id: str):
     try:
         return jsonify({"robotId": robot_id,
                         **conversation.set_prompt(body.get("prompt"), body.get("replyChars"))})
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+
+
+@app.get("/api/robots/<robot_id>/conversation/introduction")
+@robot_scoped
+def conversation_introduction(robot_id: str):
+    return jsonify({"robotId": robot_id, **conversation.introduction_view()})
+
+
+@app.post("/api/robots/<robot_id>/conversation/introduction")
+@robot_scoped
+def conversation_introduction_set(robot_id: str):
+    """The orchestrator's push, mirroring POST /mode: Postgres owns the text,
+    this is the adapter-side mirror the info tool reads."""
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"robotId": robot_id,
+                        **conversation.set_introduction(body.get("introduction"))})
     except ValueError as exc:
         return jsonify({"error": "bad_request", "message": str(exc)}), 400
 

@@ -74,6 +74,21 @@ SAY_NOT_HEARD = "I didn't catch that."
 SAY_NO_LLM = "I can't think right now."
 SAY_ACK = "Okay."
 
+# "Hey Laika, introduce yourself" — answered by an info tool, so it never
+# reaches the LLM and says the same thing every time (a demo wants that).
+# The orchestrator owns the durable copy in Postgres (`robot_introductions`)
+# and pushes it to POST /conversation/introduction, exactly as it pushes the
+# operating mode to /mode; mode.py documents the same contract. This constant
+# is the fallback until the first push lands, so a cold adapter — or one that
+# restarted before the orchestrator's boot resync — can still introduce her.
+DEFAULT_INTRODUCTION = (
+    "I'm Laika, a Petoi Bittle X V2 robot dog. A Python adapter drives my nine "
+    "servos, a Java orchestrator runs my personality and my web console, and the "
+    "little board on my head gives me ears, eyes and a mood light. I hear you "
+    "with whisper, think with a local model, and answer through a small speaker."
+)
+MAX_INTRODUCTION_CHARS = 2000
+
 
 class ConversationTurn(Base):
     __tablename__ = "conversation_turns"
@@ -181,6 +196,10 @@ class ConversationService:
         self.state = "idle"
         self.current: dict | None = None
         self.prompt = DEFAULT_PROMPT
+        # In-memory mirror of the orchestrator's row; no settings row, because
+        # a second durable copy would be a second source of truth.
+        self.introduction = DEFAULT_INTRODUCTION
+        self.introduction_source = "default"
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_turn_at = 0.0
@@ -439,6 +458,32 @@ class ConversationService:
     def prompt_view(self) -> dict:
         return {"prompt": self.prompt, "defaultPrompt": DEFAULT_PROMPT,
                 "replyChars": self.reply_chars, "brevity": BREVITY.strip()}
+
+    # -- introduction: pushed by the orchestrator, mirrored here (see mode.py) --
+
+    def set_introduction(self, text: str | None) -> dict:
+        """Take the orchestrator's push. Kept in memory only: Postgres is the
+        durable home, and the boot resync re-pushes after an adapter restart."""
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("introduction must be a non-empty string")
+        text = " ".join(text.split())
+        if len(text) > MAX_INTRODUCTION_CHARS:
+            raise ValueError(
+                f"introduction must be at most {MAX_INTRODUCTION_CHARS} characters")
+        self.introduction = text
+        self.introduction_source = "orchestrator"
+        return self.introduction_view()
+
+    def introduction_view(self) -> dict:
+        """`truncated` warns that cap_reply would cut this before it is spoken —
+        the whole point of showing it is to catch that before a live demo."""
+        spoken = cap_reply(self.introduction, self.reply_chars)
+        return {"introduction": self.introduction,
+                "defaultIntroduction": DEFAULT_INTRODUCTION,
+                "source": self.introduction_source,
+                "chars": len(self.introduction),
+                "spokenChars": len(spoken),
+                "truncated": spoken != self.introduction}
 
     def _load_prompt(self) -> None:
         with SessionLocal() as session:

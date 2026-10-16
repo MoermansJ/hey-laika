@@ -22,6 +22,9 @@
     "description" : "Aggregated fleet health",
     "name" : "Health"
   }, {
+    "description" : "What she says to \"Hey Laika, introduce yourself\" — owned here, pushed to the adapter like the operating mode",
+    "name" : "Introduction"
+  }, {
     "description" : "Live metrics and hourly rollups",
     "name" : "Metrics"
   }, {
@@ -1266,6 +1269,81 @@
         },
         "summary" : "Cancel the current conversation turn",
         "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/conversation/introduction" : {
+      "get" : {
+        "description" : "Empty text means nothing has been written yet and the adapter is still speaking its compiled default.",
+        "operationId" : "introduction",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RobotIntroduction"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The stored self-introduction",
+        "tags" : [ "Introduction" ]
+      },
+      "post" : {
+        "description" : "Body: {\"introduction\": \"...\"}. Persisted first, then pushed to the adapter best-effort; the boot resync re-pushes to a robot that was offline. At most 2000 characters, and note the adapter trims the spoken reply at CONVERSATION_REPLY_CHARS.",
+        "operationId" : "set_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "via",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "default" : "gui"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "additionalProperties" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RobotIntroduction"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Store the self-introduction and push it to the robot",
+        "tags" : [ "Introduction" ]
       }
     },
     "/api/robots/{robotId}/conversation/listen" : {
@@ -4138,6 +4216,24 @@
             "type" : "string"
           },
           "type" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RobotIntroduction" : {
+        "type" : "object",
+        "properties" : {
+          "robotId" : {
+            "type" : "string"
+          },
+          "text" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedBy" : {
             "type" : "string"
           }
         }

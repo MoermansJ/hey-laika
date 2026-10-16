@@ -602,7 +602,11 @@ function hlConversationCard(host, base, { title = "Conversation", full = false, 
               `<textarea class="cc-prompt" spellcheck="false" style="min-height:4.5rem"></textarea>` +
               `<div class="row" style="margin-top:0.3rem"><label class="small">reply cap <input type="number" class="cc-cap" min="40" max="2000" step="20"> chars</label>` +
               `<button class="cc-save">Save</button><span class="hint cc-saved" style="margin:0"></span></div>` +
-              `<div class="hint cc-tools"></div></details>` : "") +
+              `<div class="hint cc-tools"></div>` +
+              `<label class="hint" style="display:block;margin:0.6rem 0 0.2rem">Introduction — what she says to “Hey Laika, introduce yourself”. The orchestrator stores it and pushes it to her.</label>` +
+              `<textarea class="cc-intro" spellcheck="false" style="min-height:4.5rem"></textarea>` +
+              `<div class="row" style="margin-top:0.3rem"><button class="cc-intro-save">Save introduction</button>` +
+              `<span class="hint cc-intro-saved" style="margin:0"></span></div></details>` : "") +
       `<div class="hint">“Hey Laika” alone: she sits, the LED pulses green while she listens, purple while the LLM thinks, teal while she speaks.` +
       ` The LLM picks one tool from the bindings on <code>voice.intent</code> or answers in one or two sentences.</div>`;
   const q = (sel) => host.querySelector(sel);
@@ -612,6 +616,20 @@ function hlConversationCard(host, base, { title = "Conversation", full = false, 
   async function post(path, body) {
     try { await hlJsonPost(base, path, body); } catch (err) { hlToast(err.message, true); }
     refresh();
+  }
+
+  // The introduction lives on the orchestrator (Postgres), not in the adapter's
+  // /conversation status, so it is fetched once rather than on every poll.
+  async function loadIntroduction() {
+    try {
+      const intro = await hlApi(base, "/conversation/introduction");
+      q(".cc-intro").value = intro.text || "";
+      q(".cc-intro-saved").textContent = intro.text
+          ? `stored ${intro.updatedBy ? `by ${intro.updatedBy}` : ""}`.trim()
+          : "nothing stored — she is speaking the adapter's built-in text";
+    } catch (err) {
+      q(".cc-intro-saved").textContent = `could not load: ${err.message}`;
+    }
   }
 
   function renderTurns(turns) {
@@ -678,6 +696,15 @@ function hlConversationCard(host, base, { title = "Conversation", full = false, 
       } catch (err) { q(".cc-saved").textContent = `failed: ${err.message}`; }
       refresh();
     };
+    q(".cc-intro-save").onclick = async () => {
+      try {
+        const saved = await hlJsonPost(base, "/conversation/introduction",
+            { introduction: q(".cc-intro").value });
+        q(".cc-intro-saved").textContent =
+            `saved and pushed ${new Date().toLocaleTimeString()} · ${saved.text.length} chars`;
+      } catch (err) { q(".cc-intro-saved").textContent = `failed: ${err.message}`; }
+    };
+    loadIntroduction();
   }
   const poller = hlPoll(refresh, intervalMs);
   return { refresh, stop: poller.stop };
