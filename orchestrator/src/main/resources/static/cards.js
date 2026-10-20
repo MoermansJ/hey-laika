@@ -155,8 +155,12 @@ function hlSpeakerCard(host, base, { title = "Speaker", say = true, intervalMs =
       q(".sc-variant").value = v.current.variant || "";
       q(".sc-speed").value = v.current.speed;
       q(".sc-pitch").value = v.current.pitch;
-      q(".sc-engine").textContent = v.engine === "espeak-ng" ? "" : `engine: ${v.engine} (voice options apply to espeak-ng)`;
-      host.querySelectorAll(".sc-voice select, .sc-voice input, .sc-try").forEach((el) => { el.disabled = v.engine !== "espeak-ng"; });
+      // Kokoro and espeak-ng both pick a voice and a speed; variant and pitch
+      // are espeak-only knobs Kokoro's TTS call ignores.
+      const hasVoices = (v.voices || []).length > 0;
+      q(".sc-engine").textContent = hasVoices ? "" : `engine: ${v.engine} (no voice options)`;
+      q(".sc-voice-id").disabled = q(".sc-speed").disabled = q(".sc-try").disabled = !hasVoices;
+      q(".sc-variant").disabled = q(".sc-pitch").disabled = v.engine !== "espeak-ng";
       voicesLoaded = true;
     } catch (err) {
       q(".sc-engine").textContent = `voices unavailable: ${err.message}`;
