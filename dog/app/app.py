@@ -1518,8 +1518,13 @@ def mode_set(robot_id: str):
     if requested not in ("stationary", "roaming", "fruitfly"):
         return jsonify({"error": "bad_request",
                         "message": "'mode' must be stationary, roaming or fruitfly"}), 400
+    # The orchestrator resyncs the persisted mode on every boot (and the
+    # console may re-POST the mode it already shows); only a real transition
+    # is activity-log-worthy, or every idempotent resync spams the feed.
+    changed = requested != mode.status()["mode"]
     result = mode.set_mode(requested)
-    log_activity("mode", f"mode -> {requested}")
+    if changed:
+        log_activity("mode", f"mode -> {requested}")
     return jsonify({"robotId": robot_id, **result})
 
 
