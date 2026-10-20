@@ -117,7 +117,7 @@ ears = EarsService(event_binder, transcriber=build_transcriber(Config.WHISPER_MO
 if Config.EARS_ENABLED:
     ears.init()
 # Mouth: host TTS -> 8 kHz PCM -> firmware PWM on the Grove Speaker Plus.
-mouth = MouthService(bittle, Config.SPEAKER_PIN)
+mouth = MouthService(bittle, Config.SPEAKER_PIN, feed=action_feed)
 mouth.init()
 # Ultrasonic ranger on the UART socket: throttled one-shot reads.
 ranger = RangerService(bittle, Config.ULTRASONIC_PIN)
@@ -306,6 +306,10 @@ def log_activity(kind: str, message: str) -> None:
             "at": datetime.now(timezone.utc).isoformat(),
         })
         del _activity_log[:-100]
+    # The console's Actions tab reads the action feed, not this list, so
+    # lifecycle messages have to land there too or they vanish from the UI.
+    # /activity stays for anything still polling it.
+    action_feed.note(kind.upper(), message)
 
 
 def set_display(value: str, content_type: str = "text") -> None:

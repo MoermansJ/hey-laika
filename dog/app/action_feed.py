@@ -19,7 +19,13 @@ import threading
 import time
 from collections import deque
 
-FEED_MAX = 50
+# Raised from 50 when this became the console's single Actions source: it now
+# carries speech and the lifecycle messages that used to live in the separate
+# activity log, so it churns faster than when only the arbiter wrote to it.
+FEED_MAX = 200
+# A feed line shows the words themselves; the whole reply lives in
+# conversation_turns, which the Thoughts tab shows.
+SPEECH_LABEL_MAX = 120
 _ID_ALPHABET = string.ascii_lowercase + string.digits
 
 # cause.type -> the tag the console shows. Events carry their own namespace
@@ -68,6 +74,26 @@ class ActionFeed:
                  "step": step, "status": "executing", "endedAt": None}
         with self._lock:
             self._entries.appendleft(entry)
+        return entry
+
+    def speech(self, label: str, tag: str = "SPEECH") -> dict:
+        """Something audible: what she said, or a clip she played.
+
+        Speech never passes through the arbiter — that owns motion, and
+        putting words on its priority ladder would confuse what the ladder
+        is for — so the mouth writes here directly. The feed is therefore
+        not "what the arbiter dispatched" any more, it is "what she did".
+        """
+        words = " ".join((label or "").split())
+        if len(words) > SPEECH_LABEL_MAX:
+            words = words[:SPEECH_LABEL_MAX - 1].rstrip() + "…"
+        return self.push(tag, words or "(silence)")
+
+    def note(self, tag: str, action: str) -> dict:
+        """An instantaneous entry — a lifecycle or system message with no
+        execution window to watch, so it lands already done."""
+        entry = self.push(tag, action)
+        self.finish(entry)
         return entry
 
     def finish(self, entry: dict | None, status: str = "done") -> None:

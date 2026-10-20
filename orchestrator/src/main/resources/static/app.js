@@ -21,15 +21,16 @@ const state = {
   stats: null,             // FleetStats
   personality: {},         // robotId -> RobotPersonality
   display: {},             // robotId -> DisplayContent
-  activity: {},            // robotId -> ActivityEntry[]
+  actions: {},             // robotId -> action-feed entries, newest first
   animations: {},          // robotId -> Animation[]
   mode: {},                // robotId -> operating mode ("stationary"/"roaming"/"fruitfly"/"phone")
   activeTab: "personality",
   wsConnected: false,
   wsGaveUp: false,
   wsFailures: 0,
-  arbiterCard: null,       // hlArbiterCard mounted on the Activity tab
-  powerCard: null,         // hlPowerCard mounted on the Activity tab
+  arbiterCard: null,       // hlArbiterCard mounted on the Actions tab
+  powerCard: null,         // hlPowerCard mounted on the Actions tab
+  queueCard: null,         // hlQueueStackCard, moved here from Personality
 };
 
 // ---------- helpers ----------
@@ -108,9 +109,9 @@ function handleMessage(topic, body) {
       state.personality[robotId] = body;
     } else if (kind === "display") {
       state.display[robotId] = body;
-    } else if (kind === "activity") {
-      state.activity[robotId] = body.activity || [];
-      if (onRobotPage(robotId)) renderActivity(robotId);
+    } else if (kind === "actions") {
+      state.actions[robotId] = body.actions || [];
+      if (onRobotPage(robotId)) renderActions(robotId);
     } else if (kind === "mode") {
       state.mode[robotId] = (body.mode || "stationary").toLowerCase();
       if (onRobotPage(robotId)) renderTabBar();
@@ -176,7 +177,7 @@ function subscribeAll() {
   stompClient.subscribe("/topic/fleet/stats",
       (msg) => handleMessage("/topic/fleet/stats", JSON.parse(msg.body)));
   state.robots.forEach((robot) => {
-    ["status", "personality", "display", "activity", "mode"].forEach((kind) => {
+    ["status", "personality", "display", "actions", "mode"].forEach((kind) => {
       const topic = `/topic/robot/${robot.robotId}/${kind}`;
       stompClient.subscribe(topic, (msg) => handleMessage(topic, JSON.parse(msg.body)));
     });
@@ -260,11 +261,11 @@ async function pollTick() {
  * WS-connect time. */
 async function refreshRobotDetail(robotId) {
   try {
-    const [activity, mode] = await Promise.all([
-      api(`/api/robots/${robotId}/activity`),
+    const [actions, mode] = await Promise.all([
+      api(`/api/robots/${robotId}/actions/feed?limit=60`),
       api(`/api/robots/${robotId}/mode`),
     ]);
-    handleMessage(`/topic/robot/${robotId}/activity`, activity);
+    handleMessage(`/topic/robot/${robotId}/actions`, actions);
     handleMessage(`/topic/robot/${robotId}/mode`, mode);
   } catch { /* adapter offline; feed keeps last state */ }
 }
@@ -283,7 +284,7 @@ function route() {
 }
 
 // The robot page's tabs, in order. `page` embeds that file in an iframe;
-// tabs without one (activity, specs) are panels in index.html itself.
+// tabs without one (actions, specs) are panels in index.html itself.
 // `always: true` tabs show regardless of operating mode; the rest only show
 // while the robot is in one of `modes` (PERSONALITY_MODES_BRIEF.md — the
 // 2026-09-20 GUI overhaul gates most tabs behind the mode you're in, with
@@ -292,9 +293,9 @@ function route() {
 // something else is driving her.
 const TABS = [
   { id: "personality", label: "Personality", page: "personality.html", always: true },
-  { id: "activity",  label: "Activity",  always: true },
+  { id: "actions",   label: "Actions",   always: true },
   { id: "senses",    label: "Dashboard", page: "dashboard.html", always: true },
-  { id: "mind",      label: "Mind",      page: "mind.html", always: true },
+  { id: "mind",      label: "Thoughts",  page: "mind.html", always: true },
   { id: "map",       label: "Map",       page: "map.html", always: true },
   { id: "leash",     label: "Leash",     page: "leash.html", always: true },
   { id: "metrics",   label: "Metrics",   page: "metrics.html", always: true },
@@ -375,10 +376,11 @@ function clearFrames() {
 function resetRobotPanels() {
   if (state.arbiterCard) { state.arbiterCard.stop(); state.arbiterCard = null; }
   if (state.powerCard) { state.powerCard.stop(); state.powerCard = null; }
+  if (state.queueCard) { state.queueCard.stop(); state.queueCard = null; }
   $("#arbiter-card").innerHTML = "";
   $("#power-card").innerHTML = "";
-  $("#activity").innerHTML = "";
-  $("#activity-age").textContent = "";
+  $("#actions").innerHTML = "";
+  $("#actions-age").textContent = "";
   ["#poll-ttl", "#poll-batt", "#poll-mult", "#poll-postures"].forEach((sel) => {
     $(sel).value = "";
   });
@@ -433,12 +435,13 @@ function showRobotPage(robotId) {
   renderTabBar();
 
   renderRobotHeader(robotId);
-  renderActivity(robotId);
+  renderActions(robotId);
   if (!state.arbiterCard) {
     state.arbiterCard = hlArbiterCard($("#arbiter-card"), `/api/robots/${robotId}`,
         { title: "Current behavior", runs: 6 });
     hlLoadBadgePalette(`/api/robots/${robotId}`);
     state.powerCard = hlPowerCard($("#power-card"), `/api/robots/${robotId}`);
+    state.queueCard = hlQueueStackCard($("#queue-card"), `/api/robots/${robotId}`);
   }
   refreshRobotDetail(robotId);
   renderSidebarRobots();
@@ -618,17 +621,31 @@ $("#poll-save").onclick = () => runAction($("#poll-save"), async () => {
   loadPollingPanel(state.selected);
 });
 
-function renderActivity(robotId) {
-  const feed = $("#activity");
+// One line per thing she did: arbiter steps, speech and sound clips (the
+// mouth writes those itself — speech never passes through the arbiter), and
+// the lifecycle messages that used to live in a separate activity list.
+function renderActions(robotId) {
+  const feed = $("#actions");
   feed.innerHTML = "";
-  (state.activity[robotId] || []).slice(0, 30).forEach((entry) => {
+  (state.actions[robotId] || []).slice(0, 40).forEach((entry) => {
     const li = document.createElement("li");
-    const at = entry.at ? new Date(entry.at).toLocaleTimeString() : "";
-    li.innerHTML = `<span class="kind">${escapeHtml(entry.kind)}</span>` +
-        `${escapeHtml(entry.message)}<span class="at">${at}</span>`;
+    const at = actionAt(entry);
+    const when = Number.isFinite(at) ? new Date(at).toLocaleTimeString() : "";
+    const running = entry.status === "executing" ? ` <span class="muted">…</span>` : "";
+    const failed = entry.status === "failed" ? ` <span class="chip warn">failed</span>` : "";
+    li.innerHTML = `<span class="kind">${escapeHtml(entry.tag || "")}</span>` +
+        `${escapeHtml(entry.action || "")}${running}${failed}` +
+        `<span class="at">${when}</span>`;
     feed.appendChild(li);
   });
-  renderActivityAge();
+  renderActionsAge();
+}
+
+// The feed stamps epoch seconds; the old activity list used ISO strings.
+function actionAt(entry) {
+  if (!entry) return NaN;
+  if (typeof entry.at === "number") return entry.at * 1000;
+  return Date.parse(entry.at);
 }
 
 // "12 s ago" under the newest entry, ticking every second so a stale feed
@@ -642,16 +659,16 @@ function fmtAgo(ms) {
   return `${h} h ${m % 60} min ago`;
 }
 
-function renderActivityAge() {
-  const el = $("#activity-age");
+function renderActionsAge() {
+  const el = $("#actions-age");
   if (!el) return;
-  const newest = state.selected ? (state.activity[state.selected] || [])[0] : null;
-  const t = newest && newest.at ? Date.parse(newest.at) : NaN;
+  const newest = state.selected ? (state.actions[state.selected] || [])[0] : null;
+  const t = actionAt(newest);
   el.textContent = Number.isFinite(t) ? `newest ${fmtAgo(Date.now() - t)}` : "";
 }
 
 setInterval(() => {
-  if (!document.hidden && state.page === "robot") renderActivityAge();
+  if (!document.hidden && state.page === "robot") renderActionsAge();
 }, 1000);
 
 // ---------- actions ----------

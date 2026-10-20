@@ -12,7 +12,7 @@
 </head>
 <body>
   <div class="topbar">
-    <h1>Mind — what she is doing and why</h1>
+    <h1>Thoughts — what she is doing and why</h1>
     <select id="robot-select" title="Robot"></select>
     <span id="mind-chip" class="chip">…</span>
   </div>
@@ -25,12 +25,17 @@
       <div id="thoughts" class="empty">…</div>
     </section>
 
+    <!-- The other half of her reasoning: what she heard, which tool the
+         router picked, and what she decided to say. Lives here rather than
+         on Audio input so all the thinking is in one place. -->
+    <section class="card" id="conversation-card"></section>
+
     <div class="hint">Her position and the WiFi senses live on the Map tab; the signal leash on the Leash tab.</div>
   </div>
 
   <script>
     const $ = (sel) => document.querySelector(sel);
-    const state = { base: "", arbiter: null };
+    const state = { base: "", arbiter: null, conversation: null };
 
     // The orchestrator's behavior loop stores every decision with its
     // reasoning (/behavior/history); this is the loop thinking out loud.
@@ -67,6 +72,9 @@
       if (state.arbiter) state.arbiter.stop();
       state.arbiter = hlArbiterCard($("#arbiter-card"), state.base,
           { title: "What I'm doing, and why", runs: 12, why: true, intervalMs: 2000 });
+      if (state.conversation) state.conversation.stop();
+      state.conversation = hlConversationCard($("#conversation-card"), state.base,
+          { title: "Conversation", full: true });
       refresh();
     }
 
