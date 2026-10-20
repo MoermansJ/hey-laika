@@ -58,6 +58,15 @@ class Config:
     OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "60"))
     ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
     ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+    # Kokoro-82M (Apache-2.0, local, no API key): the natural-sounding middle
+    # ground between espeak-ng and Eleven Labs flagged in CONVERSATION_BRIEF.md
+    # but never wired up. `tools/download_kokoro.py` fetches the two files once
+    # (dog/models/, gitignored, mirrors EYES_MODEL's yolov8n.onnx); their
+    # absence is how default_tts() falls back to espeak-ng.
+    KOKORO_MODEL_PATH = os.getenv("KOKORO_MODEL_PATH",
+                                  str(PROJECT_ROOT / "models" / "kokoro-v1.0.fp16.onnx"))
+    KOKORO_VOICES_PATH = os.getenv("KOKORO_VOICES_PATH",
+                                   str(PROJECT_ROOT / "models" / "voices-v1.0.bin"))
 
     # Database
     DATABASE_TYPE = os.getenv("DATABASE_TYPE", "sqlite")
