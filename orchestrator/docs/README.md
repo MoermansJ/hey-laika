@@ -41,6 +41,7 @@ get dated addenda, not rewrites.
 
 - [AUDIT_2026-09-02.md](reports/AUDIT_2026-09-02.md) — 2026-09-02 whole-project audit (orchestrator, adapter, firmware fork, GUI, docs) with prioritised fixes and feature speculation
 - [CALIBRATION_2026-08-31.md](reports/CALIBRATION_2026-08-31.md) — 2026-08-31 dead-reckoning calibration session on the gym-mat grid (raw runs, derived stride/turn constants)
+- [FRONTEND_INVENTORY.md](reports/FRONTEND_INVENTORY.md) — 2026-10-21 inventory of the console's tabs, the functions they duplicate, and a proposal to merge 13 tabs into 7
 - [OVERLAP_INVENTORY_2026-10-21.md](reports/OVERLAP_INVENTORY_2026-10-21.md) — 2026-10-21 post-merge review of `feat/introduce-yourself` plus an inventory of functionality implemented more than once, with a consolidation order
 - [PLANNER_HANDOFF_CALIBRATION.md](reports/PLANNER_HANDOFF_CALIBRATION.md) — self-contained handoff from the calibration session for planning waypoint mapping
 - [SERVO_POC_STATUS_REPORT.md](reports/SERVO_POC_STATUS_REPORT.md) — 2026-08-30 full-stack assessment (see its addendum)

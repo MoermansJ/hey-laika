@@ -56,7 +56,8 @@ overlap below.
   3.11, so this only matters at the next base-image bump.
 - The arbiter bypasses (`/command`, `/servo`, `/choreography/execute`,
   `/execute_action`, gait learner) and the Java behavior loop
-  (`POST /behavior/start` is still unguarded, with no GUI button) are as described
+  (`POST /behavior/start` is still unguarded, and the Behavior Lab's Start button
+  calls it; see [FRONTEND_INVENTORY.md](FRONTEND_INVENTORY.md) §1) are as described
   in the audit. They are unchanged.
 
 ## 3. Overlap inventory
