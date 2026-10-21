@@ -18,6 +18,10 @@ public class BroadcastActionFeedUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(BroadcastActionFeedUseCase.class);
 
+    // The Actions tab renders 40 lines; the adapter's own default of 20 would
+    // leave half of it empty now that speech and lifecycle notes share the feed.
+    static final int BROADCAST_LIMIT = 40;
+
     private final Fleet fleet;
     private final RobotAdapterPort adapter;
     private final EventPublisherPort publisher;
@@ -35,7 +39,7 @@ public class BroadcastActionFeedUseCase {
 
     private void publishQuietly(Robot robot) {
         try {
-            publisher.publish("/topic/robot/" + robot.id() + "/actions", adapter.actionFeed(robot));
+            publisher.publish("/topic/robot/" + robot.id() + "/actions", adapter.actionFeed(robot, BROADCAST_LIMIT));
         } catch (RuntimeException e) {
             log.debug("Skipping action feed broadcast for {}: {}", robot.id(), e.getMessage());
         }

@@ -120,8 +120,8 @@ public class PythonAdapterHttpClient implements RobotAdapterPort {
     }
 
     @Override
-    public ActionFeed actionFeed(Robot robot) {
-        return exchange(() -> polling.get().uri(robotUri(robot, "/actions/feed"))
+    public ActionFeed actionFeed(Robot robot, int limit) {
+        return exchange(() -> polling.get().uri(robotUri(robot, "/actions/feed?limit=" + limit))
                 .retrieve().body(ActionFeed.class));
     }
 

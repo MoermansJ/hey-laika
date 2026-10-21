@@ -14,7 +14,7 @@ public class GetActionFeedUseCase {
         this.adapter = adapter;
     }
 
-    public ActionFeed execute(String robotId) {
-        return adapter.actionFeed(fleet.get(robotId));
+    public ActionFeed execute(String robotId, int limit) {
+        return adapter.actionFeed(fleet.get(robotId), limit);
     }
 }

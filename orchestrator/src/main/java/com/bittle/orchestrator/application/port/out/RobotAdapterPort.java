@@ -49,7 +49,7 @@ public interface RobotAdapterPort {
 
     FruitflyStatus fruitflyStatus(Robot robot);
 
-    ActionFeed actionFeed(Robot robot);
+    ActionFeed actionFeed(Robot robot, int limit);
 
     ActionResult executeAction(Robot robot, ExecuteActionRequest request);
 

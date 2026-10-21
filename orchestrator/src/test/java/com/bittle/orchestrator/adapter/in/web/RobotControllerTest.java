@@ -113,7 +113,7 @@ class RobotControllerTest {
 
     @Test
     void givenActionFeedRequested_whenGet_thenEachActionCarriesItsGeneratingMode() {
-        when(getActionFeed.execute("bittle-1")).thenReturn(new ActionFeed("bittle-1", List.of(
+        when(getActionFeed.execute("bittle-1", 20)).thenReturn(new ActionFeed("bittle-1", List.of(
                 new ActionFeed.Action("opk0n", 1.0, "FRUITFLY", "FORWARD", "kwkF",
                         "fruitfly_drive", "run-1", 7, "executing", null))));
 
@@ -121,6 +121,18 @@ class RobotControllerTest {
 
         assertThat(result).hasStatusOk()
                 .bodyJson().extractingPath("$.actions[0].tag").isEqualTo("FRUITFLY");
+    }
+
+    @Test
+    void givenLimitParam_whenGetActionFeed_thenLimitReachesTheAdapter() {
+        when(getActionFeed.execute("bittle-1", 50)).thenReturn(new ActionFeed("bittle-1", List.of(
+                new ActionFeed.Action("sp0k3", 2.0, "SPEECH", "hello", null,
+                        null, null, null, "done", 3.0))));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/actions/feed?limit=50").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.actions[0].tag").isEqualTo("SPEECH");
     }
 
     @Test

@@ -233,8 +233,9 @@ public class RobotController {
                     + "that generated it — a finer grain than the behavior run log, and the only "
                     + "place a continuous generator's individual decisions appear.")
     @GetMapping("/actions/feed")
-    public ActionFeed actionFeed(@PathVariable String robotId) {
-        return getActionFeed.execute(robotId);
+    public ActionFeed actionFeed(@PathVariable String robotId,
+                                 @RequestParam(defaultValue = "20") int limit) {
+        return getActionFeed.execute(robotId, limit);
     }
 
     @Operation(summary = "Fruitfly's last decoded command",
