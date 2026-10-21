@@ -125,53 +125,6 @@
     .stat span:last-child { color: var(--ink-2); }
     .hint { font-size: 0.78rem; color: var(--phosphor-dim); line-height: 1.6; }
 
-    /* ---- action queue stack (hlQueueStackCard from cards.js): a column of
-       cards, queued items on top, the execution line at the bottom, the
-       most recently finished run trailing below it at reduced opacity ---- */
-    .muted { color: var(--ink-2); }
-    .cause { color: var(--ink-2); }
-    .arrow { color: var(--phosphor-dim); margin: 0 0.15rem; }
-    .status-complete, .status-done { color: var(--phosphor); }
-    .status-executing { color: var(--phosphor); }
-    .status-interrupted { color: var(--ink-2); }
-    .status-failed, .status-error { color: var(--critical); }
-    .pill {
-      font-family: var(--font-body); font-size: 0.68rem; border: 1px solid var(--phosphor-dim);
-      color: var(--ink-2); border-radius: 999px; padding: 0.1rem 0.5rem; margin-right: 0.3rem;
-    }
-    .qs-stack { display: flex; flex-direction: column; gap: 0.4rem; }
-    .qs-card {
-      border: 1px solid var(--phosphor-dim); border-radius: 4px; background: var(--ground);
-      padding: 0.5rem 0.7rem; font-size: 0.85rem;
-      transition: opacity 0.4s ease, background-color 0.4s ease, border-color 0.4s ease,
-                  box-shadow 0.4s ease, transform 0.4s ease, padding 0.4s ease, font-size 0.4s ease;
-    }
-    .qs-queued { opacity: 0.9; }
-    .qs-execline { border-width: 2px; padding: 0.65rem 0.8rem; font-size: 0.9rem; }
-    .qs-execline.qs-active {
-      border-color: var(--phosphor); background: rgba(77,255,140,0.08);
-      box-shadow: 0 0 10px var(--phosphor-soft);
-    }
-    .qs-execline.qs-idle { color: var(--phosphor-dim); text-align: center; }
-    .qs-done { opacity: 0.8; border-style: dashed; }
-    .qs-badge {
-      font-family: var(--font-blocky); font-size: 0.62rem; letter-spacing: 0.05em;
-      background: var(--phosphor); color: var(--ground); padding: 0.15rem 0.5rem;
-      border-radius: 3px; margin-right: 0.4rem;
-    }
-    /* A block entering the stack for the first time (newly queued, or the
-       very first execution/history row) slides and fades in rather than
-       just appearing — the FLIP animation in cards.js handles blocks that
-       already existed and are only changing position. */
-    .qs-enter { animation: qs-slide-in 0.35s ease; }
-    @keyframes qs-slide-in {
-      from { opacity: 0; transform: translateY(-10px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .qs-card { transition: none; }
-      .qs-enter { animation: none; }
-    }
 
     /* ---- terminal: activity + conversation, merged, with input to the agent ---- */
     .term-status { margin-bottom: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px dashed var(--phosphor-dim); }
@@ -575,7 +528,8 @@
           hlApi(state.base, "/conversation?limit=15"),
         ]);
         const seenActivity = new Set(term.lines.filter((l) => l.cls === "t-activity").map((l) => l.at + l.text));
-        (activity.activity || []).slice(-40).forEach((e) => {
+        // /activity is newest first: take the head, not the tail.
+        (activity.activity || []).slice(0, 40).forEach((e) => {
           const key = e.at + e.message;
           if (!seenActivity.has(key)) pushLine("t-activity", e.at, `[${e.kind}] ${e.message}`);
         });

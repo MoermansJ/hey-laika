@@ -704,8 +704,13 @@ function hlConversationCard(host, base, { title = "Conversation", full = false, 
       try {
         const saved = await hlJsonPost(base, "/conversation/introduction",
             { introduction: q(".cc-intro").value });
+        // cap_reply trims an info tool's answer like any reply, so a long
+        // introduction is cut at a sentence boundary before it is spoken.
+        const cap = Number(q(".cc-cap").value) || 0;
+        const over = cap && saved.text.length > cap
+            ? ` — over the ${cap}-char reply cap, she will stop early` : "";
         q(".cc-intro-saved").textContent =
-            `saved and pushed ${new Date().toLocaleTimeString()} · ${saved.text.length} chars`;
+            `saved and pushed ${new Date().toLocaleTimeString()} · ${saved.text.length} chars${over}`;
       } catch (err) { q(".cc-intro-saved").textContent = `failed: ${err.message}`; }
     };
     loadIntroduction();
