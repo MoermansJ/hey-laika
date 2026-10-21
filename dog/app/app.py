@@ -298,7 +298,7 @@ _activity_log: list[dict] = []
 _activity_lock = threading.Lock()
 
 
-def log_activity(kind: str, message: str) -> None:
+def log_activity(kind: str, message: str, feed: bool = True) -> None:
     with _activity_lock:
         _activity_log.append({
             "kind": kind,
@@ -308,8 +308,11 @@ def log_activity(kind: str, message: str) -> None:
         del _activity_log[:-100]
     # The console's Actions tab reads the action feed, not this list, so
     # lifecycle messages have to land there too or they vanish from the UI.
-    # /activity stays for anything still polling it.
-    action_feed.note(kind.upper(), message)
+    # /activity stays for anything still polling it. `feed=False` is for
+    # callers whose act already landed there (the mouth writes its own
+    # SPEECH/SOUND entry), so one utterance doesn't show twice.
+    if feed:
+        action_feed.note(kind.upper(), message)
 
 
 def set_display(value: str, content_type: str = "text") -> None:
@@ -869,7 +872,7 @@ def mouth_say(robot_id: str):
         return jsonify({"error": "tts_failed", "message": str(exc)}), 502
     if mood.enabled and result.get("seconds"):
         mood.flash("speaking", float(result["seconds"]))
-    log_activity("voice", f"Said: {text}")
+    log_activity("voice", f"Said: {text}", feed=False)
     return jsonify({"robotId": robot_id, **result})
 
 
@@ -922,7 +925,7 @@ def mouth_play(robot_id: str):
         return jsonify({"error": "playback_failed", "message": str(exc)}), 502
     if mood.enabled and result.get("seconds"):
         mood.flash("speaking", float(result["seconds"]))
-    log_activity("voice", f"Played sound: {name}")
+    log_activity("voice", f"Played sound: {name}", feed=False)
     return jsonify({"robotId": robot_id, **result})
 
 
