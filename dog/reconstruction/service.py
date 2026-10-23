@@ -41,7 +41,11 @@ class Service:
         self._model_name = None
         self._cloud = None              # (xyz, colours)
         self._lock = threading.Lock()
+        self._capture_lock = threading.Lock()   # one inference at a time
         self._listeners = []            # callables fed every new cloud
+        self._loop = None               # the optional interval capture thread
+        self._loop_stop = threading.Event()
+        self.apply_loop()
 
     # ---- model -------------------------------------------------------------
     def model(self):
@@ -76,17 +80,26 @@ class Service:
         with self._lock:
             self.settings = resolved
             self.notes = notes
+        self.apply_loop()
         return resolved, notes
 
     # ---- capture -----------------------------------------------------------
     def capture(self) -> dict:
         """One frame -> one cloud, replacing the last. Returns the capture's
-        stats; the only thing a caller has to catch is FrameError."""
+        stats; the only thing a caller has to catch is FrameError.
+
+        Serialised: a double-clicked button must not start a second
+        inference while the first is still on the GPU."""
+        with self._capture_lock:
+            return self._capture()
+
+    def _capture(self) -> dict:
         started = time.time()
+        settings = dict(self.settings)          # one capture, one settings read
         jpeg, origin = self._frame()
         model = self.model()
         disparity, rgb = model.infer(jpeg)
-        xyz, colours, stats = cloud.to_points(disparity, rgb, self.settings)
+        xyz, colours, stats = cloud.to_points(disparity, rgb, settings)
 
         capture = {
             "at": time.time(),
@@ -97,6 +110,7 @@ class Service:
             "inferenceMs": model.stats["inferenceMs"],
             "totalMs": round((time.time() - started) * 1000.0, 1),
             "cloud": stats,
+            "settings": settings,
         }
         with self._lock:
             self._cloud = (xyz, colours)
@@ -114,6 +128,41 @@ class Service:
             return fixtures.person_frame(), "fixture:person"
         source = self.frame_source()
         return source.fetch(fresh=True), source.snap_url
+
+    # ---- the optional loop -------------------------------------------------
+    def apply_loop(self) -> None:
+        """`captureIntervalS` > 0 arms a background capture loop; 0 (the
+        default) means the button is the only trigger. Jon wants to play
+        with single captures first, so the loop stays opt-in."""
+        wanted = float(self.settings.get("captureIntervalS", 0.0)) > 0.0
+        running = self._loop is not None and self._loop.is_alive()
+        if wanted and not running:
+            self._loop_stop.clear()
+            self._loop = threading.Thread(target=self._run_loop, daemon=True,
+                                          name="reconstruction-loop")
+            self._loop.start()
+            logger.info("Reconstruction: capture loop armed at %.1fs",
+                        self.settings["captureIntervalS"])
+        elif running and not wanted:
+            self._loop_stop.set()
+            logger.info("Reconstruction: capture loop disarmed")
+
+    def _run_loop(self) -> None:
+        while not self._loop_stop.wait(float(self.settings["captureIntervalS"])):
+            if float(self.settings.get("captureIntervalS", 0.0)) <= 0.0:
+                break
+            try:
+                self.capture()
+            except Exception as error:               # noqa: BLE001 - keep looping
+                self.last_error = str(error)
+                logger.warning("Reconstruction: loop capture failed (%s)", error)
+
+    def stop(self) -> None:
+        self._loop_stop.set()
+
+    @property
+    def looping(self) -> bool:
+        return self._loop is not None and self._loop.is_alive()             and not self._loop_stop.is_set()
 
     # ---- readers -----------------------------------------------------------
     def current_cloud(self):
@@ -137,6 +186,7 @@ class Service:
                 "lastError": self.last_error,
                 "settings": dict(self.settings),
                 "notes": list(self.notes),
+                "looping": self.looping,
                 "uptimeS": round(time.time() - self.started_at, 1),
             }
 
