@@ -112,5 +112,9 @@ against a stub adapter. An unvalidated step fails the run; there is no
 "skipped" outcome. `--offline` drops the steps that need Laika powered on
 and names them in the summary every time.
 
+`--json <path>` writes the same results as a machine-readable report. The
+gate also runs the documented CLI commands above as a user would run them,
+as subprocesses, so the entry points in this README cannot rot unnoticed.
+
 It deliberately does not live in `dog/tests`: the adapter's pytest suite
 and CI must not depend on this venv, these weights, or a GPU.

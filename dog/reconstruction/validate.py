@@ -74,7 +74,11 @@ class Gate:
             print("\nOFFLINE GATE GREEN. The full gate stays unproven until the "
                   "excluded steps run against the dog.")
         else:
-            print("\nFULL GATE GREEN.")
+            print("\nFULL GATE GREEN. Phase 1 done-when, as checked here:\n"
+                  "  - a frame produces a cloud that matches known geometry\n"
+                  "  - captureIntervalS arms and disarms the loop\n"
+                  "  - every setting moves the output\n"
+                  "  - the viewer receives the cloud over its own socket")
         return 0
 
 
