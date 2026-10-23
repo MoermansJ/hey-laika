@@ -1,0 +1,16 @@
+# Reconstruction sidecar, installed on the HOST, never in the adapter image.
+#
+#   python -m venv dog/reconstruction/.venv
+#   dog/reconstruction/.venv/Scripts/pip install -r dog/reconstruction/requirements.txt
+#
+# Two reasons it cannot live in dog/requirements.txt: onnxruntime-directml
+# collides with the adapter's CPU onnxruntime (same import name, one wins),
+# and Docker Desktop on Windows cannot pass the AMD GPU into a container.
+numpy>=1.26
+pillow>=10.0
+requests>=2.31
+onnxruntime-directml>=1.20 ; sys_platform == "win32"
+onnxruntime>=1.20 ; sys_platform != "win32"
+# The service and its viewer socket (phase 1 step 1b).
+flask>=3.0
+flask-sock>=0.7
