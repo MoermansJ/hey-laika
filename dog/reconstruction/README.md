@@ -19,7 +19,7 @@ on this hardware:
 ```bash
 python -m venv dog/reconstruction/.venv
 dog/reconstruction/.venv/Scripts/pip install -r dog/reconstruction/requirements.txt
-dog/reconstruction/.venv/Scripts/python dog/tools/download_depth_model.py   # ~99 MB
+dog/reconstruction/.venv/Scripts/python dog/tools/download_depth_model.py --model small small-fp16   # ~145 MB
 
 # one saved frame -> a PLY and a depth preview
 dog/reconstruction/.venv/Scripts/python dog/tools/depth_to_cloud.py --fixture person --preview
@@ -81,7 +81,7 @@ take the service down.
 | `pointDensity` | 20000 | points kept after thinning; QVGA is 76,800 |
 | `hfovDeg` | 65.0 | OV2640 horizontal field of view, **uncalibrated** (STATIONARY_SENSING_BRIEF.md §6 has the ruler procedure) |
 | `nearM` / `farM` | 0.4 / 6.0 | placeholder scale: monocular depth has no true scale. Phase 5 replaces this with the ranger and the occupancy grid |
-| `captureIntervalS` | 0.0 | 0 = manual capture only. The loop stays optional, off by default |
+| `captureIntervalS` | 0.0 | 0 = manual capture only. Above 0 it arms a background loop; the button is the demo's trigger, so this stays off by default |
 
 ## Validation
 
