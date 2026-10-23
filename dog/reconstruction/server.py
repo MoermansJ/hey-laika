@@ -15,6 +15,9 @@ data.
     POST /capture            one frame -> one cloud, returns the stats
     GET  /cloud              the newest cloud as binary PLY
     GET  /cloud/stats        the newest cloud's numbers, no payload
+    GET  /models             which depth models exist and which are on disk
+    GET  /                   the three.js viewer (viewer/index.html)
+    WS   /ws/cloud           binary cloud frames, newest first on connect
 
 Where frames come from is a setting, not a flag: POST /settings can move
 the service between the fixture and a live adapter, or repoint it at
@@ -28,6 +31,7 @@ not the public internet.
 import argparse
 import io
 import logging
+import queue
 import sys
 from pathlib import Path
 
@@ -35,19 +39,24 @@ HERE = Path(__file__).resolve().parent
 if str(HERE.parent) not in sys.path:
     sys.path.insert(0, str(HERE.parent))
 
-from flask import Flask, jsonify, request, send_file  # noqa: E402
+from flask import Flask, jsonify, request, send_file, send_from_directory  # noqa: E402
+from flask_sock import Sock  # noqa: E402
 
 from reconstruction import frames  # noqa: E402
+from reconstruction import settings as settings_module  # noqa: E402
 from reconstruction.service import Service  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8766        # fruitfly's sim sits on 8765
+VIEWER_DIR = HERE / "viewer"
+KEEPALIVE_S = 25.0
 
 
 def create_app(service: Service) -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=str(VIEWER_DIR), static_url_path="")
     app.config["SERVICE"] = service
+    sock = Sock(app)
 
     @app.get("/health")
     def health():
@@ -99,6 +108,48 @@ def create_app(service: Service) -> Flask:
         return send_file(buffer, mimetype="application/octet-stream",
                          as_attachment=True, download_name="room.ply")
 
+    @app.get("/models")
+    def models():
+        from reconstruction import depth
+
+        return jsonify({"models": sorted(settings_module.MODELS),
+                        "onDisk": sorted(name for name in settings_module.MODELS
+                                         if depth.build_model(name).available),
+                        "current": service.settings["model"]})
+
+    @app.get("/")
+    def viewer():
+        return send_from_directory(VIEWER_DIR, "index.html")
+
+    @sock.route("/ws/cloud")
+    def cloud_socket(ws):
+        """One queue per viewer, latest cloud wins: a slow tab must never
+        hold up a capture, and an old cloud is worth nothing once a newer
+        one exists. The capture thread enqueues; this thread sends."""
+        outbox = queue.Queue(maxsize=2)
+
+        def listener(blob: bytes) -> None:
+            if outbox.full():
+                outbox.get_nowait()
+            outbox.put_nowait(blob)
+
+        current = service.binary_frame()
+        if current is not None:
+            ws.send(current)
+        service.subscribe(listener)
+        logger.info("Viewer connected")
+        try:
+            while True:
+                try:
+                    ws.send(outbox.get(timeout=KEEPALIVE_S))
+                except queue.Empty:
+                    ws.send('{"type":"ping"}')
+        except Exception:                            # noqa: BLE001 - tab closed
+            pass
+        finally:
+            service.unsubscribe(listener)
+            logger.info("Viewer disconnected")
+
     @app.get("/cloud/stats")
     def cloud_stats():
         last = service.last_capture
@@ -130,8 +181,8 @@ def main() -> int:
         overrides["model"] = args.model
     service = Service(overrides)
     app = create_app(service)
-    print(f"Reconstruction serving http://{args.host}:{args.port}/health "
-          f"(source {args.source}, model {service.settings['model']})")
+    print(f"Reconstruction serving http://{args.host}:{args.port}/ "
+          f"(viewer; source {args.source}, model {service.settings['model']})")
     app.run(host=args.host, port=args.port, threaded=True)
     return 0
 

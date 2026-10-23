@@ -63,6 +63,26 @@ Host process, port 8766 (fruitfly's sim sits on 8765). `--source fixture`
 | `POST /capture` | one frame to one cloud: `{at, source, frameBytes, frameSize, provider, inferenceMs, totalMs, cloud:{...}}`, or 502 when the frame cannot be fetched, 503 when the weights are missing |
 | `GET /cloud` | the newest cloud as a binary PLY attachment, 404 before the first capture |
 | `GET /cloud/stats` | the last capture's numbers without the payload |
+| `GET /models` | which depth models exist and which are on disk |
+| `GET /` | the three.js viewer (`viewer/index.html`), three.js vendored beside it |
+| `WS /ws/cloud` | binary cloud frames: the newest cloud on connect, then one per capture |
+
+
+## The viewer
+
+`GET /` serves a three.js page from this directory — not from the
+orchestrator's JAR, where every tweak would cost an image rebuild. three.js
+is vendored (`viewer/vendor/`), so demo day does not depend on a CDN.
+
+- **CAPTURE** takes one frame. No loop unless `captureIntervalS` says so.
+- The cloud arrives as a binary frame on `/ws/cloud` and goes straight into
+  a `BufferAttribute`; `/topic` on the orchestrator stays for toggle,
+  settings and state (phase 6).
+- A dropped socket leaves the last cloud on screen and retries.
+- The fly is oversized, chunky and deliberately janky: low-poly primitives
+  in wireframe, built in the page, no asset to source.
+- Every setting in the panel posts to `/settings` and shows what it was
+  clamped to.
 
 ## Settings
 
