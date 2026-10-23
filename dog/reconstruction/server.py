@@ -16,6 +16,10 @@ data.
     GET  /cloud              the newest cloud as binary PLY
     GET  /cloud/stats        the newest cloud's numbers, no payload
 
+Where frames come from is a setting, not a flag: POST /settings can move
+the service between the fixture and a live adapter, or repoint it at
+another Tailscale address, without a restart.
+
 The viewer page and its websocket arrive with AGENT-24; the routes above
 are the contract the orchestrator and the validation gate code against.
 Flask's threaded dev server is deliberate: this serves one demo on a LAN,
@@ -41,22 +45,16 @@ logger = logging.getLogger(__name__)
 DEFAULT_PORT = 8766        # fruitfly's sim sits on 8765
 
 
-def create_app(service: Service, frame_source=None) -> Flask:
+def create_app(service: Service) -> Flask:
     app = Flask(__name__)
     app.config["SERVICE"] = service
-    app.config["FRAME_SOURCE"] = frame_source
-
-    def source_for_capture():
-        """The adapter when configured, otherwise the built-in fixture, so
-        the service is useful with the dog switched off."""
-        return frame_source if service.source == "adapter" else None
 
     @app.get("/health")
     def health():
         model = service.model()
         return jsonify({"service": "reconstruction", "ok": True,
                         "model": service.settings["model"],
-                        "source": service.source,
+                        "source": service.settings["source"],
                         "provider": model.expected_provider,
                         "providerLoaded": model.loaded,
                         "weights": model.available,
@@ -64,10 +62,7 @@ def create_app(service: Service, frame_source=None) -> Flask:
 
     @app.get("/state")
     def state():
-        payload = service.state()
-        if frame_source is not None:
-            payload["frameSource"] = frame_source.status()
-        return jsonify(payload)
+        return jsonify(service.state())
 
     @app.get("/settings")
     def get_settings():
@@ -81,7 +76,7 @@ def create_app(service: Service, frame_source=None) -> Flask:
     @app.post("/capture")
     def capture():
         try:
-            return jsonify(service.capture(source_for_capture()))
+            return jsonify(service.capture())
         except frames.FrameError as error:
             service.last_error = str(error)
             logger.warning("Capture failed: %s", error)
@@ -129,11 +124,12 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
-    service = Service({"model": args.model} if args.model else None,
-                      source=args.source)
-    frame_source = frames.FrameSource({"baseUrl": args.base_url,
-                                       "robotId": args.robot_id})
-    app = create_app(service, frame_source)
+    overrides = {"source": args.source, "frameBaseUrl": args.base_url,
+                 "robotId": args.robot_id}
+    if args.model:
+        overrides["model"] = args.model
+    service = Service(overrides)
+    app = create_app(service)
     print(f"Reconstruction serving http://{args.host}:{args.port}/health "
           f"(source {args.source}, model {service.settings['model']})")
     app.run(host=args.host, port=args.port, threaded=True)
