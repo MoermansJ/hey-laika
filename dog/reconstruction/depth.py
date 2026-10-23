@@ -54,6 +54,16 @@ def resize_for_dpt(width: int, height: int, target: int = TARGET_SIZE,
     return constrain(width), constrain(height)
 
 
+def preferred_provider(requested: list[str] | None = None) -> str:
+    """The provider a session would pick, without loading one. /health is
+    asked before the first capture, and "unknown" is a poor answer."""
+    import onnxruntime as ort
+
+    installed = ort.get_available_providers()
+    providers = requested or [p for p in PREFERRED_PROVIDERS if p in installed]
+    return providers[0] if providers else "CPUExecutionProvider"
+
+
 class DepthAnythingOnnx:
     """Depth Anything V2 through onnxruntime; loads on first use."""
 
@@ -68,6 +78,11 @@ class DepthAnythingOnnx:
         self._input_name = None
         self._lock = threading.Lock()
         self.stats = {"runs": 0, "inferenceMs": None, "provider": None}
+
+    @property
+    def expected_provider(self) -> str:
+        """What is in use, or what would be once the session loads."""
+        return self.provider or preferred_provider(self._requested)
 
     def _load(self):
         with self._lock:
