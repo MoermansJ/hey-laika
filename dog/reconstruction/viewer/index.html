@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fly View</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%234dff8c%22/></svg>">
+<style>
+  :root {
+    --page: #071c11; --ink: #d8ffe8; --ink-2: #7fbf9a; --ring: #1d5235;
+    --accent: #4dff8c; --warn: #ffd34d; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+    font: 14px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; overflow: hidden; }
+  canvas { display: block; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 268px; padding: 12px 14px;
+    background: rgba(7, 28, 17, 0.92); border: 1px solid var(--ring); border-radius: 10px;
+    backdrop-filter: blur(3px); max-height: calc(100vh - 24px); overflow-y: auto; }
+  h1 { margin: 0 0 2px; font-size: 15px; letter-spacing: 0.04em; color: var(--accent); }
+  .sub { margin: 0 0 10px; font-size: 11px; color: var(--ink-2); }
+  button { width: 100%; padding: 9px 10px; margin-bottom: 10px; cursor: pointer;
+    background: var(--accent); color: #04140b; border: 0; border-radius: 7px;
+    font: inherit; font-weight: 700; letter-spacing: 0.03em; }
+  button:disabled { background: var(--ring); color: var(--ink-2); cursor: wait; }
+  label { display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; margin-bottom: 7px; font-size: 11.5px; color: var(--ink-2); }
+  input, select { width: 108px; padding: 3px 5px; background: #0b2819; color: var(--ink);
+    border: 1px solid var(--ring); border-radius: 5px; font: inherit; font-size: 11.5px; }
+  #status { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--ring);
+    font-size: 11px; color: var(--ink-2); white-space: pre-wrap; }
+  #error { display: none; margin-top: 8px; padding: 6px 8px; border-radius: 6px;
+    background: rgba(255, 107, 107, 0.14); color: var(--bad); font-size: 11px; }
+  .hint { margin-top: 8px; font-size: 10.5px; color: var(--ink-2); opacity: 0.75; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>FLY VIEW</h1>
+  <p class="sub">one look, one room</p>
+  <button id="capture">CAPTURE</button>
+  <label>source <select id="source"><option value="fixture">fixture</option><option value="adapter">adapter</option></select></label>
+  <label>model <select id="model"></select></label>
+  <label>points <input id="pointDensity" type="number" min="500" max="76800" step="500"></label>
+  <label>confidence <input id="confidenceCutoff" type="number" min="0" max="0.9" step="0.05"></label>
+  <label>edge reject <input id="edgeReject" type="number" min="0.01" max="1" step="0.01"></label>
+  <label>h-fov&deg; <input id="hfovDeg" type="number" min="20" max="140" step="1"></label>
+  <label>near m <input id="nearM" type="number" min="0.05" max="5" step="0.1"></label>
+  <label>far m <input id="farM" type="number" min="0.5" max="50" step="0.5"></label>
+  <label>loop s <input id="captureIntervalS" type="number" min="0" max="60" step="0.5"></label>
+  <div id="status">no cloud yet</div>
+  <div id="error"></div>
+  <p class="hint">drag to orbit &middot; wheel to zoom</p>
+</div>
+<script type="module">
+import * as THREE from "./vendor/three.module.min.js";
+
+// ---- scene -----------------------------------------------------------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x071c11);
+scene.fog = new THREE.FogExp2(0x071c11, 0.035);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 200);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const grid = new THREE.GridHelper(20, 40, 0x1d5235, 0x113322);
+grid.position.y = -1.2;
+scene.add(grid);
+
+// The cloud arrives in the camera's own frame: +x right, +y up, +z forward.
+// Three.js looks down -z, so the whole cloud is turned to face the viewer.
+const room = new THREE.Group();
+room.rotation.y = Math.PI;
+scene.add(room);
+
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3));
+geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(0), 3));
+const points = new THREE.Points(geometry, new THREE.PointsMaterial({
+  size: 0.035, vertexColors: true, sizeAttenuation: true,
+}));
+room.add(points);
+
+// ---- the fly ---------------------------------------------------------------
+// Oversized, chunky, deliberately janky: low-poly primitives in wireframe,
+// no asset sourcing. A better model drops in later (AGENT-27).
+function fly() {
+  const group = new THREE.Group();
+  const wire = (geo, colour) => new THREE.LineSegments(
+    new THREE.WireframeGeometry(geo),
+    new THREE.LineBasicMaterial({ color: colour }));
+
+  const body = wire(new THREE.IcosahedronGeometry(0.42, 0), 0x4dff8c);
+  body.scale.set(1.5, 0.95, 1);
+  group.add(body);
+
+  const head = wire(new THREE.IcosahedronGeometry(0.3, 0), 0x9dffc4);
+  head.position.set(0.62, 0.1, 0);
+  group.add(head);
+
+  for (const side of [-1, 1]) {
+    const eye = wire(new THREE.IcosahedronGeometry(0.17, 0), 0xff6b6b);
+    eye.position.set(0.76, 0.16, 0.17 * side);
+    group.add(eye);
+
+    const wing = wire(new THREE.ConeGeometry(0.3, 1.15, 3), 0xd8ffe8);
+    wing.rotation.set(Math.PI / 2, 0, side * 0.5);
+    wing.position.set(-0.15, 0.4, 0.62 * side);
+    group.add(wing);
+
+    for (const [index, forward] of [0.3, 0, -0.3].entries()) {
+      const leg = wire(new THREE.CylinderGeometry(0.035, 0.02, 0.6, 3), 0x7fbf9a);
+      leg.position.set(forward, -0.42, 0.26 * side);
+      leg.rotation.z = side * 0.55;
+      leg.rotation.x = (index - 1) * 0.25;
+      group.add(leg);
+    }
+  }
+  return group;
+}
+const avatar = fly();
+scene.add(avatar);
+
+// ---- a hand-rolled orbit (one less vendored file) --------------------------
+const orbit = { theta: 0.5, phi: 1.15, radius: 6.5, dragging: false, x: 0, y: 0 };
+function place() {
+  const { theta, phi, radius } = orbit;
+  camera.position.set(
+    radius * Math.sin(phi) * Math.sin(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.cos(theta));
+  camera.lookAt(0, 0, 0);
+}
+place();
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  orbit.dragging = true; orbit.x = event.clientX; orbit.y = event.clientY;
+});
+addEventListener("pointerup", () => { orbit.dragging = false; });
+addEventListener("pointermove", (event) => {
+  if (!orbit.dragging) return;
+  orbit.theta -= (event.clientX - orbit.x) * 0.006;
+  orbit.phi = Math.min(Math.PI - 0.12, Math.max(0.12,
+    orbit.phi - (event.clientY - orbit.y) * 0.006));
+  orbit.x = event.clientX; orbit.y = event.clientY;
+  place();
+});
+renderer.domElement.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  orbit.radius = Math.min(40, Math.max(1.2, orbit.radius * (1 + Math.sign(event.deltaY) * 0.1)));
+  place();
+}, { passive: false });
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+let spin = 0;
+(function animate() {
+  requestAnimationFrame(animate);
+  spin += 0.02;
+  avatar.position.y = Math.sin(spin) * 0.06;      // a lazy hover
+  avatar.rotation.y = Math.sin(spin * 0.3) * 0.25;
+  renderer.render(scene, camera);
+})();
+
+// ---- the cloud socket ------------------------------------------------------
+// Binary, not JSON: 20,000 points is ~300 KB here and lands straight in a
+// BufferAttribute. /topic on the orchestrator stays for toggle and settings.
+const status = document.getElementById("status");
+const errorBox = document.getElementById("error");
+
+function showError(text) {
+  errorBox.style.display = text ? "block" : "none";
+  errorBox.textContent = text || "";
+}
+
+function applyCloud(buffer) {
+  const view = new DataView(buffer);
+  const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1),
+                                    view.getUint8(2), view.getUint8(3));
+  if (magic !== "FLYC") { showError(`unknown cloud frame ${magic}`); return; }
+  const count = view.getUint32(4, true);
+  const stride = view.getUint32(8, true);
+  const positions = new Float32Array(count * 3);
+  const colours = new Float32Array(count * 3);
+  let offset = 16;
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = view.getFloat32(offset, true);
+    positions[i * 3 + 1] = view.getFloat32(offset + 4, true);
+    positions[i * 3 + 2] = view.getFloat32(offset + 8, true);
+    colours[i * 3] = view.getUint8(offset + 12) / 255;
+    colours[i * 3 + 1] = view.getUint8(offset + 13) / 255;
+    colours[i * 3 + 2] = view.getUint8(offset + 14) / 255;
+    offset += stride;
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
+  geometry.computeBoundingSphere();
+  return count;
+}
+
+function connect() {
+  const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/cloud`);
+  socket.binaryType = "arraybuffer";
+  socket.onmessage = (event) => {
+    if (typeof event.data === "string") return;    // keepalive
+    const count = applyCloud(event.data);
+    if (count !== undefined) refreshState();
+  };
+  socket.onclose = () => {
+    status.textContent = "socket closed, retrying...";
+    setTimeout(connect, 2000);                     // the last cloud stays on screen
+  };
+  socket.onerror = () => socket.close();
+}
+connect();
+
+// ---- controls --------------------------------------------------------------
+const SETTINGS = ["source", "model", "pointDensity", "confidenceCutoff",
+                  "edgeReject", "hfovDeg", "nearM", "farM", "captureIntervalS"];
+
+async function refreshState() {
+  const state = await (await fetch("/state")).json();
+  const last = state.lastCapture;
+  status.textContent = [
+    `points   ${state.points}`,
+    `source   ${state.source}${state.looping ? " (looping)" : ""}`,
+    last ? `provider ${last.provider.replace("ExecutionProvider", "")}` : "provider -",
+    last ? `depth    ${last.inferenceMs} ms / total ${last.totalMs} ms` : "depth    -",
+    last ? `frame    ${last.frameSize[0]}x${last.frameSize[1]}, ${last.frameBytes} B` : "frame    -",
+  ].join("\n");
+  showError(state.lastError || "");
+  return state;
+}
+
+async function loadSettings() {
+  const { settings } = await (await fetch("/settings")).json();
+  const models = await (await fetch("/models")).json();
+  const select = document.getElementById("model");
+  select.innerHTML = models.models.map((name) =>
+    `<option value="${name}"${name === settings.model ? " selected" : ""}>${name}</option>`).join("");
+  for (const key of SETTINGS) {
+    const field = document.getElementById(key);
+    if (field && key !== "model") field.value = settings[key];
+  }
+}
+
+for (const key of SETTINGS) {
+  document.getElementById(key).addEventListener("change", async (event) => {
+    const raw = event.target.value;
+    const value = event.target.type === "number" ? Number(raw) : raw;
+    const reply = await (await fetch("/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [key]: value }),
+    })).json();
+    event.target.value = reply.settings[key];      // show what was clamped to
+    showError(reply.notes.join(" · "));
+    refreshState();
+  });
+}
+
+const button = document.getElementById("capture");
+button.addEventListener("click", async () => {
+  button.disabled = true;
+  button.textContent = "LOOKING...";
+  try {
+    const reply = await fetch("/capture", { method: "POST" });
+    if (!reply.ok) showError((await reply.json()).detail || "capture failed");
+  } catch (error) {
+    showError(String(error));
+  } finally {
+    button.disabled = false;
+    button.textContent = "CAPTURE";
+    refreshState();
+  }
+});
+
+loadSettings();
+refreshState();
+</script>
+</body>
+</html>

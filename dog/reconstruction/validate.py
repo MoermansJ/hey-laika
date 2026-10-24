@@ -430,6 +430,56 @@ def main() -> int:
         service.stop()
         return "off by default, armed at 0.5 s, stopped when set back to 0"
 
+    def viewer_page_served():
+        from reconstruction.server import create_app
+        from reconstruction.service import Service
+
+        client = create_app(Service()).test_client()
+        page = client.get("/")
+        assert page.status_code == 200, page.status_code
+        body = page.get_data(as_text=True)
+        assert "FLY VIEW" in body and "vendor/three.module.min.js" in body
+        assert "/ws/cloud" in body, "the page does not open the cloud socket"
+        vendored = client.get("/vendor/three.module.min.js")
+        assert vendored.status_code == 200, vendored.status_code
+        assert len(vendored.data) > 300_000, len(vendored.data)
+        models = client.get("/models").get_json()
+        assert "small" in models["onDisk"], models
+        return (f"viewer + three.js {len(vendored.data) // 1024} KB vendored, "
+                f"models on disk: {models['onDisk']}")
+
+    def cloud_over_the_socket():
+        """The real path a viewer takes: connect, press capture, receive a
+        binary frame."""
+        import requests
+        import simple_websocket
+        from werkzeug.serving import make_server
+
+        from reconstruction.server import create_app
+        from reconstruction.service import Service
+
+        service = Service({"pointDensity": 1500})
+        server = make_server("127.0.0.1", 0, create_app(service), threaded=True)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        socket = None
+        try:
+            socket = simple_websocket.Client(f"ws://127.0.0.1:{server.server_port}/ws/cloud")
+            requests.post(base + "/capture", timeout=120).raise_for_status()
+            blob = socket.receive(timeout=60)
+            assert isinstance(blob, bytes), type(blob)
+            assert blob[:4] == b"FLYC", blob[:4]
+            count = int.from_bytes(blob[4:8], "little")
+            assert count == 1500, count
+            assert len(blob) == 16 + count * 15, len(blob)
+        finally:
+            if socket is not None:
+                socket.close()
+            server.shutdown()
+            service.stop()
+        return (f"{count} points, {len(blob) / 1e6:.2f} MB binary, pushed on "
+                f"capture")
+
     def live_frame():
         source = frames.FrameSource({"baseUrl": args.base_url,
                                      "robotId": args.robot_id})
@@ -461,6 +511,8 @@ def main() -> int:
     gate.step("settings change the cloud", settings_change_the_cloud)
     gate.step("depth model swapped at runtime", model_choice)
     gate.step("optional capture loop", optional_capture_loop)
+    gate.step("viewer page and vendored three.js", viewer_page_served)
+    gate.step("cloud pushed over the websocket", cloud_over_the_socket)
 
     excluded = []
     if args.offline:
