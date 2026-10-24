@@ -46,6 +46,24 @@ directly: `dog/app/eyes.py` already polls `/snap` and caches the newest
 frame, and the satellite serves one camera and one microphone off one
 small radio.
 
+## The service
+
+```bash
+dog/reconstruction/.venv/Scripts/python dog/reconstruction/server.py     --port 8766 --source adapter --base-url http://localhost:8080
+```
+
+Host process, port 8766 (fruitfly's sim sits on 8765). `--source fixture`
+(the default) runs the whole pipeline with the dog switched off.
+
+| Route | Returns |
+| --- | --- |
+| `GET /health` | `{ok, model, provider, providerLoaded, weights, source, uptimeS}` |
+| `GET /state` | settings, whether a cloud is held, its point count, the last capture's stats, the last error, the frame source's status |
+| `GET /settings` · `POST /settings` | the settings map; a POST merges, clamps and always answers 200 with the notes |
+| `POST /capture` | one frame to one cloud: `{at, source, frameBytes, frameSize, provider, inferenceMs, totalMs, cloud:{...}}`, or 502 when the frame cannot be fetched, 503 when the weights are missing |
+| `GET /cloud` | the newest cloud as a binary PLY attachment, 404 before the first capture |
+| `GET /cloud/stats` | the last capture's numbers without the payload |
+
 ## Settings
 
 Defaults and clamps live in `settings.py`; `resolve()` never raises, it

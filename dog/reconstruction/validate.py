@@ -254,6 +254,60 @@ def main() -> int:
         return (f"{len(body)} B through {source.snap_url}?fresh=1, "
                 f"404 raises FrameError")
 
+    def service_endpoints():
+        from reconstruction.server import create_app
+        from reconstruction.service import Service
+
+        service = Service({"pointDensity": 3000}, source="fixture")
+        client = create_app(service).test_client()
+
+        empty = client.get("/cloud")
+        assert empty.status_code == 404, empty.status_code
+        assert client.get("/cloud/stats").status_code == 404
+
+        health = client.get("/health").get_json()
+        assert health["ok"] and health["service"] == "reconstruction", health
+        assert health["provider"].endswith("ExecutionProvider"), health
+        assert health["weights"] and health["providerLoaded"] is False, health
+
+        settings_reply = client.post("/settings", json={"pointDensity": 10 ** 9,
+                                                        "bogus": 1}).get_json()
+        assert settings_reply["settings"]["pointDensity"] == 76800, settings_reply
+        assert settings_reply["notes"], "clamping went unreported"
+        client.post("/settings", json={"pointDensity": 3000})
+
+        capture = client.post("/capture").get_json()
+        assert capture["cloud"]["points"] == 3000, capture
+        assert capture["source"] == "fixture:person", capture
+
+        ply = client.get("/cloud")
+        assert ply.status_code == 200 and ply.data.startswith(b"ply\n"), ply.status_code
+        stats = client.get("/cloud/stats").get_json()
+        assert stats["cloud"]["points"] == 3000, stats
+        state = client.get("/state").get_json()
+        assert state["hasCloud"] and state["points"] == 3000, state
+        state["settings"]["model"]                      # present for the panel
+        return (f"7 routes, capture {capture['totalMs']} ms on "
+                f"{capture['provider']}, PLY {len(ply.data) / 1e6:.2f} MB")
+
+    def service_on_a_port():
+        import requests
+        from werkzeug.serving import make_server
+
+        from reconstruction.server import create_app
+        from reconstruction.service import Service
+
+        server = make_server("127.0.0.1", 0, create_app(Service(), None),
+                             threaded=True)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            base = f"http://127.0.0.1:{server.server_port}"
+            health = requests.get(base + "/health", timeout=10).json()
+            assert health["ok"], health
+        finally:
+            server.shutdown()
+        return f"bound and answered on {base}/health"
+
     def live_frame():
         source = frames.FrameSource({"baseUrl": args.base_url,
                                      "robotId": args.robot_id})
@@ -278,6 +332,8 @@ def main() -> int:
     gate.step("binary wire frame for the viewer", wire_frame_format)
     gate.step("preview image", preview_image)
     gate.step("capture path against a stub adapter", capture_path_stubbed)
+    gate.step("sidecar endpoints", service_endpoints)
+    gate.step("sidecar binds a real port", service_on_a_port)
 
     excluded = []
     if args.offline:
