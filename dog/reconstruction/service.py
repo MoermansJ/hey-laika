@@ -14,18 +14,24 @@ import logging
 import threading
 import time
 
-from reconstruction import cloud, depth, fixtures, settings as settings_module
+from reconstruction import cloud, depth, fixtures, frames
+from reconstruction import settings as settings_module
 
 logger = logging.getLogger(__name__)
 
-SOURCES = ("fixture", "adapter")
-
 
 class Service:
-    def __init__(self, overrides: dict | None = None, source: str = "fixture",
-                 model_factory=depth.build_model):
+    """Where frames come from is a *setting*, not a launch flag: the demo
+    runs split across Jon's laptop and the PC, and the Tailscale address
+    has to be changeable from the tuning panel without a restart."""
+
+    def __init__(self, overrides: dict | None = None,
+                 model_factory=depth.build_model,
+                 source_factory=frames.FrameSource):
         self.settings, notes = settings_module.resolve(overrides)
-        self.source = source if source in SOURCES else "fixture"
+        self._source_factory = source_factory
+        self._frame_source = None
+        self._source_key = None
         self.started_at = time.time()
         self.last_error = None
         self.last_capture = None        # the stats dict of the newest capture
@@ -49,6 +55,20 @@ class Service:
                 logger.info("Reconstruction: depth model %s", name)
             return self._model
 
+    # ---- frame source ------------------------------------------------------
+    def frame_source(self):
+        """The adapter client for the current settings, rebuilt when the URL
+        or the robot id changes."""
+        with self._lock:
+            key = (self.settings["frameBaseUrl"], self.settings["robotId"])
+            if self._frame_source is None or self._source_key != key:
+                self._frame_source = self._source_factory(
+                    {"baseUrl": key[0], "robotId": key[1]})
+                self._source_key = key
+                logger.info("Reconstruction: frames from %s",
+                            self._frame_source.snap_url)
+            return self._frame_source
+
     # ---- settings ----------------------------------------------------------
     def update_settings(self, overrides: dict) -> tuple[dict, list[str]]:
         merged = {**self.settings, **(overrides or {})}
@@ -59,12 +79,11 @@ class Service:
         return resolved, notes
 
     # ---- capture -----------------------------------------------------------
-    def capture(self, frame_source=None) -> dict:
+    def capture(self) -> dict:
         """One frame -> one cloud, replacing the last. Returns the capture's
-        stats; raises nothing the caller has to catch beyond the frame
-        source's own FrameError."""
+        stats; the only thing a caller has to catch is FrameError."""
         started = time.time()
-        jpeg, origin = self._frame(frame_source)
+        jpeg, origin = self._frame()
         model = self.model()
         disparity, rgb = model.infer(jpeg)
         xyz, colours, stats = cloud.to_points(disparity, rgb, self.settings)
@@ -88,10 +107,13 @@ class Service:
                     stats["points"], capture["totalMs"], model.provider)
         return capture
 
-    def _frame(self, frame_source) -> tuple[bytes, str]:
-        if frame_source is not None:
-            return frame_source.fetch(fresh=True), frame_source.snap_url
-        return fixtures.person_frame(), "fixture:person"
+    def _frame(self) -> tuple[bytes, str]:
+        """`fresh=1` every time: the button means "look now", not "show me
+        what you last saw"."""
+        if self.settings["source"] != "adapter":
+            return fixtures.person_frame(), "fixture:person"
+        source = self.frame_source()
+        return source.fetch(fresh=True), source.snap_url
 
     # ---- readers -----------------------------------------------------------
     def current_cloud(self):
@@ -106,7 +128,9 @@ class Service:
         with self._lock:
             points = self._cloud[0].shape[0] if self._cloud else 0
             return {
-                "source": self.source,
+                "source": self.settings["source"],
+                "frameSource": (self._frame_source.status()
+                                if self._frame_source else None),
                 "hasCloud": self._cloud is not None,
                 "points": int(points),
                 "lastCapture": self.last_capture,

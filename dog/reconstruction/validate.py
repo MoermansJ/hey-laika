@@ -258,7 +258,7 @@ def main() -> int:
         from reconstruction.server import create_app
         from reconstruction.service import Service
 
-        service = Service({"pointDensity": 3000}, source="fixture")
+        service = Service({"pointDensity": 3000})
         client = create_app(service).test_client()
 
         empty = client.get("/cloud")
@@ -297,7 +297,7 @@ def main() -> int:
         from reconstruction.server import create_app
         from reconstruction.service import Service
 
-        server = make_server("127.0.0.1", 0, create_app(Service(), None),
+        server = make_server("127.0.0.1", 0, create_app(Service()),
                              threaded=True)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
@@ -307,6 +307,56 @@ def main() -> int:
         finally:
             server.shutdown()
         return f"bound and answered on {base}/health"
+
+    def capture_through_the_adapter():
+        """The real path with the dog switched off: the service pulls its
+        frame over HTTP from something that answers like the adapter."""
+        from reconstruction.server import create_app
+        from reconstruction.service import Service
+
+        stub, base = _serve_stub(fixtures.person_frame())
+        second, base2 = _serve_stub(fixtures.person_frame())
+        try:
+            service = Service({"source": "adapter", "frameBaseUrl": base,
+                               "pointDensity": 2000})
+            client = create_app(service).test_client()
+            capture = client.post("/capture").get_json()
+            assert capture["cloud"]["points"] == 2000, capture
+            assert capture["source"].startswith(base), capture["source"]
+            assert _StubHandler.seen[-1].endswith("?fresh=1"), _StubHandler.seen
+
+            # Repointed at another address mid-run, as the tuning panel will.
+            moved = client.post("/settings",
+                                json={"frameBaseUrl": base2}).get_json()
+            assert moved["settings"]["frameBaseUrl"] == base2, moved
+            again = client.post("/capture").get_json()
+            assert again["source"].startswith(base2), again["source"]
+
+            state = client.get("/state").get_json()
+            assert state["source"] == "adapter", state
+            assert state["frameSource"]["fetches"] == 1, state["frameSource"]
+        finally:
+            stub.shutdown()
+            second.shutdown()
+        return (f"capture over HTTP, then repointed to a second address "
+                f"without a restart")
+
+    def adapter_failure_is_reported():
+        """A dead link must answer 502 and leave the last cloud alone, not
+        take the service down mid-demo."""
+        from reconstruction.server import create_app
+        from reconstruction.service import Service
+
+        service = Service({"source": "adapter",
+                           "frameBaseUrl": "http://127.0.0.1:9", "pointDensity": 1000})
+        client = create_app(service).test_client()
+        reply = client.post("/capture")
+        assert reply.status_code == 502, reply.status_code
+        assert reply.get_json()["error"] == "frame", reply.get_json()
+        state = client.get("/state").get_json()
+        assert state["lastError"], state
+        assert state["hasCloud"] is False, state
+        return "dead adapter -> 502, lastError set, service still answering"
 
     def live_frame():
         source = frames.FrameSource({"baseUrl": args.base_url,
@@ -334,6 +384,8 @@ def main() -> int:
     gate.step("capture path against a stub adapter", capture_path_stubbed)
     gate.step("sidecar endpoints", service_endpoints)
     gate.step("sidecar binds a real port", service_on_a_port)
+    gate.step("capture through the adapter (stubbed)", capture_through_the_adapter)
+    gate.step("adapter failure reported, not fatal", adapter_failure_is_reported)
 
     excluded = []
     if args.offline:

@@ -72,6 +72,9 @@ take the service down.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
+| `source` | `fixture` | `fixture` needs no dog; `adapter` pulls a live frame. A setting, not a launch flag, so the demo can switch mid-run |
+| `frameBaseUrl` | `http://localhost:8080` | the orchestrator (or `:15001` for the adapter directly); the PC's Tailscale address in the split demo setup |
+| `robotId` | `bittle-1` | which robot's `/eyes/snap` to pull |
 | `model` | `small` | which ONNX file: `small`, `small-fp16`, `base`, `base-fp16` |
 | `confidenceCutoff` | 0.05 | drops the farthest slice of the depth range; the model has no confidence channel, so this stands in for one |
 | `edgeReject` | 0.10 | drops pixels on a depth cliff, where a depth map bleeds one surface into another |

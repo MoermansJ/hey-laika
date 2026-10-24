@@ -21,7 +21,12 @@ MODELS = {
     "base-fp16": "depth-anything-v2-base-fp16.onnx",
 }
 
+SOURCES = ("fixture", "adapter")
+
 DEFAULTS = {
+    "source": "fixture",        # fixture = no dog needed; adapter = the real camera
+    "frameBaseUrl": "http://localhost:8080",   # orchestrator; :15001 is the adapter
+    "robotId": "bittle-1",
     "model": "small",           # MODELS key
     "confidenceCutoff": 0.05,   # drop the farthest fraction of the depth range
     "edgeReject": 0.10,         # drop pixels whose depth gradient exceeds this
@@ -57,6 +62,19 @@ def resolve(overrides: dict | None = None) -> tuple[dict, list[str]]:
                 notes.append(f"unknown model {value!r}, kept {settings['model']!r}")
             else:
                 settings[key] = value
+            continue
+        if key == "source":
+            if value not in SOURCES:
+                notes.append(f"unknown source {value!r}, kept {settings['source']!r}")
+            else:
+                settings[key] = value
+            continue
+        if key in ("frameBaseUrl", "robotId"):
+            text = str(value).strip()
+            if not text or (key == "frameBaseUrl" and not text.startswith("http")):
+                notes.append(f"{key}={value!r} is not usable, kept {settings[key]!r}")
+            else:
+                settings[key] = text.rstrip("/") if key == "frameBaseUrl" else text
             continue
         try:
             number = float(value)
