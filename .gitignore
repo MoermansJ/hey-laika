@@ -2,6 +2,12 @@
 petoi/
 opencat-esp32/
 
+# Local Python env + outputs for the reconstruction sidecar
+# (dog/reconstruction/; DirectML cannot share the adapter's env)
+dog/reconstruction/.venv/
+dog/reconstruction/out/
+dog/reconstruction/**/__pycache__/
+
 # Local scratch / non-code assets
 noncodefiles/
 
