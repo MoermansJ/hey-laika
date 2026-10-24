@@ -14,6 +14,8 @@ purpose: the adapter's pytest suite must not depend on this venv, the
 weights, or a GPU.
 """
 import argparse
+import json
+import subprocess
 import sys
 import threading
 import time
@@ -51,6 +53,13 @@ class Gate:
               f"      {detail}")
         return detail if ok else None
 
+    def report(self) -> dict:
+        return {"steps": [{"name": name, "ok": ok, "detail": detail,
+                           "ms": round(ms, 1)}
+                          for ok, name, detail, ms in self.results],
+                "passed": sum(1 for ok, *_ in self.results if ok),
+                "total": len(self.results)}
+
     def summary(self, excluded: list[str]) -> int:
         failed = [name for ok, name, _, _ in self.results if not ok]
         print("\n" + "-" * 68)
@@ -65,7 +74,11 @@ class Gate:
             print("\nOFFLINE GATE GREEN. The full gate stays unproven until the "
                   "excluded steps run against the dog.")
         else:
-            print("\nFULL GATE GREEN.")
+            print("\nFULL GATE GREEN. Phase 1 done-when, as checked here:\n"
+                  "  - a frame produces a cloud that matches known geometry\n"
+                  "  - captureIntervalS arms and disarms the loop\n"
+                  "  - every setting moves the output\n"
+                  "  - the viewer receives the cloud over its own socket")
         return 0
 
 
@@ -107,6 +120,8 @@ def main() -> int:
                         help="orchestrator (or adapter) for the live step")
     parser.add_argument("--robot-id", default=frames.DEFAULTS["robotId"])
     parser.add_argument("--model", default="small")
+    parser.add_argument("--json", dest="json_path",
+                        help="also write the results as JSON (for a report)")
     args = parser.parse_args()
 
     gate = Gate()
@@ -480,6 +495,33 @@ def main() -> int:
         return (f"{count} points, {len(blob) / 1e6:.2f} MB binary, pushed on "
                 f"capture")
 
+    def documented_cli_runs():
+        """The commands in the README, run as a user would run them. A gate
+        that only calls library functions lets the documented entry points
+        rot."""
+        out = OUT_DIR / "gate-cli.ply"
+        command = [sys.executable, str(HERE.parent / "tools" / "depth_to_cloud.py"),
+                   "--fixture", "room", "--preview", "--density", "4000",
+                   "--out", str(out)]
+        done = subprocess.run(command, capture_output=True, text=True, timeout=300)
+        assert done.returncode == 0, done.stderr[-400:]
+        report = json.loads(done.stdout)
+        assert report["cloud"]["points"] == 4000, report["cloud"]
+        assert Path(report["out"]).is_file() and Path(report["preview"]).is_file()
+        assert report["model"]["provider"].endswith("ExecutionProvider")
+        return (f"depth_to_cloud.py: {report['cloud']['points']} points on "
+                f"{report['model']['provider'].replace('ExecutionProvider', '')}, "
+                f"PLY + preview written")
+
+    def downloader_is_idempotent():
+        """Re-running the fetch must not re-download 99 MB, and must not
+        fail the gate on a machine that already has the weights."""
+        command = [sys.executable, str(HERE.parent / "tools" / "download_depth_model.py")]
+        done = subprocess.run(command, capture_output=True, text=True, timeout=300)
+        assert done.returncode == 0, done.stderr[-400:]
+        assert "skip" in done.stdout, done.stdout
+        return done.stdout.strip().splitlines()[-1]
+
     def live_frame():
         source = frames.FrameSource({"baseUrl": args.base_url,
                                      "robotId": args.robot_id})
@@ -513,6 +555,8 @@ def main() -> int:
     gate.step("optional capture loop", optional_capture_loop)
     gate.step("viewer page and vendored three.js", viewer_page_served)
     gate.step("cloud pushed over the websocket", cloud_over_the_socket)
+    gate.step("documented CLI commands run", documented_cli_runs)
+    gate.step("model download is idempotent", downloader_is_idempotent)
 
     excluded = []
     if args.offline:
@@ -520,7 +564,13 @@ def main() -> int:
     else:
         gate.step("live frame from the dog through the adapter's cache",
                   live_frame)
-    return gate.summary(excluded)
+    code = gate.summary(excluded)
+    if args.json_path:
+        payload = {**gate.report(), "excluded": excluded, "exit": code}
+        Path(args.json_path).write_text(json.dumps(payload, indent=2),
+                                        encoding="utf-8")
+        print(f"wrote {args.json_path}")
+    return code
 
 
 if __name__ == "__main__":
