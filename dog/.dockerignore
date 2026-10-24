@@ -11,3 +11,11 @@ tests
 README.md
 BITTLE_PROJECT_SETUP.md
 CONTEXT.md
+
+# The reconstruction sidecar is a host process and never belongs in these
+# images: its venv carries a DirectML onnxruntime the container must not
+# import, and out/ holds capture output. The bare `.venv` / `venv` above
+# only match the context root, so the nested form is needed here.
+**/.venv
+**/venv
+reconstruction/out
