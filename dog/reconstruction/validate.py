@@ -358,6 +358,78 @@ def main() -> int:
         assert state["hasCloud"] is False, state
         return "dead adapter -> 502, lastError set, service still answering"
 
+    def settings_change_the_cloud():
+        """Each setting has to move the output, or the tuning panel is a
+        row of placebo sliders."""
+        base, _ = settings_module.resolve({"pointDensity": 76800})
+        _, _, loose = cloud.to_points(state["disparity"], state["rgb"], base)
+        strict, _ = settings_module.resolve({"pointDensity": 76800,
+                                             "confidenceCutoff": 0.35})
+        _, _, tight = cloud.to_points(state["disparity"], state["rgb"], strict)
+        assert tight["keptAfterConfidence"] < loose["keptAfterConfidence"],             (tight["keptAfterConfidence"], loose["keptAfterConfidence"])
+
+        narrow, _ = settings_module.resolve({"hfovDeg": 40})
+        wide, _ = settings_module.resolve({"hfovDeg": 100})
+        narrow_xyz, _, _ = cloud.to_points(state["disparity"], state["rgb"], narrow)
+        wide_xyz, _, _ = cloud.to_points(state["disparity"], state["rgb"], wide)
+        assert np.ptp(wide_xyz[:, 0]) > np.ptp(narrow_xyz[:, 0]), "hfov does nothing"
+
+        scaled, _ = settings_module.resolve({"nearM": 1.0, "farM": 3.0})
+        scaled_xyz, _, _ = cloud.to_points(state["disparity"], state["rgb"], scaled)
+        assert scaled_xyz[:, 2].min() >= 0.99, scaled_xyz[:, 2].min()
+        assert scaled_xyz[:, 2].max() <= 3.01, scaled_xyz[:, 2].max()
+        return (f"confidence 0.05->0.35 keeps {loose['keptAfterConfidence']}"
+                f"->{tight['keptAfterConfidence']} px; hfov 40->100 widens "
+                f"{np.ptp(narrow_xyz[:, 0]):.1f}->{np.ptp(wide_xyz[:, 0]):.1f} m; "
+                f"near/far bound the depth")
+
+    def model_choice():
+        """The `model` setting has to swap the weights at runtime, not at
+        launch: the demo compares small against fp16 live."""
+        from reconstruction.server import create_app
+        from reconstruction.service import Service
+
+        other = "small-fp16" if args.model == "small" else "small"
+        missing = [name for name in (args.model, other)
+                   if not depth.build_model(name).available]
+        assert not missing, (f"{missing} not downloaded; run "
+                             f"dog/tools/download_depth_model.py --model small small-fp16")
+
+        service = Service({"pointDensity": 2000})
+        client = create_app(service).test_client()
+        first = client.post("/capture").get_json()
+        switched = client.post("/settings", json={"model": other}).get_json()
+        assert switched["settings"]["model"] == other, switched
+        second = client.post("/capture").get_json()
+        assert client.get("/health").get_json()["model"] == other
+        assert second["cloud"]["points"] == 2000, second
+        return (f"{args.model} {first['inferenceMs']} ms -> {other} "
+                f"{second['inferenceMs']} ms, swapped through POST /settings")
+
+    def optional_capture_loop():
+        """Off by default; armed only by captureIntervalS, and it stops
+        when set back to 0."""
+        from reconstruction.server import create_app
+        from reconstruction.service import Service
+
+        service = Service({"pointDensity": 1000})
+        client = create_app(service).test_client()
+        assert client.get("/state").get_json()["looping"] is False, "loop armed itself"
+        service.capture()                      # warm the session first
+        client.post("/settings", json={"captureIntervalS": 0.5})
+        assert client.get("/state").get_json()["looping"] is True, "loop did not arm"
+        before = service.last_capture["at"]
+        time.sleep(1.6)
+        after = service.last_capture["at"]
+        assert after > before, "the armed loop captured nothing"
+        client.post("/settings", json={"captureIntervalS": 0.0})
+        time.sleep(1.0)
+        settled = service.last_capture["at"]
+        time.sleep(1.0)
+        assert service.last_capture["at"] == settled, "loop kept running at 0"
+        service.stop()
+        return "off by default, armed at 0.5 s, stopped when set back to 0"
+
     def live_frame():
         source = frames.FrameSource({"baseUrl": args.base_url,
                                      "robotId": args.robot_id})
@@ -386,6 +458,9 @@ def main() -> int:
     gate.step("sidecar binds a real port", service_on_a_port)
     gate.step("capture through the adapter (stubbed)", capture_through_the_adapter)
     gate.step("adapter failure reported, not fatal", adapter_failure_is_reported)
+    gate.step("settings change the cloud", settings_change_the_cloud)
+    gate.step("depth model swapped at runtime", model_choice)
+    gate.step("optional capture loop", optional_capture_loop)
 
     excluded = []
     if args.offline:
