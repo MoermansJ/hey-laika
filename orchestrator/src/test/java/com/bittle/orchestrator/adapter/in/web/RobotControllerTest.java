@@ -12,6 +12,8 @@ import com.bittle.orchestrator.application.port.out.AdapterUnavailableException;
 import com.bittle.orchestrator.application.port.out.OrchestratorMetricsPort;
 import com.bittle.orchestrator.application.usecase.ExecuteAnimationUseCase;
 import com.bittle.orchestrator.application.usecase.ExecuteRobotActionUseCase;
+import com.bittle.orchestrator.application.usecase.GetActionFeedUseCase;
+import com.bittle.orchestrator.application.usecase.GetFruitflyStatusUseCase;
 import com.bittle.orchestrator.application.usecase.GetNextBehaviorUseCase;
 import com.bittle.orchestrator.application.usecase.GetRobotActivityUseCase;
 import com.bittle.orchestrator.application.usecase.GetRobotAutonomousStatusUseCase;
@@ -34,10 +36,12 @@ import com.bittle.orchestrator.application.usecase.SendRobotCommandUseCase;
 import com.bittle.orchestrator.application.usecase.StartRobotAutonomousUseCase;
 import com.bittle.orchestrator.application.usecase.StopRobotAutonomousUseCase;
 import com.bittle.orchestrator.domain.fleet.RobotNotFoundException;
+import com.bittle.orchestrator.domain.robot.ActionFeed;
 import com.bittle.orchestrator.domain.robot.ActionResult;
 import com.bittle.orchestrator.domain.robot.BinaryContent;
 import com.bittle.orchestrator.domain.robot.RobotStatus;
 import com.bittle.orchestrator.domain.robot.ServoJoint;
+import com.bittle.orchestrator.domain.robot.FruitflyStatus;
 import com.bittle.orchestrator.domain.robot.ServoMoveResult;
 import com.bittle.orchestrator.domain.robot.ServoState;
 import java.util.List;
@@ -56,7 +60,8 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
         SendRobotCommandUseCase.class, InteractWithRobotUseCase.class, ListAnimationsUseCase.class,
         ExecuteAnimationUseCase.class, StartRobotAutonomousUseCase.class,
         StopRobotAutonomousUseCase.class, GetRobotAutonomousStatusUseCase.class,
-        GetRobotActivityUseCase.class, GetRobotDisplayUseCase.class,
+        GetRobotActivityUseCase.class, GetFruitflyStatusUseCase.class,
+        GetActionFeedUseCase.class, GetRobotDisplayUseCase.class,
         GetRobotCapabilitiesUseCase.class, GetServoStateUseCase.class, MoveServosUseCase.class,
         RunVoiceDemoUseCase.class, GetVoiceHealthUseCase.class, PlaySoundUseCase.class,
         ExecuteRobotActionUseCase.class, RelayGetToRobotUseCase.class,
@@ -99,6 +104,47 @@ class RobotControllerTest {
 
     @Autowired
     private OrchestratorMetricsPort metrics;
+
+    @Autowired
+    private GetFruitflyStatusUseCase getFruitflyStatus;
+
+    @Autowired
+    private GetActionFeedUseCase getActionFeed;
+
+    @Test
+    void givenActionFeedRequested_whenGet_thenEachActionCarriesItsGeneratingMode() {
+        when(getActionFeed.execute("bittle-1", 20)).thenReturn(new ActionFeed("bittle-1", List.of(
+                new ActionFeed.Action("opk0n", 1.0, "FRUITFLY", "FORWARD", "kwkF",
+                        "fruitfly_drive", "run-1", 7, "executing", null))));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/actions/feed").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.actions[0].tag").isEqualTo("FRUITFLY");
+    }
+
+    @Test
+    void givenLimitParam_whenGetActionFeed_thenLimitReachesTheAdapter() {
+        when(getActionFeed.execute("bittle-1", 50)).thenReturn(new ActionFeed("bittle-1", List.of(
+                new ActionFeed.Action("sp0k3", 2.0, "SPEECH", "hello", null,
+                        null, null, null, "done", 3.0))));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/actions/feed?limit=50").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.actions[0].tag").isEqualTo("SPEECH");
+    }
+
+    @Test
+    void givenFruitflyStatusRequested_whenGet_thenItIsProxiedFromTheAdapter() {
+        when(getFruitflyStatus.execute("bittle-1"))
+                .thenReturn(new FruitflyStatus("bittle-1", "FORWARD", Map.of("forward", 0.9)));
+
+        var result = mvc.get().uri("/api/robots/bittle-1/fruitfly/status").exchange();
+
+        assertThat(result).hasStatusOk()
+                .bodyJson().extractingPath("$.lastState").isEqualTo("FORWARD");
+    }
 
     @Test
     void givenLoopStopped_whenExecuteActionPosted_thenItIsProxiedToTheAgent() {

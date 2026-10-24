@@ -95,3 +95,22 @@ def test_voice_health_reports_ollama_state(client, monkeypatch):
     assert body["ollama"]["reachable"] is True
     assert body["ollama"]["modelAvailable"] is True
     assert body["ttsConfigured"] is False
+
+
+def test_mouth_say_lands_once_in_the_action_feed(client, monkeypatch):
+    """The mouth writes its own SPEECH entry; the route's activity line must
+    not add a second VOICE "Said: ..." entry for the same utterance."""
+    import app.app as app_module
+
+    def fake_say(text):
+        app_module.action_feed.note("SPEECH", text)
+        return {"text": text, "seconds": 0.0, "chunks": 1, "error": None}
+
+    monkeypatch.setattr(app_module.mouth, "say", fake_say)
+    resp = client.post("/api/robots/bittle-1/mouth/say", json={"text": "only once please"})
+
+    assert resp.status_code == 200
+    mentions = [e for e in app_module.action_feed.recent(50) if "only once please" in e["action"]]
+    assert [e["tag"] for e in mentions] == ["SPEECH"]
+    activity = client.get("/api/robots/bittle-1/activity").get_json()["activity"]
+    assert activity[0]["message"] == "Said: only once please"

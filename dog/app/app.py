@@ -23,6 +23,7 @@ from pathlib import Path
 from app.action_executor import execute_action
 from app.bittle_controller import create_bittle_controller
 from app.choreography import ChoreographyLibrary
+from app.action_feed import ActionFeed
 from app.arbiter import Arbiter
 from app.behavior_store import (PRIORITY_AGENT, PRIORITY_LIFECYCLE,
                                 PRIORITY_MANUAL, BehaviorStore,
@@ -33,6 +34,7 @@ from app.power_saver import PowerSaver
 from app.ears import EarsService, build_transcriber
 from app.event_binder import EventBinder
 from app.explorer import ExplorerService
+from app.fruitfly_drive import FruitflyDriveService
 from app.eyes import EyesService, build_detector
 from app.mode import ModeService
 from app.mood import MoodService
@@ -75,7 +77,12 @@ instrument_controller(bittle)
 # BEFORE the first connect so startup counts as a came-online event.
 behavior_store = BehaviorStore()
 behavior_store.init()
-arbiter = Arbiter(bittle, behavior_store)
+# Per-step action feed (action_feed.py): the run log records one row per
+# submission, so a continuous generator's individual decisions — every
+# Fruitfly burst, every leg of a route — are invisible there. The arbiter
+# pushes each dispatched step here instead, tagged by what generated it.
+action_feed = ActionFeed()
+arbiter = Arbiter(bittle, behavior_store, action_feed=action_feed)
 # Adaptive polling: idle postures (rest/sit/lie) stretch dog-facing pings.
 poll_policy = PollPolicy()
 bittle.telemetry_ttl = poll_policy.telemetry_ttl
@@ -112,7 +119,7 @@ ears = EarsService(event_binder, transcriber=build_transcriber(Config.WHISPER_MO
 if Config.EARS_ENABLED:
     ears.init()
 # Mouth: host TTS -> 8 kHz PCM -> firmware PWM on the Grove Speaker Plus.
-mouth = MouthService(bittle, Config.SPEAKER_PIN)
+mouth = MouthService(bittle, Config.SPEAKER_PIN, feed=action_feed)
 mouth.init()
 # Ultrasonic ranger on the UART socket: throttled one-shot reads.
 ranger = RangerService(bittle, Config.ULTRASONIC_PIN)
@@ -143,7 +150,14 @@ conversation = ConversationService(
     agent=agent_tools,
     info_tools=[InfoTool("battery", "say the battery level and how long it will last",
                          lambda: battery_sentence(_battery_reading),
-                         keywords=r"\bbatter(y|ies)\b|\bcharge\b|\bpower level\b")],
+                         keywords=r"\bbatter(y|ies)\b|\bcharge\b|\bpower level\b"),
+                # "Hey Laika, introduce yourself". The keyword pattern answers
+                # it without the LLM, so the demo says the same words every
+                # time; the LLM can still pick the tool for phrasings it misses.
+                InfoTool("introduce", "introduce yourself: say who you are and what you can do",
+                         lambda: conversation.introduction,
+                         keywords=r"introduce (your ?self|her ?self)|tell (me|us) about your ?self"
+                                  r"|\bwho are you\b|\bwhat are you\b")],
     llm=lambda prompt, system, as_json: query_ollama(prompt, system=system,
                                                      format_json=as_json, max_tokens=160,
                                                      temperature=0.2),
@@ -195,10 +209,18 @@ explorer = ExplorerService(
             "batteryFloor": Config.ROAMING_BATTERY_FLOOR,
             "minScore": Config.ROAMING_MIN_SCORE})
 explorer.init()
+# Fruitfly's connectome bridge (PERSONALITY_MODES_BRIEF.md §6.3, F2): polls
+# the live sim (a separate dog/fruitfly/server.py process) and submits one
+# short gait burst per decoded command at `agent` priority. Started/stopped
+# by mode switches, same as the explorer above.
+fruitfly_drive = FruitflyDriveService(
+    arbiter, Config.FRUITFLY_SIM_URL, trigger=event_binder.trigger,
+    config={"burstS": Config.FRUITFLY_BURST_S})
 # Personality modes (docs/design/PERSONALITY_MODES_BRIEF.md): the
 # orchestrator owns the mode itself and pushes changes here; this mirror
 # flips conversation/eyes/arbiter on the adapter side.
-mode = ModeService(arbiter, conversation, eyes, event_binder, behavior_store, explorer)
+mode = ModeService(arbiter, conversation, eyes, event_binder, behavior_store, explorer,
+                   fruitfly_drive=fruitfly_drive)
 
 
 def _fan_out_event_frame(frame: dict) -> None:
@@ -281,7 +303,7 @@ _activity_log: list[dict] = []
 _activity_lock = threading.Lock()
 
 
-def log_activity(kind: str, message: str) -> None:
+def log_activity(kind: str, message: str, feed: bool = True) -> None:
     with _activity_lock:
         _activity_log.append({
             "kind": kind,
@@ -289,6 +311,13 @@ def log_activity(kind: str, message: str) -> None:
             "at": datetime.now(timezone.utc).isoformat(),
         })
         del _activity_log[:-100]
+    # The console's Actions tab reads the action feed, not this list, so
+    # lifecycle messages have to land there too or they vanish from the UI.
+    # /activity stays for anything still polling it. `feed=False` is for
+    # callers whose act already landed there (the mouth writes its own
+    # SPEECH/SOUND entry), so one utterance doesn't show twice.
+    if feed:
+        action_feed.note(kind.upper(), message)
 
 
 def set_display(value: str, content_type: str = "text") -> None:
@@ -848,7 +877,7 @@ def mouth_say(robot_id: str):
         return jsonify({"error": "tts_failed", "message": str(exc)}), 502
     if mood.enabled and result.get("seconds"):
         mood.flash("speaking", float(result["seconds"]))
-    log_activity("voice", f"Said: {text}")
+    log_activity("voice", f"Said: {text}", feed=False)
     return jsonify({"robotId": robot_id, **result})
 
 
@@ -901,7 +930,7 @@ def mouth_play(robot_id: str):
         return jsonify({"error": "playback_failed", "message": str(exc)}), 502
     if mood.enabled and result.get("seconds"):
         mood.flash("speaking", float(result["seconds"]))
-    log_activity("voice", f"Played sound: {name}")
+    log_activity("voice", f"Played sound: {name}", feed=False)
     return jsonify({"robotId": robot_id, **result})
 
 
@@ -1020,6 +1049,25 @@ def conversation_prompt_set(robot_id: str):
     try:
         return jsonify({"robotId": robot_id,
                         **conversation.set_prompt(body.get("prompt"), body.get("replyChars"))})
+    except ValueError as exc:
+        return jsonify({"error": "bad_request", "message": str(exc)}), 400
+
+
+@app.get("/api/robots/<robot_id>/conversation/introduction")
+@robot_scoped
+def conversation_introduction(robot_id: str):
+    return jsonify({"robotId": robot_id, **conversation.introduction_view()})
+
+
+@app.post("/api/robots/<robot_id>/conversation/introduction")
+@robot_scoped
+def conversation_introduction_set(robot_id: str):
+    """The orchestrator's push, mirroring POST /mode: Postgres owns the text,
+    this is the adapter-side mirror the info tool reads."""
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"robotId": robot_id,
+                        **conversation.set_introduction(body.get("introduction"))})
     except ValueError as exc:
         return jsonify({"error": "bad_request", "message": str(exc)}), 400
 
@@ -1478,8 +1526,13 @@ def mode_set(robot_id: str):
     if requested not in ("stationary", "roaming", "fruitfly"):
         return jsonify({"error": "bad_request",
                         "message": "'mode' must be stationary, roaming or fruitfly"}), 400
+    # The orchestrator resyncs the persisted mode on every boot (and the
+    # console may re-POST the mode it already shows); only a real transition
+    # is activity-log-worthy, or every idempotent resync spams the feed.
+    changed = requested != mode.status()["mode"]
     result = mode.set_mode(requested)
-    log_activity("mode", f"mode -> {requested}")
+    if changed:
+        log_activity("mode", f"mode -> {requested}")
     return jsonify({"robotId": robot_id, **result})
 
 
@@ -1511,6 +1564,15 @@ def collection_points_photo(robot_id: str, point_id: int):
 @robot_scoped
 def arbiter_status(robot_id: str):
     return jsonify({"robotId": robot_id, **arbiter.status()})
+
+
+@app.get("/api/robots/<robot_id>/actions/feed")
+@robot_scoped
+def actions_feed(robot_id: str):
+    """Every step the arbiter has dispatched, newest first, tagged with the
+    mode that generated it — the grain the run log doesn't have."""
+    limit = _num_param(request.args, "limit", 20, lo=1, hi=50)
+    return jsonify({"robotId": robot_id, "actions": action_feed.recent(int(limit))})
 
 
 @app.post("/api/robots/<robot_id>/arbiter/invoke")
@@ -1827,6 +1889,17 @@ def robot_voice_speak(robot_id: str):
 def robot_activity(robot_id: str):
     with _activity_lock:
         return jsonify({"robotId": robot_id, "activity": list(reversed(_activity_log))})
+
+
+@app.get("/api/robots/<robot_id>/fruitfly/status")
+@robot_scoped
+def robot_fruitfly_status(robot_id: str):
+    """Observability only (PERSONALITY_MODES_BRIEF.md §3.3/§7c): the last
+    decoded command fruitfly_drive.py submitted. The orchestrator polls this
+    to rebroadcast over STOMP for the Mind/Fruitfly GUI card; it never
+    drives anything from here — the arbiter submission already happened by
+    the time this is read."""
+    return jsonify({"robotId": robot_id, **fruitfly_drive.status()})
 
 
 @app.get("/api/robots/<robot_id>/display")

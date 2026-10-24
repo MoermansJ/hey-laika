@@ -74,6 +74,14 @@ services:
       - NAV_SPEAK=${NAV_SPEAK:-True}
       # XIAO satellite (camera + mood light); empty = none.
       - SATELLITE_HOST=${SATELLITE_HOST:-}
+      # Fruitfly's connectome sim is deliberately NOT in this compose: it is
+      # its own process with its own heavy deps (PERSONALITY_MODES_BRIEF.md
+      # 6.1). From inside the container, a sim running on the host is
+      # host.docker.internal; extra_hosts maps that on Linux, where Docker
+      # does not provide it for free.
+      - FRUITFLY_SIM_URL=${FRUITFLY_SIM_URL:-http://host.docker.internal:8765}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - bittle-1-data:/data
     depends_on:
@@ -103,6 +111,14 @@ services:
       - OLLAMA_URL=http://ollama:11434
       - ENVIRONMENT=development
       - SQLITE_DB_PATH=/data/bittle.db
+      # Fruitfly's connectome sim is deliberately NOT in this compose: it is
+      # its own process with its own heavy deps (PERSONALITY_MODES_BRIEF.md
+      # 6.1). From inside the container, a sim running on the host is
+      # host.docker.internal; extra_hosts maps that on Linux, where Docker
+      # does not provide it for free.
+      - FRUITFLY_SIM_URL=${FRUITFLY_SIM_URL:-http://host.docker.internal:8765}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - bittle-2-data:/data
     restart: unless-stopped

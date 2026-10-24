@@ -121,9 +121,10 @@
       letter-spacing: 0.1em; color: var(--ink-2); text-transform: uppercase;
     }
     .empty { color: var(--phosphor-dim); font-size: 0.85rem; }
-    .stat { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; padding: 0.15rem 0; }
-    .stat span:last-child { color: var(--ink-2); text-align: right; }
+    .stat { display: flex; gap: 0.5rem; font-size: 0.85rem; padding: 0.15rem 0; }
+    .stat span:last-child { color: var(--ink-2); }
     .hint { font-size: 0.78rem; color: var(--phosphor-dim); line-height: 1.6; }
+
 
     /* ---- terminal: activity + conversation, merged, with input to the agent ---- */
     .term-status { margin-bottom: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px dashed var(--phosphor-dim); }
@@ -137,10 +138,17 @@
     .term-line.t-you .t-msg { color: var(--phosphor); }
     .term-line.t-laika .t-msg { color: #bfffe0; }
     .term-line.t-pending .t-msg { color: var(--phosphor-dim); font-style: italic; }
-    .term-input-row { display: flex; gap: 0.5rem; margin-top: 0.7rem; align-items: center; }
+    .term-input-row { display: flex; gap: 0.4rem; margin-top: 0.2rem; align-items: center; }
     .term-input-row .prompt { color: var(--phosphor); }
-    .term-input-row input[type="text"] { flex: 1; }
-    .term-input-row button { font-family: var(--font-blocky); font-size: 0.68rem; letter-spacing: 0.05em; }
+    /* No box, no button — just the prompt and a flashing caret, like a real
+       terminal. The native text caret already blinks; it only needs the
+       theme's colour and everything that makes it look like a form field
+       stripped away. */
+    .term-input-row input[type="text"] {
+      flex: 1; background: none; border: none; outline: none; padding: 0;
+      margin: 0; font: inherit; color: var(--phosphor); caret-color: var(--phosphor);
+    }
+    .term-input-row input[type="text"]::placeholder { color: var(--phosphor-dim); }
 
     #toast {
       position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%); z-index: 60;
@@ -151,7 +159,9 @@
 
     @media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
   </style>
+  <script src="vendor/stomp.umd.min.js"></script>
   <script src="common.js"></script>
+  <script src="cards.js"></script>
   <script src="nav.js" defer></script>
 </head>
 <body>
@@ -165,14 +175,14 @@
 
   <div class="mode-grid" id="cards"></div>
 
+
   <section class="card">
     <h2>Current mode &mdash; console</h2>
     <div id="mode-status" class="term-status empty">&hellip;</div>
     <div id="term-log" class="term-log"></div>
     <div class="term-input-row">
       <span class="prompt">&gt;</span>
-      <input type="text" id="term-input" placeholder="say something to her…" autocomplete="off">
-      <button type="button" id="term-send">SEND</button>
+      <input type="text" id="term-input" placeholder="say something to her…" autocomplete="off" autofocus>
     </div>
   </section>
 
@@ -487,7 +497,7 @@
     // with an input that goes to the same conversation router "Hey Laika"
     // uses (POST /conversation/say — same LLM, same behaviors, same speaker) ----
 
-    const term = { lines: [], knownTurnIds: new Set(), pendingSince: null };
+    const term = { lines: [], knownTurnIds: new Set(), pendingSince: null, echoedHeard: [] };
 
     function fmtTime(iso) {
       try { return new Date(iso).toLocaleTimeString([], { hour12: false }); }
@@ -503,10 +513,11 @@
       const el = $("#term-log");
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
       const sorted = term.lines.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+      // The input row below has the only "> " prompt now; a second,
+      // decorative one here just duplicated it.
       el.innerHTML = sorted.map((l) =>
         `<div class="term-line ${l.cls}"><span class="t-time">[${esc(fmtTime(l.at))}]</span> ` +
-        `<span class="t-msg">${esc(l.text)}</span></div>`).join("") +
-        `<div class="term-line"><span class="prompt">&gt;</span> <span class="cursor"></span></div>`;
+        `<span class="t-msg">${esc(l.text)}</span></div>`).join("");
       if (atBottom) el.scrollTop = el.scrollHeight;
     }
 
@@ -517,23 +528,36 @@
           hlApi(state.base, "/conversation?limit=15"),
         ]);
         const seenActivity = new Set(term.lines.filter((l) => l.cls === "t-activity").map((l) => l.at + l.text));
-        (activity.activity || []).slice(-40).forEach((e) => {
+        // /activity is newest first: take the head, not the tail.
+        (activity.activity || []).slice(0, 40).forEach((e) => {
           const key = e.at + e.message;
           if (!seenActivity.has(key)) pushLine("t-activity", e.at, `[${e.kind}] ${e.message}`);
         });
         (convo.turns || []).slice().reverse().forEach((turn) => {
           if (term.knownTurnIds.has(turn.id)) return;
           term.knownTurnIds.add(turn.id);
-          if (turn.heard) pushLine("t-you", turn.at, turn.heard);
+          if (turn.heard) {
+            // Typed turns were already echoed locally the instant they were
+            // sent (sendToAgent); only show the server's copy for turns that
+            // arrived some other way (voice).
+            const echoed = term.echoedHeard.indexOf(turn.heard);
+            if (echoed !== -1) term.echoedHeard.splice(echoed, 1);
+            else pushLine("t-you", turn.at, turn.heard);
+          }
           if (turn.error) pushLine("t-laika", turn.at, `(error) ${turn.error}`);
           else if (turn.said) pushLine("t-laika", turn.at, turn.said);
         });
-        // drop the transient "thinking" line once the real turn lands
+        // drop the transient "thinking"/"speaking" line once the real turn lands
         term.lines = term.lines.filter((l) => l.cls !== "t-pending");
         if (convo.current && convo.state && convo.state !== "idle") {
           const cur = convo.current;
-          pushLine("t-pending", new Date().toISOString(),
-            `laika is ${convo.state}${cur.heard ? ` — "${cur.heard}"` : ""}…`);
+          // She decides what to say before playback starts (mouth.say blocks
+          // for the clip's real-time length), so `said` is already there the
+          // moment speaking begins — show it now, not only once the turn
+          // finishes and lands in the turns list above.
+          const detail = cur.said ? ` — saying "${cur.said}"`
+              : cur.heard ? ` — "${cur.heard}"` : "";
+          pushLine("t-pending", new Date().toISOString(), `laika is ${convo.state}${detail}…`);
         }
         renderLog();
       } catch (err) {
@@ -547,6 +571,7 @@
       if (!text) return;
       input.value = "";
       pushLine("t-you", new Date().toISOString(), text);
+      term.echoedHeard.push(text);
       renderLog();
       try {
         await hlApi(state.base, "/conversation/say", {
@@ -555,12 +580,15 @@
         });
         refreshLog();
       } catch (err) {
+        // No turn is coming for this one; don't leave it suppressing a
+        // future turn that happens to say the same words.
+        const echoed = term.echoedHeard.indexOf(text);
+        if (echoed !== -1) term.echoedHeard.splice(echoed, 1);
         pushLine("t-laika", new Date().toISOString(), `(send failed) ${err.message}`);
         renderLog();
       }
     }
 
-    $("#term-send").addEventListener("click", sendToAgent);
     $("#term-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendToAgent(); });
 
     async function boot() {

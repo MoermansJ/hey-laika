@@ -11,12 +11,11 @@ The orchestrator is the source of truth for the mode itself (persisted
 there, survives an adapter restart) and pushes every change here via
 POST /mode; this service is the adapter-side mirror that actually flips
 conversation/eyes/arbiter/idle-ladder. Roaming's frontier explorer (P2,
-explorer.py) is wired in; Fruitfly's connectome-driven brain still doesn't
-exist (F1/F2 of the brief) — switching into it today stops listening and
-records the mode with nothing yet driving her (STUBBED in the GUI). Phone's
-hand-input reader (hands.py) is the same story: wiring is here, the reader
-itself is a later phase. Wiring those in is the job of the later phases,
-not a gap in this plumbing.
+explorer.py) is wired in; Fruitfly's connectome-driven brain is wired in
+too (F2, fruitfly_drive.py — polls dog/fruitfly/server.py's live decoded
+command and bridges it into the arbiter at `agent` priority). Phone's
+hand-input reader (hands.py) is the one still unbuilt: wiring is here, the
+reader itself is a later phase.
 
 2026-09-25 incident: the orchestrator's personality-tick loop picked
 backflip/spin while "in" Stationary (its boredom branch, unrelated to this
@@ -39,7 +38,7 @@ MODES = ("stationary", "roaming", "fruitfly", "phone")
 
 class ModeService:
     def __init__(self, arbiter, conversation, eyes, event_binder, behavior_store,
-                 explorer=None, hand_input=None):
+                 explorer=None, hand_input=None, fruitfly_drive=None):
         self.arbiter = arbiter
         self.conversation = conversation
         self.eyes = eyes
@@ -47,6 +46,7 @@ class ModeService:
         self.behavior_store = behavior_store
         self.explorer = explorer
         self.hand_input = hand_input
+        self.fruitfly_drive = fruitfly_drive
         self._mode = "stationary"
         self._changed_at = time.time()
 
@@ -69,6 +69,8 @@ class ModeService:
             self.explorer.stop()
         if mode != "phone" and self.hand_input is not None:
             self.hand_input.stop()
+        if mode != "fruitfly" and self.fruitfly_drive is not None:
+            self.fruitfly_drive.stop()
         if mode == "stationary":
             self.conversation.enabled = True
             self._set_eyes(True)
@@ -87,6 +89,8 @@ class ModeService:
             self._set_eyes(False)
             self._set_idle_ladder(False)
             self.arbiter.stop_current()
+            if self.fruitfly_drive is not None:
+                self.fruitfly_drive.start()
         elif mode == "phone":
             self.conversation.enabled = False
             self._set_eyes(False)
@@ -97,9 +101,10 @@ class ModeService:
         """Stationary: no autonomous movement at all, not even the gentle
         sit/rest ladder — it fires through the arbiter independent of mode
         (event_binder.py's own background thread) so it has to be disabled
-        explicitly, not just left alone. Fruitfly: same, since nothing should
-        drive her while F2 (the connectome bridge) is unbuilt (§6.4/§7b of
-        PERSONALITY_MODES_BRIEF.md). Roaming restores it."""
+        explicitly, not just left alone. Fruitfly: same — the connectome
+        bridge (fruitfly_drive.py) already owns her at `agent` priority, and
+        the idle ladder's sit/rest nudges have no business competing with
+        that. Roaming restores it."""
         self.behavior_store.set_binding_enabled("idle.timeout", "idle_sit", enabled)
         self.behavior_store.set_binding_enabled("idle.timeout", "idle_rest", enabled)
 

@@ -1,11 +1,15 @@
 """Mouth: WAV -> 8 kHz 8-bit conversion, chunking and pacing against the
 firmware protocol (XWp / XWa / XWq), with a scripted controller."""
 import io
+import os
 import wave
 
 import pytest
 
-from app.mouth import CHUNK_BYTES, RATE, MouthService, to_pcm8, tone_wav
+import app.mouth as mouth_module
+from app.action_feed import SPEECH_LABEL_MAX, ActionFeed
+from app.mouth import (CHUNK_BYTES, RATE, KOKORO_VOICES, MouthService, default_tts,
+                       kokoro_tts, to_pcm8, tone_wav, tts_engine_name)
 
 
 def make_wav(seconds=1.0, rate=16000, channels=1, width=2):
@@ -159,3 +163,149 @@ def test_mock_controller_accepts_binary():
 
     ctrl = MockBittleController()
     assert ctrl.query_binary(b"XWa" + bytes(100)) == ["=", "8192"]
+
+
+# ---- the action feed: speech bypasses the arbiter, so the mouth writes it ----
+
+def _feed_mouth(**kwargs):
+    feed = ActionFeed()
+    mouth = MouthService(ScriptedController(), pin=10, tts=lambda text: tone_wav(len(text)),
+                         sleep=lambda s: None, feed=feed, **kwargs)
+    return mouth, feed
+
+
+def test_speech_reaches_the_action_feed_with_the_words_spoken():
+    mouth, feed = _feed_mouth()
+    mouth.say("Sitting down now.")
+    entry = feed.recent(1)[0]
+    assert entry["tag"] == "SPEECH" and entry["action"] == "Sitting down now."
+    assert entry["status"] == "done" and entry["endedAt"] is not None
+
+
+def test_a_clip_is_tagged_sound_not_speech():
+    mouth, feed = _feed_mouth()
+    mouth.play_wav(make_wav(seconds=0.1), label="sound:positive_bark", kind="SOUND")
+    entry = feed.recent(1)[0]
+    assert entry["tag"] == "SOUND" and entry["action"] == "sound:positive_bark"
+
+
+def test_a_long_reply_is_shortened_for_the_feed_line():
+    mouth, feed = _feed_mouth()
+    mouth.say("word " * 200)
+    action = feed.recent(1)[0]["action"]
+    assert len(action) <= SPEECH_LABEL_MAX and action.endswith("…")
+
+
+def test_a_failed_clip_does_not_sit_in_the_feed_as_executing():
+    feed = ActionFeed()
+    ctrl = ScriptedController()
+    ctrl.query_binary = lambda payload: None          # firmware never acknowledges
+    mouth = MouthService(ctrl, pin=10, tts=lambda text: tone_wav(len(text)),
+                         sleep=lambda s: None, feed=feed)
+    with pytest.raises(RuntimeError):
+        mouth.say("This will not play.")
+    assert feed.recent(1)[0]["status"] == "failed"
+
+
+def test_without_a_feed_the_mouth_still_works():
+    mouth = MouthService(ScriptedController(), pin=10, tts=lambda text: tone_wav(len(text)),
+                         sleep=lambda s: None)
+    assert mouth.say("No feed wired.")["chunks"] > 0
+
+
+# ---- Kokoro: natural local TTS, the espeak-ng/Eleven Labs middle ground ----
+# (CONVERSATION_BRIEF.md). Faked here so no 190 MB model download is needed;
+# one opt-in test runs the real model, mirroring test_ears.py's whisper gate.
+
+class FakeKokoro:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, text, voice="af_heart", speed=1.0, lang="en-us"):
+        import numpy as np
+
+        self.calls.append((text, voice, speed, lang))
+        return np.zeros(int(24000 * 0.3), dtype=np.float32), 24000
+
+
+def _fake_engine(monkeypatch):
+    fake = FakeKokoro()
+    monkeypatch.setattr(mouth_module, "_load_kokoro", lambda: fake)
+    return fake
+
+
+def test_kokoro_tts_converts_float_samples_to_a_playable_wav(monkeypatch):
+    fake = _fake_engine(monkeypatch)
+    wav = kokoro_tts("Hello", {"voice": "af_heart", "speed": 150})
+    assert fake.calls == [("Hello", "af_heart", 1.0, "en-us")]
+    assert len(to_pcm8(wav)) > 0
+
+
+def test_kokoro_tts_falls_back_to_the_default_voice_for_an_unknown_id(monkeypatch):
+    fake = _fake_engine(monkeypatch)
+    kokoro_tts("Hi", {"voice": "not-a-real-voice", "speed": 150})
+    assert fake.calls[0][1] == mouth_module.DEFAULT_KOKORO_VOICE
+
+
+def test_kokoro_speed_maps_the_wpm_slider_onto_its_own_multiplier(monkeypatch):
+    fake = _fake_engine(monkeypatch)
+    kokoro_tts("Hi", {"voice": "af_heart", "speed": 300})    # the slider's max
+    assert fake.calls[-1][2] == pytest.approx(2.0)
+    kokoro_tts("Hi", {"voice": "af_heart", "speed": 10})     # below the slider's min
+    assert fake.calls[-1][2] == pytest.approx(0.5)
+
+
+def _no_cloud_voice(monkeypatch):
+    import app.config as config_module
+
+    monkeypatch.setattr(config_module.Config, "ELEVENLABS_API_KEY", "")
+
+
+def test_engine_precedence_prefers_kokoro_over_espeak(monkeypatch):
+    _no_cloud_voice(monkeypatch)
+    monkeypatch.setattr(mouth_module, "kokoro_available", lambda: True)
+    monkeypatch.setattr(mouth_module.shutil, "which", lambda name: "/usr/bin/espeak-ng")
+    assert tts_engine_name(default_tts) == "kokoro"
+
+
+def test_engine_precedence_falls_back_to_espeak_without_kokoro_files(monkeypatch):
+    _no_cloud_voice(monkeypatch)
+    monkeypatch.setattr(mouth_module, "kokoro_available", lambda: False)
+    monkeypatch.setattr(mouth_module.shutil, "which", lambda name: "/usr/bin/espeak-ng")
+    assert tts_engine_name(default_tts) == "espeak-ng"
+
+
+def test_engine_precedence_elevenlabs_wins_over_kokoro(monkeypatch):
+    import app.config as config_module
+
+    monkeypatch.setattr(config_module.Config, "ELEVENLABS_API_KEY", "sk-test")
+    monkeypatch.setattr(mouth_module, "kokoro_available", lambda: True)
+    assert tts_engine_name(default_tts) == "elevenlabs"
+
+
+def test_voices_view_lists_kokoro_voices_when_kokoro_is_the_engine(monkeypatch):
+    _no_cloud_voice(monkeypatch)
+    monkeypatch.setattr(mouth_module, "kokoro_available", lambda: True)
+    mouth = MouthService(ScriptedController(), pin=10)
+    view = mouth.voices_view()
+    assert view["engine"] == "kokoro"
+    assert {v["id"] for v in view["voices"]} == {v["id"] for v in KOKORO_VOICES}
+    assert view["variants"] == [""]
+
+
+def test_set_voice_rejects_an_espeak_voice_id_while_kokoro_is_active(monkeypatch):
+    _no_cloud_voice(monkeypatch)
+    monkeypatch.setattr(mouth_module, "kokoro_available", lambda: True)
+    mouth = MouthService(ScriptedController(), pin=10)
+    with pytest.raises(ValueError):
+        mouth.set_voice(voice="en-gb")
+    mouth.set_voice(voice="af_bella")
+    assert mouth.voice["voice"] == "af_bella"
+
+
+@pytest.mark.skipif(not os.getenv("MOUTH_REAL_KOKORO"),
+                    reason="set MOUTH_REAL_KOKORO=1 to run the real Kokoro model")
+def test_real_kokoro_produces_audible_speech():
+    wav = kokoro_tts("Hello, I am Laika, and this is a real test of my voice.",
+                     {"voice": "af_heart", "speed": 150})
+    assert len(to_pcm8(wav)) > RATE // 2    # at least half a second of real audio

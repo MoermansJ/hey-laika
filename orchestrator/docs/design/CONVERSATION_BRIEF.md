@@ -90,6 +90,31 @@ juice have you got"). Adding one is an `InfoTool(name, description,
 answer, keywords)` in `app.py`; candidates: range ahead, WiFi signal, uptime,
 the time.
 
+### The introduction (added 2026-10-16)
+
+"Hey Laika, introduce yourself" is the second information tool, `introduce`.
+Its keyword pattern answers without the LLM, so a demo gets the same words
+every time; the LLM can still pick the tool for phrasings the pattern misses.
+No new trigger machinery was needed — the phrase already reached this service,
+because `detect_intent` matches no motion keyword for it and the ears fire
+`voice.wake` with the command in the same utterance.
+
+Unlike `conversation.prompt`, the text is **not** an adapter settings row. The
+orchestrator owns it in Postgres (`robot_introductions`, one row per robot) and
+pushes it to `POST /conversation/introduction`, exactly as it pushes the
+operating mode to `/mode` — see `dog/app/mode.py` for the same contract stated
+from the adapter's side. The adapter keeps an in-memory mirror only, so there
+is a single durable copy; `DEFAULT_INTRODUCTION` in `conversation.py` is the
+fallback until the first push, and `ResyncRobotIntroductionsUseCase` restores
+the mirror at orchestrator boot. The reason for Postgres over the simpler
+settings row is fleet-level, not technical: one central home for per-robot
+profile and text data as more of it arrives.
+
+Watch the reply cap: `cap_reply` trims an information tool's answer at
+`CONVERSATION_REPLY_CHARS` like any other, so a long introduction is cut at a
+sentence boundary. `GET /conversation/introduction` on the adapter reports
+`truncated` for exactly this reason.
+
 ### Sound contract
 
 One bark when the request is picked up (recording starts, or a same-utterance

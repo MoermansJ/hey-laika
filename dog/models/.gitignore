@@ -1,3 +1,5 @@
 # Exported ONNX weights (dog/tools/export_yolo.py); regenerate, don't commit.
 *.onnx
 *.pt
+# Kokoro TTS voice embeddings (dog/tools/download_kokoro.py); redownload, don't commit.
+*.bin

@@ -1,0 +1,6 @@
+# Mac/Linux only — PyPI publishes manylinux wheels for pybullet, so plain
+# pip works there. On Windows, use environment.yml (conda-forge) instead;
+# see README.md for why.
+pybullet>=3.25
+numpy>=2.0
+pillow>=12.0

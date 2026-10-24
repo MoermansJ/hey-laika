@@ -149,11 +149,18 @@ proxies and scheduled for removal (audit fix #11).
 | `/mouth` | GET | Mouth status: speaker pin, TTS engine, last utterance |
 | `/mouth/say` | POST | `{"text"}` → host TTS → 8 kHz PCM → firmware PWM on the Grove Speaker Plus |
 | `/mouth/wav` | POST | Play an uploaded PCM WAV on the speaker (wiring check without TTS) |
-| `/mouth/voices` | GET | The voices the TTS engine offers (espeak-ng English voices), the variants (male/female/croak/whisper) and the current choice |
+| `/mouth/voices` | GET | The voices the *active* TTS engine offers (Kokoro's English voices, or espeak-ng's if Kokoro's model files are absent), the variants (espeak-ng only: male/female/croak/whisper) and the current choice |
 | `/mouth/voice` | POST | `{"voice", "variant", "speed", "pitch", "preview"}` picks the speaking voice, persisted in `settings`; `preview` says a sample sentence |
 | `/mouth/stop` | POST | Stop and flush speaker playback |
 | `/mouth/sounds` | GET | Clip library: every WAV/MP3 in `dog/sounds` by name |
 | `/mouth/play` | POST | `{"sound": "positive_bark"}` → the clip on the speaker (decoded once, cached) |
+
+TTS picks the best available engine: Eleven Labs if `ELEVENLABS_API_KEY` is
+set, else **Kokoro-82M** (local, natural, no API key) if its model files are
+present, else espeak-ng (robotic but dependency-free), else a tone fallback.
+Kokoro needs `models/kokoro-v1.0.fp16.onnx` and `models/voices-v1.0.bin`;
+fetch them once with `tools/download_kokoro.py` (plain HTTPS, no ML deps on
+the PC) — their absence is the whole fallback mechanism, not an error.
 | `/satellite` | GET | The XIAO satellite's own status JSON (mic, camera, packets, rssi, led); 409 without `SATELLITE_HOST` |
 | `/eyes` | GET | Eyes status: frame rate, cached-frame age, detector (model, loaded, confidence), persons in view, event counters |
 | `/eyes/snap` | GET | Latest cached camera frame as `image/jpeg` (`?fresh=1` fetches a new one first) |

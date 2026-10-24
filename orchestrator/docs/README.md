@@ -34,6 +34,7 @@ Java orchestrator's structure.
 - [ARRIVAL_DAY_RUNBOOK.md](design/ARRIVAL_DAY_RUNBOOK.md) — 2026-09-03 checklist for the XIAO Sense, Speaker Plus and ultrasonic ranger: pin validation order, bench tests, power check
 - [AGENT_TOOL_COMPOSITION_DESIGN.md](design/AGENT_TOOL_COMPOSITION_DESIGN.md) — 2026-10-11 implementation design for agent tool calls: arbiter submission, outcome evaluation from sensor snapshots, learned tool-combination patterns (AGENT-01 … AGENT-19)
 - [FIRMWARE_QUEUE.md](design/FIRMWARE_QUEUE.md) — changes pooled for the next BiBoard / satellite flash, with their bench checks; flashing is a ritual, so it happens in batches
+- [LESSONS.md](design/LESSONS.md) — living list of traps hit while building and the rules that came out of them: where per-action detail lives vs the arbiter queue, MOCK_MODE before booting the real dog, the sim's route into compose, static assets in the JAR, FLIP measurement, the self-healing OpenAPI test
 
 ## `api/` — the orchestrator's HTTP contracts (generated or kept current)
 
@@ -47,6 +48,8 @@ get dated addenda, not rewrites.
 
 - [AUDIT_2026-09-02.md](reports/AUDIT_2026-09-02.md) — 2026-09-02 whole-project audit (orchestrator, adapter, firmware fork, GUI, docs) with prioritised fixes and feature speculation
 - [CALIBRATION_2026-08-31.md](reports/CALIBRATION_2026-08-31.md) — 2026-08-31 dead-reckoning calibration session on the gym-mat grid (raw runs, derived stride/turn constants)
+- [FRONTEND_INVENTORY.md](reports/FRONTEND_INVENTORY.md) — 2026-10-21 inventory of the console's tabs, the functions they duplicate, and a proposal to merge 13 tabs into 7
+- [OVERLAP_INVENTORY_2026-10-21.md](reports/OVERLAP_INVENTORY_2026-10-21.md) — 2026-10-21 post-merge review of `feat/introduce-yourself` plus an inventory of functionality implemented more than once, with a consolidation order
 - [PLANNER_HANDOFF_CALIBRATION.md](reports/PLANNER_HANDOFF_CALIBRATION.md) — self-contained handoff from the calibration session for planning waypoint mapping
 - [SERVO_POC_STATUS_REPORT.md](reports/SERVO_POC_STATUS_REPORT.md) — 2026-08-30 full-stack assessment (see its addendum)
 - [SERVO_POC_VALIDATION_PLAN_REVIEW.md](reports/SERVO_POC_VALIDATION_PLAN_REVIEW.md) / [SERVO_POC_VALIDATION_SUITE_REVIEW_2.md](reports/SERVO_POC_VALIDATION_SUITE_REVIEW_2.md) — validation-plan reviews

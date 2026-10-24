@@ -5,6 +5,7 @@ import com.bittle.orchestrator.application.BehaviorLoopRunningException;
 import com.bittle.orchestrator.application.port.out.AdapterErrorException;
 import com.bittle.orchestrator.application.port.out.AdapterUnavailableException;
 import com.bittle.orchestrator.application.port.out.OrchestratorMetricsPort;
+import com.bittle.orchestrator.domain.behavior.ActionNotFoundException;
 import com.bittle.orchestrator.domain.fleet.RobotNotFoundException;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -29,6 +30,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RobotNotFoundException.class)
     public ResponseEntity<Map<String, String>> robotNotFound(RobotNotFoundException e) {
         return error(HttpStatus.NOT_FOUND, "robot_not_found", e.getMessage());
+    }
+
+    @ExceptionHandler(ActionNotFoundException.class)
+    public ResponseEntity<Map<String, String>> actionNotFound(ActionNotFoundException e) {
+        return error(HttpStatus.NOT_FOUND, "action_not_found", e.getMessage());
     }
 
     @ExceptionHandler(BehaviorLoopRunningException.class)

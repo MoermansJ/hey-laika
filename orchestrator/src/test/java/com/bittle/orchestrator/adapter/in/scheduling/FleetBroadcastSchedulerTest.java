@@ -5,8 +5,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.bittle.orchestrator.application.usecase.BroadcastActionFeedUseCase;
 import com.bittle.orchestrator.application.usecase.BroadcastActivityUseCase;
 import com.bittle.orchestrator.application.usecase.BroadcastFleetStatusUseCase;
+import com.bittle.orchestrator.application.usecase.BroadcastFruitflyUseCase;
 import com.bittle.orchestrator.application.usecase.BroadcastPersonalityAndDisplayUseCase;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
@@ -18,16 +20,22 @@ class FleetBroadcastSchedulerTest {
     private final BroadcastPersonalityAndDisplayUseCase broadcastPersonalityAndDisplay =
             mock(BroadcastPersonalityAndDisplayUseCase.class);
     private final BroadcastActivityUseCase broadcastActivity = mock(BroadcastActivityUseCase.class);
+    private final BroadcastFruitflyUseCase broadcastFruitfly = mock(BroadcastFruitflyUseCase.class);
+    private final BroadcastActionFeedUseCase broadcastActionFeed = mock(BroadcastActionFeedUseCase.class);
     private final FleetBroadcastScheduler scheduler = new FleetBroadcastScheduler(
-            broadcastStatus, broadcastPersonalityAndDisplay, broadcastActivity);
+            broadcastStatus, broadcastPersonalityAndDisplay, broadcastActivity, broadcastFruitfly,
+            broadcastActionFeed);
 
     @Test
     void givenNoConnectedClients_whenAnySweepFires_thenNoUseCaseRuns() {
         scheduler.broadcastStatus();
         scheduler.broadcastPersonalityAndDisplay();
         scheduler.broadcastActivity();
+        scheduler.broadcastFruitfly();
+        scheduler.broadcastActionFeed();
 
-        verifyNoInteractions(broadcastStatus, broadcastPersonalityAndDisplay, broadcastActivity);
+        verifyNoInteractions(broadcastStatus, broadcastPersonalityAndDisplay, broadcastActivity,
+                broadcastFruitfly, broadcastActionFeed);
     }
 
     @Test
@@ -37,10 +45,14 @@ class FleetBroadcastSchedulerTest {
         scheduler.broadcastStatus();
         scheduler.broadcastPersonalityAndDisplay();
         scheduler.broadcastActivity();
+        scheduler.broadcastFruitfly();
+        scheduler.broadcastActionFeed();
 
+        verify(broadcastActionFeed).execute();
         verify(broadcastStatus).execute();
         verify(broadcastPersonalityAndDisplay).execute();
         verify(broadcastActivity).execute();
+        verify(broadcastFruitfly).execute();
     }
 
     @Test

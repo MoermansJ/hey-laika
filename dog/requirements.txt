@@ -14,3 +14,9 @@ faster-whisper==1.2.1
 # Eyes: JPEG decode + letterbox for the YOLO ONNX detector (onnxruntime and
 # numpy already arrive with faster-whisper).
 Pillow==12.3.0
+# Mouth: Kokoro-82M (Apache-2.0) local TTS, the natural-voice middle ground
+# between espeak-ng and Eleven Labs (CONVERSATION_BRIEF.md). Reuses the
+# onnxruntime that faster-whisper/YOLO already pulled in; model files are a
+# separate manual download (tools/download_kokoro.py), so its absence is how
+# default_tts() falls back to espeak-ng rather than failing.
+kokoro-onnx==0.6.1

@@ -486,6 +486,42 @@ on disk). Checked directly, not assumed from the brief's own numbers:
 - `dog/fruitfly/data/` (the downloaded feathers + cached matrix, ~1.1 GB) is
   now gitignored — wasn't before, and wasn't caught until this pass.
 
+## 7c. F2 bridge, done (2026-10-14)
+
+The arbiter bridge from §6.3, built:
+
+- `dog/fruitfly/sim.py`'s per-tick leaky-rate update + decode was factored
+  out into `sim.tick()` (behavior unchanged, `test_sim.py` still green) so
+  a second entrypoint could reuse the exact calibrated model instead of a
+  copy that could drift from it.
+- `dog/fruitfly/server.py` (new): runs that same tick loop with no fixed
+  end time and serves the current decoded `{state, signals, tick, t}` over
+  plain HTTP on loopback (`GET /command`, stdlib `http.server`, no new
+  dependency) — the "talks to the dog adapter over plain HTTP on the same
+  host" transport §6.1 called for. Still its own process, still never
+  touches the arbiter directly.
+- `dog/app/fruitfly_drive.py` (new): `FruitflyDriveService`, structurally
+  `explorer.py`'s start/stop shape wrapping one `arbiter.submit_generator`
+  call at `agent` priority. The generator polls `server.py`, maps
+  FORWARD/LEFT/RIGHT to `kwkF`/`kwkL`/`kwkR` (the adapter's actual
+  directional gaits, from `gait_learner.py`) and STOP to `kbalance`, yields
+  one short burst, repeats. An unreachable sim holds `kbalance` rather than
+  crashing the behavior.
+- **BACKWARD is dropped to STOP at this bridge**, per the opening §6.2
+  left itself: no backward-walk skill exists anywhere in this adapter's
+  command set (checked directly against
+  `action_executor.py`/`gait_learner.py`), so sending one to real hardware
+  would be a guess, not a verified skill.
+- `mode.py`'s `fruitfly` branch now starts/stops the drive alongside the
+  arbiter handoff; the idle ladder stays silenced for the same reason as
+  before (§6.4), now because the drive itself owns her at `agent` priority,
+  not because nothing does.
+- Not built yet, deliberately out of scope for this pass: the Fruitfly GUI
+  card (§3.3/§6.5 — sim status, last decoded commands, the Exit button) and
+  closing the sensory-drive loop with the ranger/camera (open question 4).
+  `fruitfly_drive.py`'s `status()` already exposes the last decoded
+  state/signals, so the GUI card is additive, not a redesign, once wanted.
+
 ## 8. Open questions
 
 1. Session cap defaults for Roaming (distance/time/battery floor) — pick

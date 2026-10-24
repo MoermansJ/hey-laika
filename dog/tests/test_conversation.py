@@ -6,8 +6,10 @@ import time
 
 import pytest
 
-from app.conversation import (ANSWER_TOOL, SAY_NO_LLM, SAY_NOT_HEARD, ConversationService,
-                              InfoTool, battery_sentence, cap_reply, parse_router_reply)
+from app.conversation import (ANSWER_TOOL, DEFAULT_INTRODUCTION, DEFAULT_REPLY_CHARS,
+                              MAX_INTRODUCTION_CHARS, SAY_NO_LLM, SAY_NOT_HEARD,
+                              ConversationService, InfoTool, battery_sentence, cap_reply,
+                              parse_router_reply)
 from app.models import init_db
 
 
@@ -374,3 +376,76 @@ def test_rejected_agent_tool_says_so():
 def test_no_agent_tools_when_the_orchestrator_offers_none():
     svc, _ = _agent_service(FakeLlm(), FakeAgent(tools=[]))
     assert all(t["kind"] != "agent" for t in svc._tools())
+
+
+# ---- "Hey Laika, introduce yourself" ----------------------------------------
+
+def _introduce_service(llm=None):
+    """The tool reads the service's own mirror, so it is wired lazily here
+    exactly as app.py wires it."""
+    holder = {}
+    tool = InfoTool("introduce", "introduce yourself: say who you are",
+                    lambda: holder["svc"].introduction,
+                    keywords=r"introduce (your ?self|her ?self)|tell (me|us) about your ?self"
+                             r"|\bwho are you\b|\bwhat are you\b")
+    svc, binder = _service(llm=llm or FakeLlm(), info_tools=[tool])
+    holder["svc"] = svc
+    return svc, binder
+
+
+def test_introduce_yourself_speaks_the_default_text_without_the_llm():
+    llm = FakeLlm()
+    svc, binder = _introduce_service(llm)
+    svc.start("introduce yourself", source="voice")
+    _finish(svc)
+    assert llm.calls == []                       # the keyword match skips the router
+    assert svc.mouth.said == [DEFAULT_INTRODUCTION]
+    assert svc.mouth.played == ["positive_bark"] * 3      # the sound contract holds
+    turn = svc.turns(1)[0]
+    assert turn["tool"] == "introduce" and turn["llmS"] == 0.0
+    assert svc.stats["infoAnswers"] == 1
+    assert not any(e == "voice.intent" for e, _ in binder.events)
+
+
+def test_the_orchestrators_push_replaces_what_she_says():
+    svc, _ = _introduce_service()
+    view = svc.set_introduction("  I am Mocha,\n a mock dog.  ")
+    assert view["introduction"] == "I am Mocha, a mock dog."     # whitespace collapsed
+    assert view["source"] == "orchestrator" and view["truncated"] is False
+    svc.start("who are you", source="voice")
+    _finish(svc)
+    assert svc.mouth.said == ["I am Mocha, a mock dog."]
+
+
+def test_introduction_falls_back_to_the_constant_until_a_push_lands():
+    svc, _ = _introduce_service()
+    view = svc.introduction_view()
+    assert view["introduction"] == DEFAULT_INTRODUCTION and view["source"] == "default"
+    # The approved text has to survive the reply cap, or the demo is cut short.
+    assert view["truncated"] is False and view["chars"] <= DEFAULT_REPLY_CHARS
+
+
+def test_introduction_rejects_empty_and_oversized_text():
+    svc, _ = _introduce_service()
+    for bad in (None, "", "   ", 42):
+        with pytest.raises(ValueError):
+            svc.set_introduction(bad)
+    with pytest.raises(ValueError):
+        svc.set_introduction("x" * (MAX_INTRODUCTION_CHARS + 1))
+    assert svc.introduction == DEFAULT_INTRODUCTION          # nothing was applied
+
+
+def test_introduction_view_flags_text_the_reply_cap_would_cut():
+    svc, _ = _introduce_service()
+    svc.set_introduction("One. " + "Long sentence that keeps going. " * 20)
+    view = svc.introduction_view()
+    assert view["truncated"] is True and view["spokenChars"] < view["chars"]
+
+
+def test_llm_may_pick_the_introduce_tool_for_a_phrasing_the_pattern_misses():
+    llm = FakeLlm('{"tool": "introduce", "say": "Let me think."}')
+    svc, _ = _introduce_service(llm)
+    svc.start("go on then, say a bit about yourself for the guests", source="text")
+    _finish(svc)
+    assert len(llm.calls) == 1
+    assert svc.mouth.said == [DEFAULT_INTRODUCTION]          # the tool's text, not the say

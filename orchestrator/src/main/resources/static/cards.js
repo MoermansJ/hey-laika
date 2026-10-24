@@ -7,6 +7,9 @@
  *  hlSpeakerCard   the Grove Speaker Plus: text-to-speech and the clip library
  *  hlArbiterCard   the behavior arbiter: what runs now, stop, recent runs
  *                  (option why: the event -> binding -> behavior cause chain)
+ *  hlQueueStackCard  the per-action feed as a moving column: queued submissions
+ *                  on top, the execution line, then finished actions fading
+ *                  below. Streams /topic/robot/{id}/actions over STOMP
  *  hlPoseCard      the dead-reckoned pose and the WiFi sniffer's state
  *  hlSensesStrip   one row of live readings: battery, range, signal, mic, satellite
  *  hlConversationCard  "Hey Laika" turns: live state, the last turn, typed input,
@@ -152,8 +155,12 @@ function hlSpeakerCard(host, base, { title = "Speaker", say = true, intervalMs =
       q(".sc-variant").value = v.current.variant || "";
       q(".sc-speed").value = v.current.speed;
       q(".sc-pitch").value = v.current.pitch;
-      q(".sc-engine").textContent = v.engine === "espeak-ng" ? "" : `engine: ${v.engine} (voice options apply to espeak-ng)`;
-      host.querySelectorAll(".sc-voice select, .sc-voice input, .sc-try").forEach((el) => { el.disabled = v.engine !== "espeak-ng"; });
+      // Kokoro and espeak-ng both pick a voice and a speed; variant and pitch
+      // are espeak-only knobs Kokoro's TTS call ignores.
+      const hasVoices = (v.voices || []).length > 0;
+      q(".sc-engine").textContent = hasVoices ? "" : `engine: ${v.engine} (no voice options)`;
+      q(".sc-voice-id").disabled = q(".sc-speed").disabled = q(".sc-try").disabled = !hasVoices;
+      q(".sc-variant").disabled = q(".sc-pitch").disabled = v.engine !== "espeak-ng";
       voicesLoaded = true;
     } catch (err) {
       q(".sc-engine").textContent = `voices unavailable: ${err.message}`;
@@ -226,6 +233,18 @@ function hlSpeakerCard(host, base, { title = "Speaker", say = true, intervalMs =
 
 // ------------------------------------------------------------------- arbiter
 
+// Which personality mode generated a given cause.type, for causes that
+// don't already get a bespoke rendering below. Unlisted types just show
+// their raw cause.type, same as before this map existed.
+const CAUSE_TYPE_LABEL = {
+  "fruitfly": "Fruitfly",
+  "nav.target": "Roaming",
+  "nav.sweep": "Roaming",
+  "nav.override": "Roaming",
+  "mode": "Mode switch",
+  "voice": "Voice",
+};
+
 function hlCauseText(run) {
   const c = run.cause;
   if (!c) return `<span class="cause">${esc(run.source)}</span>`;
@@ -237,7 +256,8 @@ function hlCauseText(run) {
   if (c.type === "agent") {
     return `<span class="cause">agent decision${c.decisionId ? " " + esc(c.decisionId) : ""}</span>`;
   }
-  return `<span class="cause">${esc(c.type)}${c.via ? " via " + esc(c.via) : ""}</span>`;
+  const label = CAUSE_TYPE_LABEL[c.type] || c.type;
+  return `<span class="cause">${esc(label)}${c.via ? " via " + esc(c.via) : ""}</span>`;
 }
 
 function hlArbiterCard(host, base, { title = "Current behavior", runs = 6, why = false, intervalMs = 5000 } = {}) {
@@ -245,9 +265,24 @@ function hlArbiterCard(host, base, { title = "Current behavior", runs = 6, why =
       `<h2>${esc(title)} <span class="chip ac-chip">…</span>` +
       `<button class="ac-stop" style="margin-left:auto" title="Stop the running behavior">Stop</button></h2>` +
       `<div class="ac-current muted">—</div>` +
+      `<div class="ac-queue" style="margin-top:0.5rem"></div>` +
       `<div class="ac-runs" style="margin-top:0.5rem"></div>`;
   const q = (sel) => host.querySelector(sel);
   let inFlight = false;
+
+  // Up next: items the arbiter has already accepted but hasn't run yet
+  // (bounded, QUEUE_MAX in arbiter.py — currently 10), already sorted by
+  // (priority, seq) so array order IS execution order.
+  function renderQueue(status) {
+    const el = q(".ac-queue");
+    const list = status.queued || [];
+    if (!list.length) { el.innerHTML = `<span class="empty">nothing queued</span>`; return; }
+    el.innerHTML = `<div class="hint" style="margin-bottom:0.2rem">Up next</div>` +
+        list.map((item, i) =>
+          `<div class="why-line"><span class="pill">#${i + 1}</span> ${hlCauseText(item)} ` +
+          `<span class="arrow">→</span> <b>${esc(item.behavior)}</b> ` +
+          `<span class="muted">P${item.priority}</span></div>`).join("");
+  }
 
   function renderRuns(status) {
     const list = (status.recentRuns || []).slice(0, runs);
@@ -285,6 +320,7 @@ function hlArbiterCard(host, base, { title = "Current behavior", runs = 6, why =
             ` · <span class="muted">${esc(c.source)}</span> · P${c.priority}${queued}`
           : `idle${queued}`;
       q(".ac-stop").disabled = !c;
+      renderQueue(status);
       renderRuns(status);
     } catch (err) {
       chip.textContent = "adapter offline"; chip.className = "chip ac-chip warn"; chip.title = err.message;
@@ -298,6 +334,189 @@ function hlArbiterCard(host, base, { title = "Current behavior", runs = 6, why =
   };
   const poller = hlPoll(refresh, intervalMs);
   return { refresh, stop: poller.stop };
+}
+
+// ------------------------------------------------------------- queue stack
+
+// A vertical stack of cards: queued items (furthest-from-execution at the
+// top, next-to-run just above the line), an "execution line" for whatever
+// the arbiter is running right now, and the most recently finished run
+// trailing below it at reduced opacity. Every card is keyed by runId —
+// the SAME id an item carries from submission through to the run log
+// (arbiter.py assigns it once, at submit time, in `_enqueue`) — so a
+// card's DOM node survives queued -> executing -> done and CSS transitions
+// animate the move instead of a hard re-render snap.
+function hlQueueStackCard(host, base, { title = "Action queue", intervalMs = 2000,
+                                        maxVisible = 12, robotId = null } = {}) {
+  host.innerHTML = `<h2>${esc(title)} <span class="chip qs-chip">…</span></h2><div class="qs-stack"></div>`;
+  const q = (sel) => host.querySelector(sel);
+  const id = robotId || String(base).split("/").filter(Boolean).pop();
+
+  let actions = [];        // newest first, from the per-action feed
+  let queued = [];         // submissions the arbiter has accepted but not started
+  let live = false;        // true while the STOMP stream is feeding us
+  let inFlight = false;
+  let client = null, subscription = null;
+
+  const DONE_FADE_STEP = 0.07, DONE_FADE_FLOOR = 0.4;
+
+  // "[FRUITFLY] opk0n - FORWARD": the mode that generated it, the id of that
+  // generation, and the action it mapped to.
+  function actionLine(a) {
+    return `<span class="pill">[${esc(a.tag || "?")}]</span>` +
+        `<span class="muted">${esc(a.id)}</span> <span class="arrow">-</span> ` +
+        `<b>${esc(a.action)}</b>`;
+  }
+
+  function queuedCardHtml(item, position) {
+    return `<span class="pill">#${position}</span> ${hlCauseText(item)} ` +
+        `<span class="arrow">→</span> <b>${esc(item.behavior)}</b> ` +
+        `<span class="muted">P${item.priority}</span>`;
+  }
+
+  function execCardHtml(a) {
+    return `<span class="qs-badge">EXECUTING</span> ${actionLine(a)}` +
+        (a.command && a.command !== a.action
+            ? ` <span class="muted">${esc(a.command)}</span>` : "");
+  }
+
+  function doneCardHtml(a) {
+    return `${actionLine(a)} <span class="status-${esc(a.status)}">${esc(a.status)}</span>`;
+  }
+
+  function render() {
+    const stackEl = q(".qs-stack");
+    const visible = actions.slice(0, maxVisible);
+    // The feed's newest entry is the step being dispatched right now; it sits
+    // on the execution line and everything already finished stacks below it,
+    // fading as it moves down and out.
+    const running = visible.length && visible[0].status === "executing" ? visible[0] : null;
+    const done = running ? visible.slice(1) : visible;
+
+    // Pending submissions ride above the line, furthest-out on top.
+    const entries = queued.slice(0, maxVisible).map((item, i) => ({
+      key: item.runId || `q-${i}`, cls: "qs-queued", html: queuedCardHtml(item, i + 1),
+    })).reverse();
+
+    entries.push({
+      key: running ? running.id : "qs-idle",
+      cls: "qs-execline " + (running ? "qs-active" : "qs-idle"),
+      html: running ? execCardHtml(running)
+          : `<span class="empty">idle — nothing executing</span>`,
+    });
+
+    done.forEach((a, i) => {
+      entries.push({
+        key: a.id, cls: "qs-done", html: doneCardHtml(a),
+        opacity: Math.max(DONE_FADE_FLOOR, 0.8 - i * DONE_FADE_STEP),
+      });
+    });
+
+    // Keyed reuse: an action keeps its feed id for its whole life, so the same
+    // DOM node carries it from the execution line down through the trail and
+    // the FLIP below animates that move instead of redrawing the column.
+    const existing = new Map();
+    stackEl.querySelectorAll("[data-key]").forEach((el) => existing.set(el.dataset.key, el));
+    // Measure with offsetTop, NOT getBoundingClientRect: entries arrive about
+    // once a second and the slide below runs for 0.4s, so a rect read can
+    // land mid-animation and return the TRANSFORMED position, which then
+    // compounds into drifting, floating cards. offsetTop is the layout
+    // position and ignores the transform entirely.
+    const firstTops = new Map();
+    existing.forEach((el, key) => firstTops.set(key, el.offsetTop));
+
+    const frag = document.createDocumentFragment();
+    entries.forEach((e) => {
+      let el = existing.get(String(e.key));
+      const isNew = !el;
+      if (!el) { el = document.createElement("div"); el.dataset.key = String(e.key); }
+      el.className = "qs-card " + e.cls + (isNew ? " qs-enter" : "");
+      el.innerHTML = e.html;
+      el.style.opacity = e.opacity != null ? String(e.opacity) : "";
+      frag.appendChild(el);
+    });
+    stackEl.innerHTML = "";
+    stackEl.appendChild(frag);
+
+    requestAnimationFrame(() => {
+      existing.forEach((el, key) => {
+        if (!el.isConnected) return;
+        const dy = firstTops.get(key) - el.offsetTop;
+        if (Math.abs(dy) < 1) return;
+        el.style.transition = "none";
+        el.style.transform = `translateY(${dy}px)`;
+        requestAnimationFrame(() => { el.style.transition = ""; el.style.transform = ""; });
+      });
+    });
+
+    const chip = q(".qs-chip");
+    chip.textContent = running ? (live ? "live" : "polling") : (live ? "idle · live" : "idle");
+    chip.className = "chip qs-chip " + (running ? "on" : "");
+  }
+
+  // ---- transports: STOMP for the actions, a slow poll for the rest -------
+
+  async function refresh({ actionsToo = true } = {}) {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const status = await hlApi(base, "/arbiter/status");
+      const nextQueued = status.queued || [];
+      const queuedChanged = JSON.stringify(nextQueued.map((item) => item.runId))
+          !== JSON.stringify(queued.map((item) => item.runId));
+      queued = nextQueued;
+      // While the socket is feeding us, actions arrive push-side; only pull
+      // them when it is down (or on the first load, to fill the stack).
+      let actionsChanged = false;
+      if (actionsToo || !live) {
+        const feed = await hlApi(base, `/actions/feed?limit=${maxVisible}`);
+        actions = feed.actions || [];
+        actionsChanged = true;
+      }
+      // Don't re-render (and re-animate) just because the poll came round:
+      // under STOMP the stream already drew the newest state.
+      if (queuedChanged || actionsChanged) render();
+    } catch (err) {
+      const chip = q(".qs-chip");
+      chip.textContent = "adapter offline";
+      chip.className = "chip qs-chip warn";
+      chip.title = err.message;
+    } finally { inFlight = false; }
+  }
+
+  function connectStomp() {
+    if (typeof StompJs === "undefined" || !id) return;   // poll-only fallback
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    client = new StompJs.Client({
+      brokerURL: `${proto}://${location.host}/ws`,
+      reconnectDelay: 1000,
+      maxReconnectDelay: 30000,
+    });
+    client.onConnect = () => {
+      live = true;
+      if (subscription) subscription.unsubscribe();
+      subscription = client.subscribe(`/topic/robot/${id}/actions`, (message) => {
+        try {
+          actions = (JSON.parse(message.body) || {}).actions || [];
+          render();
+        } catch { /* a malformed frame shouldn't kill the stream */ }
+      });
+    };
+    client.onWebSocketClose = () => { live = false; subscription = null; };
+    client.activate();
+  }
+
+  connectStomp();
+  const poller = hlPoll(refresh, intervalMs);
+  return {
+    refresh,
+    stop: () => {
+      poller.stop();
+      if (subscription) { subscription.unsubscribe(); subscription = null; }
+      if (client) { client.deactivate(); client = null; }
+      live = false;
+    },
+  };
 }
 
 // ---------------------------------------------------------------------- pose
@@ -387,7 +606,11 @@ function hlConversationCard(host, base, { title = "Conversation", full = false, 
               `<textarea class="cc-prompt" spellcheck="false" style="min-height:4.5rem"></textarea>` +
               `<div class="row" style="margin-top:0.3rem"><label class="small">reply cap <input type="number" class="cc-cap" min="40" max="2000" step="20"> chars</label>` +
               `<button class="cc-save">Save</button><span class="hint cc-saved" style="margin:0"></span></div>` +
-              `<div class="hint cc-tools"></div></details>` : "") +
+              `<div class="hint cc-tools"></div>` +
+              `<label class="hint" style="display:block;margin:0.6rem 0 0.2rem">Introduction — what she says to “Hey Laika, introduce yourself”. The orchestrator stores it and pushes it to her.</label>` +
+              `<textarea class="cc-intro" spellcheck="false" style="min-height:4.5rem"></textarea>` +
+              `<div class="row" style="margin-top:0.3rem"><button class="cc-intro-save">Save introduction</button>` +
+              `<span class="hint cc-intro-saved" style="margin:0"></span></div></details>` : "") +
       `<div class="hint">“Hey Laika” alone: she sits, the LED pulses green while she listens, purple while the LLM thinks, teal while she speaks.` +
       ` The LLM picks one tool from the bindings on <code>voice.intent</code> or answers in one or two sentences.</div>`;
   const q = (sel) => host.querySelector(sel);
@@ -397,6 +620,20 @@ function hlConversationCard(host, base, { title = "Conversation", full = false, 
   async function post(path, body) {
     try { await hlJsonPost(base, path, body); } catch (err) { hlToast(err.message, true); }
     refresh();
+  }
+
+  // The introduction lives on the orchestrator (Postgres), not in the adapter's
+  // /conversation status, so it is fetched once rather than on every poll.
+  async function loadIntroduction() {
+    try {
+      const intro = await hlApi(base, "/conversation/introduction");
+      q(".cc-intro").value = intro.text || "";
+      q(".cc-intro-saved").textContent = intro.text
+          ? `stored ${intro.updatedBy ? `by ${intro.updatedBy}` : ""}`.trim()
+          : "nothing stored — she is speaking the adapter's built-in text";
+    } catch (err) {
+      q(".cc-intro-saved").textContent = `could not load: ${err.message}`;
+    }
   }
 
   function renderTurns(turns) {
@@ -463,6 +700,20 @@ function hlConversationCard(host, base, { title = "Conversation", full = false, 
       } catch (err) { q(".cc-saved").textContent = `failed: ${err.message}`; }
       refresh();
     };
+    q(".cc-intro-save").onclick = async () => {
+      try {
+        const saved = await hlJsonPost(base, "/conversation/introduction",
+            { introduction: q(".cc-intro").value });
+        // cap_reply trims an info tool's answer like any reply, so a long
+        // introduction is cut at a sentence boundary before it is spoken.
+        const cap = Number(q(".cc-cap").value) || 0;
+        const over = cap && saved.text.length > cap
+            ? ` — over the ${cap}-char reply cap, she will stop early` : "";
+        q(".cc-intro-saved").textContent =
+            `saved and pushed ${new Date().toLocaleTimeString()} · ${saved.text.length} chars${over}`;
+      } catch (err) { q(".cc-intro-saved").textContent = `failed: ${err.message}`; }
+    };
+    loadIntroduction();
   }
   const poller = hlPoll(refresh, intervalMs);
   return { refresh, stop: poller.stop };

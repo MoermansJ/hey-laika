@@ -62,6 +62,15 @@ class Config:
     OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "60"))
     ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
     ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+    # Kokoro-82M (Apache-2.0, local, no API key): the natural-sounding middle
+    # ground between espeak-ng and Eleven Labs flagged in CONVERSATION_BRIEF.md
+    # but never wired up. `tools/download_kokoro.py` fetches the two files once
+    # (dog/models/, gitignored, mirrors EYES_MODEL's yolov8n.onnx); their
+    # absence is how default_tts() falls back to espeak-ng.
+    KOKORO_MODEL_PATH = os.getenv("KOKORO_MODEL_PATH",
+                                  str(PROJECT_ROOT / "models" / "kokoro-v1.0.fp16.onnx"))
+    KOKORO_VOICES_PATH = os.getenv("KOKORO_VOICES_PATH",
+                                   str(PROJECT_ROOT / "models" / "voices-v1.0.bin"))
 
     # Database
     DATABASE_TYPE = os.getenv("DATABASE_TYPE", "sqlite")
@@ -144,6 +153,12 @@ class Config:
     ROAMING_SESSION_CAP_S = float(os.getenv("ROAMING_SESSION_CAP_S", "1200"))
     ROAMING_BATTERY_FLOOR = float(os.getenv("ROAMING_BATTERY_FLOOR", "20"))
     ROAMING_MIN_SCORE = float(os.getenv("ROAMING_MIN_SCORE", "0.15"))
+
+    # Fruitfly drive (PERSONALITY_MODES_BRIEF.md §6.3, F2): where the
+    # connectome sim (dog/fruitfly/server.py, a separate process) serves its
+    # currently decoded command, and how long each gait burst holds.
+    FRUITFLY_SIM_URL = os.getenv("FRUITFLY_SIM_URL", "http://127.0.0.1:8765").rstrip("/")
+    FRUITFLY_BURST_S = float(os.getenv("FRUITFLY_BURST_S", "1.0"))
 
     @classmethod
     def sqlalchemy_url(cls) -> str:

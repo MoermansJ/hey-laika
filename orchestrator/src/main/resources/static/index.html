@@ -63,13 +63,16 @@
            one list decides the order, the labels and which page each tab embeds. -->
       <div class="tab-bar" id="tab-bar" role="tablist" aria-label="Robot sections"></div>
 
-      <div id="robot-tab-activity" class="robot-tab">
+      <div id="robot-tab-actions" class="robot-tab">
         <div class="panel panel-wide" id="arbiter-card"></div>
+        <!-- Moved off the Personality tab: the live queue belongs with the
+             actions log, not with the personality dimensions. -->
+        <div class="panel panel-wide" id="queue-card"></div>
         <div class="panel panel-wide" id="power-card"></div>
         <div class="panel panel-wide">
-          <h3>Activity <span id="activity-age" class="muted" style="float:right;font-size:0.8rem;font-weight:400"
+          <h3>Actions <span id="actions-age" class="muted" style="float:right;font-size:0.8rem;font-weight:400"
                 title="Time since the newest entry, ticking live"></span></h3>
-          <ul id="activity" class="activity-feed"></ul>
+          <ul id="actions" class="activity-feed"></ul>
         </div>
       </div>
 

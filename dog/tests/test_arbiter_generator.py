@@ -123,3 +123,18 @@ def test_duplicate_generator_names_are_rejected_like_behaviors():
     assert arbiter.submit_generator("navigate", factory)["status"] == "executing"
     assert arbiter.submit_generator("navigate", factory)["status"] == "rejected"
     assert wait_idle(arbiter)
+
+
+def test_queue_accepts_ten_lower_priority_submissions_then_rejects_the_eleventh():
+    _, arbiter = build(sleep=time.sleep)
+    arbiter.submit_generator("current", lambda: iter([{"command": "kup", "settleS": 1.0}]),
+                             priority=3)
+    time.sleep(0.05)   # let it become the running behavior
+    queued_factory = lambda: iter([{"command": "kup", "settleS": 0.01}])
+
+    results = [arbiter.submit_generator(f"queued-{i}", queued_factory, priority=4)
+               for i in range(11)]
+
+    assert [r["status"] for r in results[:10]] == ["queued"] * 10
+    assert results[10] == {"status": "rejected", "reason": "queue full"}
+    assert wait_idle(arbiter)

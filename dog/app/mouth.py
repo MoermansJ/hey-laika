@@ -76,15 +76,38 @@ ESPEAK_VARIANTS = ["", "m1", "m2", "m3", "m4", "m5", "m6", "m7",
                    "f1", "f2", "f3", "f4", "f5", "croak", "whisper"]
 PREVIEW_TEXT = "Hi, I am Laika. This is how I sound."
 
+# Kokoro-82M voices (VOICES.md), curated to the best-graded American and
+# British English ones; the full set also covers languages this project has
+# no use for. "voice" doubles as the slot the espeak-ng path uses for its own
+# id, so set_voice()'s validation against voices_view() works unchanged.
+KOKORO_VOICES = [
+    {"id": "af_heart", "name": "Heart", "gender": "female"},
+    {"id": "af_bella", "name": "Bella", "gender": "female"},
+    {"id": "af_nicole", "name": "Nicole", "gender": "female"},
+    {"id": "bf_emma", "name": "Emma (British)", "gender": "female"},
+    {"id": "af_kore", "name": "Kore", "gender": "female"},
+    {"id": "af_sarah", "name": "Sarah", "gender": "female"},
+    {"id": "am_fenrir", "name": "Fenrir", "gender": "male"},
+    {"id": "am_puck", "name": "Puck", "gender": "male"},
+    {"id": "am_michael", "name": "Michael", "gender": "male"},
+    {"id": "bm_george", "name": "George (British)", "gender": "male"},
+    {"id": "bm_fable", "name": "Fable (British)", "gender": "male"},
+]
+DEFAULT_KOKORO_VOICE = "af_heart"
+_kokoro_engine = None
+
 
 class MouthService:
     def __init__(self, controller, pin: int | None, tts=None, sleep=time.sleep,
-                 sounds: SoundLibrary | None = None):
+                 sounds: SoundLibrary | None = None, feed=None):
         self.controller = controller
         self.pin = pin
         self.tts = tts or default_tts
         self._sleep = sleep
         self._attached = False
+        # Optional ActionFeed. Speech bypasses the arbiter, so without this
+        # nothing she says ever reaches the console's Actions view.
+        self.feed = feed
         self.sounds = sounds or SoundLibrary()
         self.voice = dict(DEFAULT_VOICE)
         self._voices_cache: list[dict] | None = None
@@ -132,11 +155,18 @@ class MouthService:
     # -- voice setting (the console's dropdown) --
 
     def voices_view(self) -> dict:
-        if self._voices_cache is None:
-            self._voices_cache = espeak_voices()
-        return {"engine": tts_engine_name(self.tts), "current": dict(self.voice),
-                "voices": list(self._voices_cache), "variants": list(ESPEAK_VARIANTS),
-                "previewText": PREVIEW_TEXT}
+        engine = tts_engine_name(self.tts)
+        if engine == "kokoro":
+            # Kokoro has no espeak-style variant/pitch knob, just a voice id
+            # and the shared speed slider; querying espeak-ng here would also
+            # be pointless work when it is not the engine running.
+            voices, variants = list(KOKORO_VOICES), [""]
+        else:
+            if self._voices_cache is None:
+                self._voices_cache = espeak_voices()
+            voices, variants = list(self._voices_cache), list(ESPEAK_VARIANTS)
+        return {"engine": engine, "current": dict(self.voice),
+                "voices": voices, "variants": variants, "previewText": PREVIEW_TEXT}
 
     def set_voice(self, voice=None, variant=None, speed=None, pitch=None,
                   preview: bool = False) -> dict:
@@ -177,27 +207,39 @@ class MouthService:
         """A clip from the library (positive_bark, ...) on the speaker."""
         if not self.enabled:
             raise RuntimeError("SPEAKER_PIN is not set")
-        return self.play_wav(self.sounds.wav(name), label=f"sound:{name}")
+        return self.play_wav(self.sounds.wav(name), label=f"sound:{name}", kind="SOUND")
 
-    def play_wav(self, wav_bytes: bytes, label: str = "") -> dict:
+    def play_wav(self, wav_bytes: bytes, label: str = "", kind: str = "SPEECH") -> dict:
+        """The single funnel for everything audible — say(), play_sound() and
+        raw WAV pushes all land here, so this is where the action feed is
+        written and every audible act gets one entry."""
         if not self.enabled:
             raise RuntimeError("SPEAKER_PIN is not set")
-        pcm = to_pcm8(wav_bytes)
-        self._attach()
-        sent = 0
-        chunks = 0
-        for offset in range(0, len(pcm), CHUNK_BYTES):
-            chunk = pcm[offset:offset + CHUNK_BYTES]
-            free = self._push(chunk)
-            sent += len(chunk)
-            chunks += 1
-            if free is not None and free < CHUNK_BYTES:
-                # Ring nearly full: wait just until the next chunk fits.
-                self._sleep((CHUNK_BYTES - free) / RATE + 0.02)
-        self.controller.send_command("XWf")   # clip complete: start even if under the prebuffer
+        entry = self.feed.speech(label, kind) if self.feed is not None else None
+        try:
+            pcm = to_pcm8(wav_bytes)
+            self._attach()
+            sent = 0
+            chunks = 0
+            for offset in range(0, len(pcm), CHUNK_BYTES):
+                chunk = pcm[offset:offset + CHUNK_BYTES]
+                free = self._push(chunk)
+                sent += len(chunk)
+                chunks += 1
+                if free is not None and free < CHUNK_BYTES:
+                    # Ring nearly full: wait just until the next chunk fits.
+                    self._sleep((CHUNK_BYTES - free) / RATE + 0.02)
+            self.controller.send_command("XWf")   # clip complete: start even if under the prebuffer
+        except Exception:
+            # A half-played clip must not sit in the feed as "executing".
+            if self.feed is not None:
+                self.feed.finish(entry, "failed")
+            raise
         seconds = len(pcm) / RATE
         self.last = {"text": label, "at": time.time(), "seconds": round(seconds, 2),
                      "chunks": chunks, "error": None}
+        if self.feed is not None:
+            self.feed.finish(entry)
         return dict(self.last)
 
     def stop(self) -> bool:
@@ -259,12 +301,15 @@ def tts_engine_name(tts) -> str:
 
     if Config.ELEVENLABS_API_KEY:
         return "elevenlabs"
+    if kokoro_available():
+        return "kokoro"
     return "espeak-ng" if shutil.which("espeak-ng") else "tone"
 
 
 def default_tts(text: str, voice: dict | None = None) -> bytes:
-    """Eleven Labs when configured, else espeak-ng if installed, else a
-    tone-coded fallback so the playback path can still be validated."""
+    """Eleven Labs when configured, else Kokoro (local, natural) if its model
+    files are present, else espeak-ng if installed, else a tone-coded
+    fallback so the playback path can still be validated."""
     from app.config import Config
 
     if Config.ELEVENLABS_API_KEY:
@@ -272,10 +317,56 @@ def default_tts(text: str, voice: dict | None = None) -> bytes:
 
         mp3 = synthesize_speech(text)
         return mp3_to_wav(mp3)
+    if kokoro_available():
+        return kokoro_tts(text, voice or DEFAULT_VOICE)
     if shutil.which("espeak-ng"):
         return espeak_tts(text, voice or DEFAULT_VOICE)
-    logger.warning("No TTS engine (ELEVENLABS_API_KEY or espeak-ng); using tone fallback")
+    logger.warning("No TTS engine (ELEVENLABS_API_KEY, Kokoro or espeak-ng); using tone fallback")
     return tone_wav(len(text))
+
+
+def kokoro_available() -> bool:
+    from app.config import Config
+
+    return Path(Config.KOKORO_MODEL_PATH).is_file() and Path(Config.KOKORO_VOICES_PATH).is_file()
+
+
+def _load_kokoro():
+    global _kokoro_engine
+    if _kokoro_engine is None:
+        from kokoro_onnx import Kokoro
+        from app.config import Config
+
+        started = time.time()
+        _kokoro_engine = Kokoro(Config.KOKORO_MODEL_PATH, Config.KOKORO_VOICES_PATH)
+        logger.info("Kokoro loaded in %.1fs", time.time() - started)
+    return _kokoro_engine
+
+
+def kokoro_tts(text: str, voice: dict) -> bytes:
+    kokoro = _load_kokoro()
+    voice_id = voice.get("voice") or DEFAULT_KOKORO_VOICE
+    if voice_id not in {v["id"] for v in KOKORO_VOICES}:
+        voice_id = DEFAULT_KOKORO_VOICE
+    # The espeak-era slider is words-per-minute (80..300); Kokoro's speed is a
+    # 0.5..2.0 multiplier of natural pace, and 150 wpm is that slider's own
+    # default, so 150 -> 1.0x keeps one control meaning "normal" on both engines.
+    speed = max(0.5, min(2.0, voice.get("speed", 150) / 150.0))
+    samples, sample_rate = kokoro.create(text, voice=voice_id, speed=speed, lang="en-us")
+    return _float_pcm_to_wav(samples, sample_rate)
+
+
+def _float_pcm_to_wav(samples, sample_rate: int) -> bytes:
+    import numpy as np
+
+    pcm16 = (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(pcm16.tobytes())
+    return buf.getvalue()
 
 
 def espeak_tts(text: str, voice: dict) -> bytes:
