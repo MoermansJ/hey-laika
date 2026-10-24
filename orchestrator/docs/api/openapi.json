@@ -13,6 +13,9 @@
     "description" : "Read-only catalog of robot actions and their voice/GUI metadata",
     "name" : "Actions"
   }, {
+    "description" : "Agent tool composition: what Claude has learned works for each goal",
+    "name" : "Agent"
+  }, {
     "description" : "The orchestrator-owned brain: behavior loop and personality",
     "name" : "Behavior"
   }, {
@@ -3796,6 +3799,113 @@
         "summary" : "Ollama reachability and model availability",
         "tags" : [ "Robot" ]
       }
+    },
+    "/api/v1/agent/{robotId}/patterns" : {
+      "get" : {
+        "description" : "Active patterns for the goal, highest success rate first (ties: more attempts first). Cached for 5 seconds. 404 robot_not_found for an unknown robot, 400 bad_request for a blank goal.",
+        "operationId" : "learnedPatterns",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "goal",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/LearnedPatternDTO"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Learned tool combinations for a goal",
+        "tags" : [ "Agent" ]
+      }
+    },
+    "/api/v1/agent/{robotId}/submit-tool" : {
+      "post" : {
+        "description" : "Runs the tool through the robot's arbiter at agent priority 3. The status is executing, queued, preempting or rejected (with a message); an accepted call carries the runLogId whose outcome is evaluated and learned from. 404 robot_not_found for an unknown robot, 400 bad_request for a decisionId that is not a UUID.",
+        "operationId" : "submitTool",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ToolCallRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ToolCallResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Submit a tool call for a goal",
+        "tags" : [ "Agent" ]
+      }
+    },
+    "/api/v1/agent/{robotId}/tools" : {
+      "get" : {
+        "description" : "stationary: look_left, look_right, look_upward, tilt_head, bark, sit, stand. roaming: every tool, walking included. fruitfly and phone: none. 404 robot_not_found for an unknown robot.",
+        "operationId" : "agentTools",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/ToolDescriptor"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Tools the agent may call in the robot's current mode",
+        "tags" : [ "Agent" ]
+      }
     }
   },
   "components" : {
@@ -4178,6 +4288,37 @@
           }
         }
       },
+      "LearnedPatternDTO" : {
+        "type" : "object",
+        "properties" : {
+          "attempts" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "firstDiscovered" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "lastUsed" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "successRate" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "successes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "toolCombination" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }
+      },
       "RobotBehavior" : {
         "type" : "object",
         "properties" : {
@@ -4450,6 +4591,53 @@
           "totalActionsThisSession" : {
             "type" : "integer",
             "format" : "int64"
+          }
+        }
+      },
+      "ToolCallRequest" : {
+        "type" : "object",
+        "properties" : {
+          "decisionId" : {
+            "type" : "string"
+          },
+          "goal" : {
+            "type" : "string"
+          },
+          "toolName" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ToolCallResponse" : {
+        "type" : "object",
+        "properties" : {
+          "message" : {
+            "type" : "string"
+          },
+          "position" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "runLogId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ToolDescriptor" : {
+        "type" : "object",
+        "properties" : {
+          "category" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
           }
         }
       }
