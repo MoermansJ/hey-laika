@@ -39,21 +39,13 @@ code { background: rgba(77,255,140,0.1); padding: 0.1rem 0.3rem; border-radius: 
 .topnav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   position: sticky;
   top: 0;
   z-index: 10;
   padding: 0.85rem 1.5rem;
   background: var(--primary);
   border-bottom: 1px solid var(--border);
-}
-
-.topnav-title {
-  font-family: 'Silkscreen', ui-monospace, monospace;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--accent);
-  text-shadow: 0 0 8px rgba(77,255,140,0.4);
 }
 
 .devmode-toggle {

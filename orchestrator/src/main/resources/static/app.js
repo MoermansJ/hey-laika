@@ -481,7 +481,6 @@ function renderRobotGrid() {
   container.innerHTML = "";
   state.robots.forEach((robot) => {
     if (!state.devMode && isDevFixtureRobot(robot)) return;
-    const status = state.statuses[robot.robotId] || {};
     const card = document.createElement("div");
     card.className = "robot-card";
     card.tabIndex = 0;
@@ -489,20 +488,10 @@ function renderRobotGrid() {
     card.setAttribute("aria-label", `${robot.name}: open robot page`);
     card.innerHTML = `
       <div class="status-header">
-        <span class="dot ${status.connected ? "on" : "off"}"
-              title="${status.connected ? "connected" : "disconnected"}"></span>
         <span class="robot-name">${escapeHtml(robot.name)}</span>
         <span class="type-badge">${escapeHtml(robot.type || "?")}</span>
       </div>
-      ${MINI_ROBOT_SVG}
-      <div class="quick-stats">
-        <div class="stat">
-          <div class="label">Battery <span>${fmtBattery(status.battery)}</span></div>
-          <div class="bar-track"><div class="bar-fill battery ${batteryClass(status.battery)}"
-               style="width:${status.battery ?? 0}%"></div></div>
-        </div>
-        <div class="stat" data-spark="${escapeHtml(robot.robotId)}"></div>
-      </div>`;
+      ${MINI_ROBOT_SVG}`;
     const open = () =>
         location.hash = `#robot/${encodeURIComponent(robot.robotId)}`;
     card.onclick = open;
@@ -510,7 +499,6 @@ function renderRobotGrid() {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
     };
     container.appendChild(card);
-    renderBatterySparkline(robot.robotId, card.querySelector("[data-spark]"));
   });
 }
 
