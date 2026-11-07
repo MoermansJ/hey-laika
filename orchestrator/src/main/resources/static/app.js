@@ -59,6 +59,12 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// URL slug for a robot's page, e.g. "Mocha (mock)" -> "Mocha". Takes
+// everything before the first space or parenthesis.
+function robotUrlSlug(name) {
+  return (name || "").split(/[\s(]/)[0];
+}
+
 function fmtUptime(seconds) {
   if (seconds == null) return "—";
   const d = Math.floor(seconds / 86400);
@@ -273,10 +279,11 @@ async function refreshRobotDetail(robotId) {
 // ---------- router ----------
 
 function route() {
-  const hash = location.hash || "#dashboard";
-  const robotMatch = hash.match(/^#robot\/(.+)$/);
-  if (robotMatch) {
-    showRobotPage(decodeURIComponent(robotMatch[1]));
+  const slug = decodeURIComponent(location.pathname.replace(/^\/+/, ""));
+  const robot = slug &&
+      state.robots.find((r) => robotUrlSlug(r.name).toLowerCase() === slug.toLowerCase());
+  if (robot) {
+    showRobotPage(robot.robotId);
   } else {
     showPage("dashboard");
   }
@@ -492,8 +499,10 @@ function renderRobotGrid() {
         <span class="type-badge">${escapeHtml(robot.type || "?")}</span>
       </div>
       ${MINI_ROBOT_SVG}`;
-    const open = () =>
-        location.hash = `#robot/${encodeURIComponent(robot.robotId)}`;
+    const open = () => {
+      history.pushState(null, "", `/${encodeURIComponent(robotUrlSlug(robot.name))}`);
+      route();
+    };
     card.onclick = open;
     card.onkeydown = (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
@@ -697,7 +706,7 @@ $("#tab-bar").addEventListener("click", (e) => {
 // ---------- boot ----------
 
 async function boot() {
-  window.addEventListener("hashchange", route);
+  window.addEventListener("popstate", route);
   renderHealthWidget();
   setInterval(() => { if (!document.hidden) renderHealthWidget(); }, 10000);
 
