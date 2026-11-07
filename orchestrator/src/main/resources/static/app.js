@@ -480,6 +480,7 @@ function renderRobotGrid() {
   const container = $("#robot-grid");
   container.innerHTML = "";
   state.robots.forEach((robot) => {
+    if (!state.devMode && isDevFixtureRobot(robot)) return;
     const status = state.statuses[robot.robotId] || {};
     const card = document.createElement("div");
     card.className = "robot-card";
@@ -677,6 +678,22 @@ setInterval(() => {
 // toggle — agent-priority arbiter submissions — framework Phase 4.)
 
 $("#sidebar-open").onclick = () => $("#sidebar").classList.toggle("open");
+
+// ---------- dev mode (shows the Mocha mock-fixture card on the landing page) ----------
+
+const DEVMODE_KEY = "hl-devmode";
+state.devMode = localStorage.getItem(DEVMODE_KEY) === "1";
+const devModeCheckbox = $("#devmode-checkbox");
+devModeCheckbox.checked = state.devMode;
+devModeCheckbox.onchange = () => {
+  state.devMode = devModeCheckbox.checked;
+  localStorage.setItem(DEVMODE_KEY, state.devMode ? "1" : "0");
+  renderRobotGrid();
+};
+
+function isDevFixtureRobot(robot) {
+  return (robot.name || "").toLowerCase().startsWith("mocha");
+}
 
 // Robot page tabs. Embedded per-robot pages lazy-load on first activation
 // (frames are cleared whenever the selected robot changes or the user

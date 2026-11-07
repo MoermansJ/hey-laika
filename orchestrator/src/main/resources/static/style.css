@@ -23,8 +23,6 @@
 * { box-sizing: border-box; }
 
 body {
-  display: grid;
-  grid-template-columns: 250px 1fr;
   margin: 0;
   min-height: 100vh;
   font-family: 'Share Tech Mono', ui-monospace, Consolas, monospace;
@@ -35,6 +33,46 @@ body {
 .hidden { display: none !important; }
 .muted { color: var(--text-light); }
 code { background: rgba(77,255,140,0.1); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+/* ---------- top navbar (2026-11 GUI overhaul) ---------- */
+
+.topnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 0.85rem 1.5rem;
+  background: var(--primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.topnav-title {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(77,255,140,0.4);
+}
+
+.devmode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-light);
+  cursor: pointer;
+}
+.devmode-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+/* ---------- landing (fleet picker) ---------- */
+
+.landing {
+  display: flex;
+  justify-content: center;
+  padding-top: 30vh;
+}
 
 /* ---------- sidebar ---------- */
 
@@ -178,6 +216,11 @@ body.nav-collapsed .nav-link { justify-content: center; padding: 0.55rem 0.4rem;
 
 .detail-header { justify-content: flex-start; }
 
+.robot-empty-placeholder {
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
 .panel {
   background: var(--card);
   border: 1px solid var(--border);
@@ -218,12 +261,14 @@ body.nav-collapsed .nav-link { justify-content: center; padding: 0.55rem 0.4rem;
 .stat-card .label { font-size: 0.8rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
 
 .robot-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 1.25rem;
 }
 
 .robot-card {
+  flex: 0 0 240px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 8px;
