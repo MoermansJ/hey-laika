@@ -93,6 +93,7 @@ class MoodService:
         self._flash_timer: threading.Timer | None = None
         self._manual_until = 0.0
         self.dim = 1.0                      # battery saver scales every brightness
+        self.user_enabled = True            # GUI mute, independent of hardware config
         self._stop = threading.Event()
         self.stats = {"sets": 0, "failures": 0, "lastError": None,
                       "lastEvent": None, "lastSetAt": None}
@@ -100,6 +101,14 @@ class MoodService:
     @property
     def enabled(self) -> bool:
         return self._enabled
+
+    def set_user_enabled(self, enabled: bool) -> dict:
+        self.user_enabled = bool(enabled)
+        if not self.user_enabled:
+            self._send(0, 0, 0, "off", 0, 0)   # bypasses _apply's gate: turn it dark now
+        else:
+            self._apply(self._current())
+        return self.status()
 
     # -- lifecycle --
 
@@ -204,7 +213,7 @@ class MoodService:
             flash = dict(self._flash) if self._flash else None
             hold = dict(self._hold) if self._hold else None
         current = hold or flash or base
-        return {"enabled": self.enabled, "moods": list(MOODS),
+        return {"enabled": self.enabled, "userEnabled": self.user_enabled, "moods": list(MOODS),
                 "palette": {name: _mood_spec(name) for name in MOODS},
                 "badges": dict(BADGES),
                 "effects": list(LED_EFFECTS),
@@ -237,7 +246,7 @@ class MoodService:
         self._apply(self._current())
 
     def _apply(self, spec: dict) -> bool:
-        if not self.enabled:
+        if not self.enabled or not self.user_enabled:
             return False
         if spec["effect"] == "rainbow":
             return self._start_rainbow(spec)

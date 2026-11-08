@@ -48,22 +48,79 @@ code { background: rgba(77,255,140,0.1); padding: 0.1rem 0.3rem; border-radius: 
   border-bottom: 1px solid var(--border);
 }
 
-.devmode-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.devmode-group { position: relative; display: flex; align-items: center; gap: 0; }
+
+/* Two .sense-card buttons fused into one pill: the toggle keeps its left
+   corners and drops its right ones (and the border between them), the
+   chevron is the mirror image — one shared seam, not two separate buttons. */
+.devmode-group .devmode-button {
+  height: 2.2rem;
+  min-height: 0;
+  padding: 0 0.9rem;
   font-size: 0.85rem;
-  color: var(--text-light);
-  cursor: pointer;
+  letter-spacing: 0.04em;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
 }
-.devmode-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+.devmode-group .devmode-chevron {
+  height: 2.2rem;
+  min-height: 0;
+  padding: 0 0.6rem;
+  font-size: 1.5rem;
+  line-height: 1;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.devmode-chevron[aria-expanded="true"] { color: var(--accent); }
+
+/* Rotation lives on the glyph alone, not the button — the button is the
+   square hit-area/backer and must stay axis-aligned so its own border
+   never renders as a rotated diamond. */
+.devmode-chevron-glyph {
+  display: inline-block;
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+}
+.devmode-chevron[aria-expanded="true"] .devmode-chevron-glyph { transform: rotate(0deg); }
+
+.devmode-settings {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  z-index: 20;
+}
+
+/* Descendant selector, not a bare class: must outrank .sense-card's own
+   width/min-height/padding regardless of each rule's position in the file.
+   Padding grown to cover the space .devmode-settings no longer pads itself. */
+.devmode-settings .devmode-setting {
+  width: auto;
+  min-height: 0;
+  padding: 1.2rem 1.65rem;
+  border-radius: 0;
+  white-space: nowrap;
+}
+/* Same override reason as above: .sense-card:not(.active)'s opacity fade
+   is skipped here — the border/glow alone marks on vs. off. */
+.devmode-settings .devmode-setting:not(.active) {
+  opacity: 1;
+}
 
 /* ---------- landing (fleet picker) ---------- */
 
 .landing {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   padding-top: 30vh;
+}
+
+.landing-title {
+  margin: 0 0 1.25rem;
+  color: var(--text-light);
 }
 
 /* ---------- sidebar ---------- */
@@ -207,11 +264,6 @@ body.nav-collapsed .nav-link { justify-content: center; padding: 0.55rem 0.4rem;
 .page-header h2 { margin: 0; }
 
 .detail-header { justify-content: flex-start; }
-
-.robot-empty-placeholder {
-  padding: 3rem 1rem;
-  text-align: center;
-}
 
 .panel {
   background: var(--card);
@@ -386,6 +438,74 @@ button:disabled { opacity: 0.5; cursor: wait; }
 button.active { background: var(--success); color: var(--primary-dark); border-color: var(--success); }
 
 .button-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+/* ---------- driver cards (bell-jar icons, ported from personality.html's
+   mode-grid/mode-card — same palette, same rasterize pipeline) ---------- */
+
+#driver-card { background: none; border: none; box-shadow: none; }
+
+.driver-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 160px));
+  gap: 1rem;
+}
+.driver-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.9rem;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.driver-option:hover:not(:disabled) { border-color: var(--text-light); background: var(--card); color: var(--text); }
+.driver-option.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5), 0 0 14px rgba(77,255,140,0.4);
+  background: var(--card);
+  color: var(--text);
+}
+.driver-grid:has(.driver-option.active) .driver-option:not(.active) {
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+}
+.driver-icon { width: 72px; height: 72px; image-rendering: pixelated; }
+.driver-label { font-size: 0.85rem; letter-spacing: 0.04em; }
+
+/* ---------- senses cards (same bell-jar card shell, independently toggled) ---------- */
+
+.sense-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 160px));
+  gap: 1rem;
+}
+.sense-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.9rem;
+  min-height: 3.5rem;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.sense-card.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5), 0 0 14px rgba(77,255,140,0.4);
+}
+.sense-card:not(.active) {
+  opacity: 0.4;
+}
 
 input[type="text"] {
   font: inherit;

@@ -67,6 +67,7 @@ static uint32_t  seq = 0;
 static uint32_t  packetsSent = 0;
 static bool      cameraOk = false;
 static bool      micOk = false;
+static bool      micMuted = false;   // runtime mute: I2S/PDM keep running, only the read+send are skipped
 static uint32_t  lastStatusAt = 0;
 static uint8_t   packet[4 + SAMPLES_PER_PKT * 2];
 static httpd_handle_t server = NULL;
@@ -221,7 +222,7 @@ static bool startMic() {
 }
 
 static void pumpAudio() {
-  if (!micOk || WiFi.status() != WL_CONNECTED) return;
+  if (!micOk || micMuted || WiFi.status() != WL_CONNECTED) return;
   int16_t *samples = (int16_t *)(packet + 4);
   size_t need = SAMPLES_PER_PKT * 2;
   size_t got = 0;
@@ -305,9 +306,9 @@ static esp_err_t statusHandler(httpd_req_t *req) {
   ledJson(ledBody, sizeof(ledBody));
   char body[384];
   snprintf(body, sizeof(body),
-           "{\"device\":\"xiao-sense\",\"mic\":%s,\"camera\":%s,\"packets\":%lu,"
+           "{\"device\":\"xiao-sense\",\"mic\":%s,\"micMuted\":%s,\"camera\":%s,\"packets\":%lu,"
            "\"rssi\":%d,\"uptimeS\":%lu,\"adapter\":\"%s:%d\",\"led\":%s}",
-           micOk ? "true" : "false", cameraOk ? "true" : "false",
+           micOk ? "true" : "false", micMuted ? "true" : "false", cameraOk ? "true" : "false",
            (unsigned long)packetsSent, WiFi.RSSI(), (unsigned long)(millis() / 1000),
            ADAPTER_HOST, ADAPTER_PORT, ledBody);
   httpd_resp_set_type(req, "application/json");
@@ -349,6 +350,19 @@ static esp_err_t ledHandler(httpd_req_t *req) {
   return httpd_resp_send(req, body, len);
 }
 
+static esp_err_t micHandler(httpd_req_t *req) {
+  char query[32] = "";
+  if (httpd_req_get_url_query_len(req) > 0)
+    httpd_req_get_url_query_str(req, query, sizeof(query));
+  if (query[0]) micMuted = (queryInt(query, "on", micMuted ? 0 : 1, 0, 1) == 0);
+  char body[48];
+  int len = snprintf(body, sizeof(body), "{\"mic\":%s,\"muted\":%s}",
+                     micOk ? "true" : "false", micMuted ? "true" : "false");
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  return httpd_resp_send(req, body, len);
+}
+
 static void startHttp() {
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.server_port = 80;
@@ -362,6 +376,8 @@ static void startHttp() {
   httpd_uri_t stream  = { "/stream", HTTP_GET,  streamHandler, NULL };
   httpd_uri_t ledGet  = { "/led",    HTTP_GET,  ledHandler,    NULL };
   httpd_uri_t ledPost = { "/led",    HTTP_POST, ledHandler,    NULL };
+  httpd_uri_t micGet  = { "/mic",    HTTP_GET,  micHandler,    NULL };
+  httpd_uri_t micPost = { "/mic",    HTTP_POST, micHandler,    NULL };
   httpd_register_uri_handler(server, &status);
   httpd_register_uri_handler(server, &ledGet);
   httpd_register_uri_handler(server, &ledPost);
@@ -369,7 +385,11 @@ static void startHttp() {
     httpd_register_uri_handler(server, &snap);
     httpd_register_uri_handler(server, &stream);
   }
-  Serial.println("HTTP: / /snap /stream /led on port 80");
+  if (micOk) {
+    httpd_register_uri_handler(server, &micGet);
+    httpd_register_uri_handler(server, &micPost);
+  }
+  Serial.println("HTTP: / /snap /stream /led /mic on port 80");
 }
 
 // ---- arduino ---------------------------------------------------------------------

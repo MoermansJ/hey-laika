@@ -111,12 +111,16 @@ class MouthService:
         self.sounds = sounds or SoundLibrary()
         self.voice = dict(DEFAULT_VOICE)
         self._voices_cache: list[dict] | None = None
+        self.user_enabled = True   # GUI mute, independent of whether a pin is configured
         self.last = {"text": None, "at": None, "seconds": None, "chunks": 0,
                      "error": None}
 
     @property
     def enabled(self) -> bool:
         return bool(self.pin)
+
+    def set_user_enabled(self, enabled: bool) -> None:
+        self.user_enabled = bool(enabled)
 
     def init(self) -> None:
         """Load the saved voice (settings row); harmless without a database."""
@@ -131,7 +135,7 @@ class MouthService:
             logger.exception("Mouth: voice setting not loaded")
 
     def status(self) -> dict:
-        return {"enabled": self.enabled, "pin": self.pin,
+        return {"enabled": self.enabled, "userEnabled": self.user_enabled, "pin": self.pin,
                 "attached": self._attached, "sampleRate": RATE,
                 "ttsEngine": tts_engine_name(self.tts),
                 "voice": dict(self.voice),
@@ -215,6 +219,8 @@ class MouthService:
         written and every audible act gets one entry."""
         if not self.enabled:
             raise RuntimeError("SPEAKER_PIN is not set")
+        if not self.user_enabled:
+            raise RuntimeError("Speaker is muted")
         entry = self.feed.speech(label, kind) if self.feed is not None else None
         try:
             pcm = to_pcm8(wav_bytes)
@@ -248,8 +254,15 @@ class MouthService:
     # -- firmware protocol --
 
     def _attach(self) -> None:
-        if self._attached:
-            return
+        # Always re-sent, not cached: XWp is cheap and idempotent on the
+        # firmware (speakerAttach() just rebinds LEDC to the pin and resets
+        # the ring pointers), but the adapter has no way to know if the
+        # firmware itself lost that binding (a reset, a reflash, anything)
+        # since the WebSocket layer reconnects transparently without ever
+        # re-running one-time setup. Caching this flag meant a stale
+        # self._attached=True could leave every later XWa chunk acknowledged
+        # by the firmware into a ring nothing is actually bound to drain —
+        # clean success reported, no audio, with no hardware fault at all.
         if not self.controller.send_command(f"XWp{self.pin}"):
             raise RuntimeError("firmware refused XWp (speaker pin)")
         self._attached = True

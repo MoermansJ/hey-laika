@@ -1562,6 +1562,68 @@
         "tags" : [ "Robot" ]
       }
     },
+    "/api/robots/{robotId}/ears/disable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "earsDisable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Disable the microphone",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/ears/enable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter. Mutes the satellite's mic if it has been reflashed; adapter-side mute otherwise.",
+        "operationId" : "earsEnable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Enable the microphone",
+        "tags" : [ "Robot" ]
+      }
+    },
     "/api/robots/{robotId}/ears/record" : {
       "post" : {
         "description" : "Relayed to the same path on the adapter. Returns the transcript and whether it matched the wake phrase; never fires the voice event.",
@@ -2325,6 +2387,68 @@
         "tags" : [ "Robot" ]
       }
     },
+    "/api/robots/{robotId}/mood/led/disable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "moodLedDisable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Disable the LED",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mood/led/enable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "moodLedEnable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Enable the LED",
+        "tags" : [ "Robot" ]
+      }
+    },
     "/api/robots/{robotId}/mouth" : {
       "get" : {
         "description" : "Relayed to the same path on the adapter.",
@@ -2353,6 +2477,68 @@
           }
         },
         "summary" : "Speaker status",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth/disable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouthDisable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Disable the speaker",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/mouth/enable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "mouthEnable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Enable the speaker",
         "tags" : [ "Robot" ]
       }
     },
@@ -3357,6 +3543,68 @@
         "tags" : [ "Robot" ]
       }
     },
+    "/api/robots/{robotId}/senses/disable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "sensesDisable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Disable the WiFi sniffer",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses/enable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "sensesEnable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Enable the WiFi sniffer",
+        "tags" : [ "Robot" ]
+      }
+    },
     "/api/robots/{robotId}/senses/pose/reset" : {
       "post" : {
         "description" : "Relayed to the same path on the adapter.",
@@ -3436,6 +3684,99 @@
           }
         },
         "summary" : "One-shot ultrasonic read",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses/range/disable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "sensesRangeDisable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Disable the distance sensor",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses/range/enable" : {
+      "post" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "sensesRangeEnable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Enable the distance sensor",
+        "tags" : [ "Robot" ]
+      }
+    },
+    "/api/robots/{robotId}/senses/range/status" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "sensesRangeStatus",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Distance sensor status, no firmware read",
         "tags" : [ "Robot" ]
       }
     },

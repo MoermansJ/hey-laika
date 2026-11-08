@@ -35,6 +35,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.config import Config
 from app.models import Base, SessionLocal, Setting, engine, iso_utc, utcnow
+from app.satellite import SatelliteError
 
 logger = logging.getLogger(__name__)
 
@@ -183,9 +184,11 @@ class EarsService:
                  sample_rate: int = 16000, udp_port: int = 5005,
                  wake_phrase: str = "hey laika", energy_floor: int = 300,
                  silence_s: float = 0.8, max_utterance_s: float = 8.0,
-                 min_utterance_s: float = 0.4, clock=time.time):
+                 min_utterance_s: float = 0.4, clock=time.time, satellite=None):
         self.binder = event_binder
         self.transcriber = transcriber
+        self.satellite = satellite   # optional: set_user_enabled() mutes the satellite's mic too
+        self.user_enabled = True
         # Optional faster model for the always-on wake path; the accurate one
         # then only runs on the request a conversation is waiting for.
         self.wake_transcriber = wake_transcriber
@@ -246,6 +249,14 @@ class EarsService:
 
     # -- input paths --
 
+    def set_user_enabled(self, enabled: bool) -> None:
+        self.user_enabled = bool(enabled)
+        if self.satellite is not None:
+            try:
+                self.satellite.set_mic(muted=not enabled)
+            except SatelliteError:
+                pass   # unreachable / not yet reflashed — feed_packet()'s own gate still applies
+
     def feed_packet(self, datagram: bytes) -> None:
         """One UDP datagram from the satellite: 4-byte sequence + PCM."""
         if len(datagram) <= PACKET_HEADER.size:
@@ -257,6 +268,11 @@ class EarsService:
         self.stats["lastSeq"] = seq
         self.stats["packets"] += 1
         self.stats["lastPacketAt"] = self._clock()
+        if not self.user_enabled:
+            with self._lock:
+                self._speaking = False
+                self._utterance = bytearray()
+            return
         if self._clock() < self._mute_until:
             # The speaker is playing centimetres from the mic: hear nothing.
             with self._lock:
@@ -555,7 +571,7 @@ class EarsService:
         now = self._clock()
         last = self.stats["lastPacketAt"]
         return {
-            "enabled": True,
+            "enabled": self.user_enabled,
             "udpPort": self.udp_port,
             "sampleRate": self.sample_rate,
             "wakePhrase": self.wake_phrase,

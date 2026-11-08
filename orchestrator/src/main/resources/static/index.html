@@ -44,15 +44,23 @@
   </nav>
 
   <nav class="topnav">
-    <label class="devmode-toggle" title="Show the Mocha dev fixture card">
-      <input type="checkbox" id="devmode-checkbox">
-      <span>Dev mode</span>
-    </label>
+    <div class="devmode-group">
+      <button type="button" class="sense-card devmode-button" id="devmode-toggle"
+              title="Show the Mocha dev fixture card">DEV MODE</button>
+      <button type="button" id="devmode-settings-toggle" class="sense-card devmode-chevron"
+              aria-expanded="false" aria-controls="devmode-settings" title="Dev mode settings">
+        <span class="devmode-chevron-glyph">&#9662;</span>
+      </button>
+      <div class="devmode-settings hidden" id="devmode-settings">
+        <button type="button" class="sense-card devmode-setting" id="devmode-audio-toast">Audio toast</button>
+      </div>
+    </div>
   </nav>
 
   <main class="main-content">
 
     <section id="page-dashboard" class="page landing">
+      <h2 class="landing-title">Available devices</h2>
       <div id="robot-grid" class="robot-grid"></div>
     </section>
 
@@ -66,8 +74,37 @@
         <span id="sys-clock" class="chip" title="This browser's clock, to compare with the timestamps below"></span>
       </div>
 
-      <div class="robot-empty-placeholder">
-        <p class="muted">This page is being rebuilt as part of the GUI overhaul — nothing here yet.</p>
+      <div class="panel" id="driver-card">
+        <h3>Driver</h3>
+        <div class="driver-grid" id="driver-options">
+          <button type="button" class="driver-option" data-mode="fruitfly" data-icon="fruitfly">
+            <canvas class="driver-icon" width="104" height="104"></canvas>
+            <span class="driver-label">Fruitfly</span>
+          </button>
+          <button type="button" class="driver-option" data-mode="stationary" data-icon="manual">
+            <canvas class="driver-icon" width="104" height="104"></canvas>
+            <span class="driver-label">Manual</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="senses-card">
+        <h3>Senses</h3>
+        <div class="sense-grid" id="sense-options">
+          <button type="button" class="sense-card" data-domain="/ears">Microphone</button>
+          <button type="button" class="sense-card" data-domain="/mouth">Speaker</button>
+          <button type="button" class="sense-card" data-domain="/eyes">Camera</button>
+          <button type="button" class="sense-card" data-domain="/senses/range">Distance sensor</button>
+          <button type="button" class="sense-card" data-domain="/mood/led">LED</button>
+          <button type="button" class="sense-card" data-domain="/senses">WiFi sniffer</button>
+        </div>
+      </div>
+
+      <div id="debug-card" class="hidden">
+        <h3>Debug</h3>
+        <div class="button-row">
+          <button type="button" id="debug-bark">Play positive bark</button>
+        </div>
       </div>
 
       <!-- Pre-overhaul detail markup: kept in the DOM (hidden) so app.js's

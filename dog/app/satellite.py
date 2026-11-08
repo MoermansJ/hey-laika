@@ -57,6 +57,9 @@ class SatelliteClient:
     def led(self) -> dict:
         return self._get("/led").json()
 
+    def set_mic(self, muted: bool) -> dict:
+        return self._get("/mic", params={"on": 0 if muted else 1}).json()
+
     def set_led(self, r: int, g: int, b: int, effect: str = "solid",
                 period_ms: int = 1500, brightness: int = 255) -> dict:
         if effect not in LED_EFFECTS:

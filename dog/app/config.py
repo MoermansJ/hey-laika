@@ -101,7 +101,7 @@ class Config:
     # Conversation: "Hey Laika" -> listen -> LLM router -> behavior and/or speech.
     CONVERSATION_ENABLED = _bool("CONVERSATION_ENABLED", True)
     # Battery saver tiers (thresholds live in the settings table, editable in the console).
-    POWER_SAVER_ENABLED = _bool("POWER_SAVER_ENABLED", True)
+    POWER_SAVER_ENABLED = _bool("POWER_SAVER_ENABLED", False)
     CONVERSATION_LISTEN_S = float(os.getenv("CONVERSATION_LISTEN_S", "8"))
     CONVERSATION_REPLY_CHARS = int(os.getenv("CONVERSATION_REPLY_CHARS", "320"))
     WHISPER_CACHE = os.getenv("WHISPER_CACHE", "")

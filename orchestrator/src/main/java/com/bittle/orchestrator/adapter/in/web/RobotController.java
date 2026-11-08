@@ -415,6 +415,20 @@ public class RobotController {
         return relayPost.execute(robotId, "/senses/sniff");
     }
 
+    @Operation(summary = "Enable the WiFi sniffer",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/senses/enable")
+    public Map<String, Object> sensesEnable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/senses/enable");
+    }
+
+    @Operation(summary = "Disable the WiFi sniffer",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/senses/disable")
+    public Map<String, Object> sensesDisable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/senses/disable");
+    }
+
     @Operation(summary = "Newest sensor-loop reading",
             description = "Relayed to the same path on the adapter. Range ahead, pose, IMU yaw, battery,"
                     + " the command in flight. fresh=1 takes a reading now.")
@@ -641,11 +655,46 @@ public class RobotController {
         return relayGet.execute(robotId, pin == null ? "/senses/range" : "/senses/range?pin=" + pin);
     }
 
+    @Operation(summary = "Distance sensor status, no firmware read",
+            description = "Relayed to the same path on the adapter.")
+    @GetMapping("/senses/range/status")
+    public Map<String, Object> sensesRangeStatus(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/senses/range/status");
+    }
+
+    @Operation(summary = "Enable the distance sensor",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/senses/range/enable")
+    public Map<String, Object> sensesRangeEnable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/senses/range/enable");
+    }
+
+    @Operation(summary = "Disable the distance sensor",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/senses/range/disable")
+    public Map<String, Object> sensesRangeDisable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/senses/range/disable");
+    }
+
     @Operation(summary = "Satellite microphone status",
             description = "Relayed to the same path on the adapter. Includes the live level and the custom vocabulary.")
     @GetMapping("/ears")
     public Map<String, Object> ears(@PathVariable String robotId) {
         return relayGet.execute(robotId, "/ears");
+    }
+
+    @Operation(summary = "Enable the microphone",
+            description = "Relayed to the same path on the adapter. Mutes the satellite's mic if it has been reflashed; adapter-side mute otherwise.")
+    @PostMapping("/ears/enable")
+    public Map<String, Object> earsEnable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/ears/enable");
+    }
+
+    @Operation(summary = "Disable the microphone",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/ears/disable")
+    public Map<String, Object> earsDisable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/ears/disable");
     }
 
     @Operation(summary = "Recent transcripts",
@@ -729,6 +778,20 @@ public class RobotController {
     @GetMapping("/mouth")
     public Map<String, Object> mouth(@PathVariable String robotId) {
         return relayGet.execute(robotId, "/mouth");
+    }
+
+    @Operation(summary = "Enable the speaker",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/mouth/enable")
+    public Map<String, Object> mouthEnable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/mouth/enable");
+    }
+
+    @Operation(summary = "Disable the speaker",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/mouth/disable")
+    public Map<String, Object> mouthDisable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/mouth/disable");
     }
 
     @Operation(summary = "Speak text on the dog",
@@ -826,6 +889,20 @@ public class RobotController {
     public Map<String, Object> moodSet(@PathVariable String robotId,
                                        @RequestBody Map<String, Object> body) {
         return relayPostWithBody.execute(robotId, "/mood", body);
+    }
+
+    @Operation(summary = "Enable the LED",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/mood/led/enable")
+    public Map<String, Object> moodLedEnable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/mood/led/enable");
+    }
+
+    @Operation(summary = "Disable the LED",
+            description = "Relayed to the same path on the adapter.")
+    @PostMapping("/mood/led/disable")
+    public Map<String, Object> moodLedDisable(@PathVariable String robotId) {
+        return relayPost.execute(robotId, "/mood/led/disable");
     }
 
     @Operation(summary = "What the motion arbiter is running",

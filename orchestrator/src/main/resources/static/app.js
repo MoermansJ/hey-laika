@@ -120,7 +120,7 @@ function handleMessage(topic, body) {
       if (onRobotPage(robotId)) renderActions(robotId);
     } else if (kind === "mode") {
       state.mode[robotId] = (body.mode || "stationary").toLowerCase();
-      if (onRobotPage(robotId)) renderTabBar();
+      if (onRobotPage(robotId)) { renderTabBar(); renderDriverCard(robotId); }
     }
   }
 }
@@ -388,6 +388,8 @@ function resetRobotPanels() {
   $("#power-card").innerHTML = "";
   $("#actions").innerHTML = "";
   $("#actions-age").textContent = "";
+  document.querySelectorAll("#driver-options .driver-option").forEach((btn) => btn.classList.remove("active"));
+  document.querySelectorAll("#sense-options .sense-card").forEach((btn) => btn.classList.remove("active"));
   ["#poll-ttl", "#poll-batt", "#poll-mult", "#poll-postures"].forEach((sel) => {
     $(sel).value = "";
   });
@@ -443,6 +445,8 @@ function showRobotPage(robotId) {
 
   renderRobotHeader(robotId);
   renderActions(robotId);
+  renderDriverCard(robotId);
+  renderSensesCard(robotId);
   if (!state.arbiterCard) {
     state.arbiterCard = hlArbiterCard($("#arbiter-card"), `/api/robots/${robotId}`,
         { title: "Current behavior", runs: 6 });
@@ -569,6 +573,198 @@ function renderRobotHeader(robotId) {
   renderUptimeChip();
 }
 
+// ---------- driver card icons ----------
+// Same bell-jar rasterize pipeline as personality.html's mode cards (ported,
+// not shared — that page runs in its own iframe/window). Fruitfly reuses its
+// exact dome+fly animation; Manual gets a new dome+joystick icon since
+// "manual" isn't one of personality.html's bell jars.
+
+const DRIVER_PALETTE = ["#04150a", "#0d3a1e", "#1f6b3f", "#3fbf72", "#8dffb8"];
+
+function driverRasterize(canvas, drawHi) {
+  const hi = document.createElement("canvas");
+  hi.width = 160; hi.height = 160;
+  const hctx = hi.getContext("2d");
+  hctx.fillStyle = "#000"; hctx.fillRect(0, 0, 160, 160);
+  drawHi(hctx);
+  const lw = 26, lh = 26;
+  const low = document.createElement("canvas");
+  low.width = lw; low.height = lh;
+  const lctx = low.getContext("2d");
+  lctx.imageSmoothingEnabled = true;
+  lctx.drawImage(hi, 0, 0, lw, lh);
+  const data = lctx.getImageData(0, 0, lw, lh).data;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  const cw = canvas.width / lw, ch = canvas.height / lh;
+  for (let y = 0; y < lh; y++) {
+    for (let x = 0; x < lw; x++) {
+      const i = (y * lw + x) * 4;
+      const lum = (data[i] * 0.35 + data[i + 1] * 0.5 + data[i + 2] * 0.15) / 255;
+      const level = lum < 0.1 ? 0 : lum < 0.28 ? 1 : lum < 0.5 ? 2 : lum < 0.75 ? 3 : 4;
+      ctx.fillStyle = DRIVER_PALETTE[level];
+      ctx.fillRect(Math.round(x * cw), Math.round(y * ch), Math.ceil(cw), Math.ceil(ch));
+    }
+  }
+}
+
+function driverDot(ctx, x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+
+function driverDrawDome(hctx) {
+  const cx = 80, topY = 95, r = 52, baseY = 138;
+  const leftX = cx - r, rightX = cx + r;
+  hctx.strokeStyle = "#cfffe0"; hctx.lineWidth = 5; hctx.lineJoin = "round"; hctx.lineCap = "round";
+  hctx.beginPath();
+  hctx.arc(cx, topY, r, Math.PI, 0, false);
+  hctx.lineTo(rightX, baseY); hctx.lineTo(leftX, baseY); hctx.closePath();
+  hctx.stroke();
+  hctx.fillStyle = "#1f6b3f"; hctx.fillRect(leftX - 8, baseY, r * 2 + 16, 10);
+  hctx.strokeStyle = "rgba(255,255,255,0.45)"; hctx.lineWidth = 3;
+  hctx.beginPath(); hctx.arc(cx, topY, 45, Math.PI * 1.12, Math.PI * 1.42, false); hctx.stroke();
+}
+
+function driverDrawFly(hctx, t) {
+  const jx = 80 + Math.sin(t / 130) * 24 + Math.sin(t / 47) * 6;
+  const jy = 92 + Math.cos(t / 97) * 20 + Math.sin(t / 61) * 5;
+  const px = 80 + Math.sin((t - 130) / 130) * 24, py = 92 + Math.cos((t - 130) / 97) * 20;
+  hctx.strokeStyle = "rgba(180,255,200,0.35)"; hctx.lineWidth = 2; hctx.setLineDash([2, 4]);
+  hctx.beginPath(); hctx.moveTo(px, py); hctx.lineTo(jx, jy); hctx.stroke();
+  hctx.setLineDash([]);
+  hctx.fillStyle = "#cfffe0"; hctx.beginPath(); hctx.ellipse(jx, jy, 4, 6, 0, 0, Math.PI * 2); hctx.fill();
+  hctx.fillStyle = "rgba(220,255,230,0.55)";
+  hctx.beginPath(); hctx.ellipse(jx - 5, jy - 3, 6, 3, -0.5, 0, Math.PI * 2); hctx.fill();
+  hctx.beginPath(); hctx.ellipse(jx + 5, jy - 3, 6, 3, 0.5, 0, Math.PI * 2); hctx.fill();
+}
+
+// A small joystick, thumb orbiting the base — "something with hands is
+// driving", the opposite read of the fly drifting on its own.
+function driverDrawJoystick(hctx, t) {
+  const cx = 80, baseY = 112, stickTopY = 80;
+  hctx.fillStyle = "#1f6b3f"; hctx.beginPath(); hctx.ellipse(cx, baseY, 22, 9, 0, 0, Math.PI * 2); hctx.fill();
+  hctx.strokeStyle = "#cfffe0"; hctx.lineWidth = 5; hctx.lineCap = "round";
+  hctx.beginPath(); hctx.moveTo(cx, baseY); hctx.lineTo(cx, stickTopY); hctx.stroke();
+  const ang = (t / 900) % (Math.PI * 2);
+  const tx = cx + Math.cos(ang) * 7, ty = stickTopY + Math.sin(ang) * 4;
+  hctx.fillStyle = "#cfffe0"; driverDot(hctx, tx, ty, 9);
+}
+
+const DRIVER_ICON_DRAW = {
+  fruitfly: (hctx, t) => { driverDrawDome(hctx); driverDrawFly(hctx, t); },
+  manual:   (hctx, t) => { driverDrawDome(hctx); driverDrawJoystick(hctx, t); },
+};
+
+const driverReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function mountDriverIcons() {
+  document.querySelectorAll("#driver-options .driver-option").forEach((btn) => {
+    const canvas = btn.querySelector(".driver-icon");
+    const draw = DRIVER_ICON_DRAW[btn.dataset.icon];
+    if (!canvas || !draw) return;
+    const frame = () => {
+      if (state.page !== "robot") return;   // skip work while off the robot page
+      driverRasterize(canvas, (hctx) => draw(hctx, performance.now()));
+    };
+    frame();
+    if (!driverReduceMotion) setInterval(frame, 140);
+  });
+}
+mountDriverIcons();
+
+// Driver: who's piloting the robot. "Manual" switches to stationary mode
+// (the only mode with a Control tab for direct driving); "Fruitfly" hands
+// her over to the connectome sim. Two buttons for now — see PERSONALITY_
+// MODES_BRIEF.md if Roaming/Phone need a slot here later.
+function renderDriverCard(robotId) {
+  if (!onRobotPage(robotId)) return;
+  const mode = state.mode[robotId];
+  document.querySelectorAll("#driver-options .driver-option").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+}
+
+$("#driver-options").addEventListener("click", (e) => {
+  const btn = e.target.closest(".driver-option");
+  if (!btn || !state.selected) return;
+  runAction(btn, async () => {
+    const result = await api(`/api/robots/${state.selected}/mode/${btn.dataset.mode}`, { method: "POST" });
+    handleMessage(`/topic/robot/${state.selected}/mode`, result);
+  });
+});
+
+// Senses: six independently-toggled peripherals. Camera and Distance sensor
+// reuse pre-existing adapter flags (power-saver no longer touches them —
+// POWER_SAVER_ENABLED defaults false), so their status/click shape differs
+// slightly from the other four, which got a small new `userEnabled` flag
+// each. `field`/`invert` say which status key means "on"; `configEndpoint`
+// (Camera only) says the click posts a body to /config instead of hitting
+// /enable or /disable.
+const SENSES = [
+  { domain: "/ears", statusPath: "/ears", field: "enabled" },
+  { domain: "/mouth", statusPath: "/mouth", field: "userEnabled" },
+  { domain: "/eyes", statusPath: "/eyes", field: "enabled", configEndpoint: true },
+  { domain: "/senses/range", statusPath: "/senses/range/status", field: "gated", invert: true },
+  { domain: "/mood/led", statusPath: "/mood", field: "userEnabled" },
+  { domain: "/senses", statusPath: "/senses", field: "enabled" },
+];
+
+function senseIsOn(cfg, body) {
+  // A missing key is a wiring bug (wrong field name against the real
+  // response), not "off" — surfaced once in the console instead of silently
+  // rendering as dim, since that silent failure is exactly how the
+  // Microphone card briefly read a field ears.py doesn't expose.
+  if (!(cfg.field in body)) {
+    console.warn(`Senses: "${cfg.field}" missing from ${cfg.statusPath} response`, body);
+  }
+  const value = !!body[cfg.field];
+  return cfg.invert ? !value : value;
+}
+
+async function renderSensesCard(robotId) {
+  if (!onRobotPage(robotId)) return;
+  await Promise.all(SENSES.map(async (cfg) => {
+    const btn = document.querySelector(`#sense-options .sense-card[data-domain="${cfg.domain}"]`);
+    if (!btn) return;
+    try {
+      const body = await api(`/api/robots/${robotId}${cfg.statusPath}`);
+      if (!onRobotPage(robotId)) return;   // user moved on; stale answer
+      btn.classList.toggle("active", senseIsOn(cfg, body));
+    } catch { /* adapter offline; leave the card's last known state */ }
+  }));
+}
+
+$("#sense-options").addEventListener("click", (e) => {
+  const btn = e.target.closest(".sense-card");
+  if (!btn || !state.selected) return;
+  const cfg = SENSES.find((s) => s.domain === btn.dataset.domain);
+  if (!cfg) return;
+  const turningOn = !btn.classList.contains("active");
+  const label = btn.textContent.trim();
+  runAction(btn, async () => {
+    const body = cfg.configEndpoint
+        ? await api(`/api/robots/${state.selected}${cfg.domain}/config`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: turningOn }),
+          })
+        : await api(`/api/robots/${state.selected}${cfg.domain}/${turningOn ? "enable" : "disable"}`,
+            { method: "POST" });
+    btn.classList.toggle("active", senseIsOn(cfg, body));
+    announceSenseToggle(label, turningOn);
+  });
+});
+
+// Dev-mode voice line through the real mouth.say() pipeline — not a toast.
+// Best-effort and silent on failure: toggling Speaker itself off is expected
+// to mute its own "Speaker disabled" line (play_wav()'s normal gate), not an
+// error to surface, and an offline adapter shouldn't spam a toast on top of
+// the toggle that already succeeded.
+function announceSenseToggle(label, turningOn) {
+  if (!state.devMode || !state.devAudioToast || !state.selected) return;
+  api(`/api/robots/${state.selected}/mouth/say`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: `${label} ${turningOn ? "enabled" : "disabled"}` }),
+  }).catch(() => {});
+}
+
 // Smooth uptime: derived client-side from the adapter's boot epoch
 // (status.startedAt) and ticked every second — no more jumps at the
 // polling interval.
@@ -680,17 +876,70 @@ $("#sidebar-open").onclick = () => $("#sidebar").classList.toggle("open");
 
 const DEVMODE_KEY = "hl-devmode";
 state.devMode = localStorage.getItem(DEVMODE_KEY) === "1";
-const devModeCheckbox = $("#devmode-checkbox");
-devModeCheckbox.checked = state.devMode;
-devModeCheckbox.onchange = () => {
-  state.devMode = devModeCheckbox.checked;
+const devModeButton = $("#devmode-toggle");
+
+// The toggle and the chevron are two fused .sense-card halves of one pill —
+// both carry .active together so the glow reads as a single button, not two.
+function renderDevModeButton() {
+  devModeButton.classList.toggle("active", state.devMode);
+  $("#devmode-settings-toggle").classList.toggle("active", state.devMode);
+  $("#debug-card").classList.toggle("hidden", !state.devMode);
+}
+renderDevModeButton();
+
+devModeButton.onclick = () => {
+  state.devMode = !state.devMode;
   localStorage.setItem(DEVMODE_KEY, state.devMode ? "1" : "0");
+  renderDevModeButton();
   renderRobotGrid();
+};
+
+// Debug: same call the main-branch speaker card's sound buttons make
+// (POST /mouth/play {sound}) — just a single dedicated button, not the
+// full sound-library widget.
+$("#debug-bark").onclick = () => {
+  if (!state.selected) return;
+  runAction($("#debug-bark"), () => api(`/api/robots/${state.selected}/mouth/play`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sound: "positive_bark" }),
+  }));
 };
 
 function isDevFixtureRobot(robot) {
   return (robot.name || "").toLowerCase().startsWith("mocha");
 }
+
+// ---- dev mode settings dropdown: a chevron disclosure, not a second
+// top-level checkbox — room for more dev-only toggles later without
+// crowding the topnav. "Audio toast" (default on) is the first one. ----
+
+const DEV_AUDIO_TOAST_KEY = "hl-dev-audio-toast";
+state.devAudioToast = localStorage.getItem(DEV_AUDIO_TOAST_KEY) !== "0";   // default on
+
+const devSettingsToggle = $("#devmode-settings-toggle");
+const devSettingsPanel = $("#devmode-settings");
+const devAudioToastBtn = $("#devmode-audio-toast");
+
+devAudioToastBtn.classList.toggle("active", state.devAudioToast);
+
+devSettingsToggle.onclick = (e) => {
+  e.stopPropagation();
+  devSettingsPanel.classList.toggle("hidden");
+  const open = !devSettingsPanel.classList.contains("hidden");
+  devSettingsToggle.setAttribute("aria-expanded", String(open));
+};
+document.addEventListener("click", (e) => {
+  if (devSettingsPanel.classList.contains("hidden")) return;
+  if (e.target === devSettingsToggle || devSettingsPanel.contains(e.target)) return;
+  devSettingsPanel.classList.add("hidden");
+  devSettingsToggle.setAttribute("aria-expanded", "false");
+});
+
+devAudioToastBtn.onclick = () => {
+  state.devAudioToast = !state.devAudioToast;
+  localStorage.setItem(DEV_AUDIO_TOAST_KEY, state.devAudioToast ? "1" : "0");
+  devAudioToastBtn.classList.toggle("active", state.devAudioToast);
+};
 
 // Robot page tabs. Embedded per-robot pages lazy-load on first activation
 // (frames are cleared whenever the selected robot changes or the user

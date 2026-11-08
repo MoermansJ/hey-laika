@@ -124,6 +124,7 @@ ranger = RangerService(bittle, Config.ULTRASONIC_PIN)
 # Satellite (camera + mood light) over HTTP; eyes and mood are inert
 # without SATELLITE_HOST.
 satellite = SatelliteClient(Config.SATELLITE_HOST, Config.SATELLITE_TIMEOUT_S)
+ears.satellite = satellite   # built before `satellite` exists; wired here instead
 eyes = EyesService(satellite, event_binder,
                    detector=build_detector(Config.EYES_MODEL, Config.EYES_CONFIDENCE),
                    fps=Config.EYES_FPS, enabled=Config.EYES_ENABLED)
@@ -849,11 +850,66 @@ def senses_range(robot_id: str):
                     "recent": ranger.status()["recent"], **ranger.stats})
 
 
+@app.get("/api/robots/<robot_id>/senses/range/status")
+@robot_scoped
+def senses_range_status(robot_id: str):
+    """Read-only, unlike /senses/range above: no firmware round trip."""
+    return jsonify({"robotId": robot_id, **ranger.status()})
+
+
+@app.post("/api/robots/<robot_id>/senses/range/enable")
+@robot_scoped
+def senses_range_enable(robot_id: str):
+    ranger.gated = False
+    log_activity("ranger", "Distance sensor enabled")
+    return jsonify({"robotId": robot_id, **ranger.status()})
+
+
+@app.post("/api/robots/<robot_id>/senses/range/disable")
+@robot_scoped
+def senses_range_disable(robot_id: str):
+    ranger.gated = True
+    log_activity("ranger", "Distance sensor disabled")
+    return jsonify({"robotId": robot_id, **ranger.status()})
+
+
+@app.post("/api/robots/<robot_id>/senses/enable")
+@robot_scoped
+def senses_enable(robot_id: str):
+    senses.enabled = True
+    log_activity("senses", "WiFi sniffer enabled")
+    return jsonify({"robotId": robot_id, **senses.status()})
+
+
+@app.post("/api/robots/<robot_id>/senses/disable")
+@robot_scoped
+def senses_disable(robot_id: str):
+    senses.enabled = False
+    log_activity("senses", "WiFi sniffer disabled")
+    return jsonify({"robotId": robot_id, **senses.status()})
+
+
 # ---- Mouth (host TTS -> firmware PWM -> Grove Speaker Plus) ----
 
 @app.get("/api/robots/<robot_id>/mouth")
 @robot_scoped
 def mouth_status(robot_id: str):
+    return jsonify({"robotId": robot_id, **mouth.status()})
+
+
+@app.post("/api/robots/<robot_id>/mouth/enable")
+@robot_scoped
+def mouth_enable(robot_id: str):
+    mouth.set_user_enabled(True)
+    log_activity("mouth", "Speaker enabled")
+    return jsonify({"robotId": robot_id, **mouth.status()})
+
+
+@app.post("/api/robots/<robot_id>/mouth/disable")
+@robot_scoped
+def mouth_disable(robot_id: str):
+    mouth.set_user_enabled(False)
+    log_activity("mouth", "Speaker disabled")
     return jsonify({"robotId": robot_id, **mouth.status()})
 
 
@@ -1075,6 +1131,22 @@ def ears_status(robot_id: str):
     return jsonify({"robotId": robot_id, **ears.status()})
 
 
+@app.post("/api/robots/<robot_id>/ears/enable")
+@robot_scoped
+def ears_enable(robot_id: str):
+    ears.set_user_enabled(True)
+    log_activity("ears", "Microphone enabled")
+    return jsonify({"robotId": robot_id, **ears.status()})
+
+
+@app.post("/api/robots/<robot_id>/ears/disable")
+@robot_scoped
+def ears_disable(robot_id: str):
+    ears.set_user_enabled(False)
+    log_activity("ears", "Microphone disabled")
+    return jsonify({"robotId": robot_id, **ears.status()})
+
+
 @app.get("/api/robots/<robot_id>/ears/transcripts")
 @robot_scoped
 def ears_transcripts(robot_id: str):
@@ -1250,6 +1322,20 @@ def mood_set(robot_id: str):
     if result.get("lastError"):
         return jsonify({"robotId": robot_id, **result}), 502
     return jsonify({"robotId": robot_id, **result})
+
+
+@app.post("/api/robots/<robot_id>/mood/led/enable")
+@robot_scoped
+def mood_led_enable(robot_id: str):
+    log_activity("mood", "LED enabled")
+    return jsonify({"robotId": robot_id, **mood.set_user_enabled(True)})
+
+
+@app.post("/api/robots/<robot_id>/mood/led/disable")
+@robot_scoped
+def mood_led_disable(robot_id: str):
+    log_activity("mood", "LED disabled")
+    return jsonify({"robotId": robot_id, **mood.set_user_enabled(False)})
 
 
 @app.get("/api/robots/<robot_id>/senses/samples")

@@ -121,17 +121,21 @@ def test_plain_tts_still_works_without_a_voice_parameter():
     assert mouth.say("hi")["chunks"] >= 1
 
 
-def test_play_wav_attaches_once_and_chunks():
+def test_play_wav_reattaches_every_clip_and_chunks():
     ctrl = ScriptedController()
     mouth = MouthService(ctrl, pin=10, sleep=lambda s: None)
     result = mouth.play_wav(make_wav(seconds=1.0))
-    assert ctrl.commands.count("XWp10") == 1         # attach exactly once
+    assert ctrl.commands.count("XWp10") == 1         # attached for this clip
     assert ctrl.commands[-1] == "XWf"                 # every clip ends with clip-complete
     assert result["chunks"] == -(-RATE // CHUNK_BYTES)  # ceil(8000 / chunk)
     assert all(p.startswith(b"XWa") for p in ctrl.binary)
     assert all(len(p) - 3 <= CHUNK_BYTES for p in ctrl.binary)
     mouth.play_wav(make_wav(seconds=0.1))
-    assert ctrl.commands.count("XWp10") == 1         # still attached, not re-sent
+    # Re-sent on every clip, not cached: XWp is cheap/idempotent on the
+    # firmware, and the adapter has no way to know whether a transparent
+    # WebSocket reconnect masked a firmware-side reset that silently dropped
+    # the LEDC/ring binding a stale `self._attached = True` would have hidden.
+    assert ctrl.commands.count("XWp10") == 2
 
 
 def test_pacing_sleeps_when_ring_is_nearly_full():
