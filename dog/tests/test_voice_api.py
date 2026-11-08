@@ -102,7 +102,7 @@ def test_mouth_say_lands_once_in_the_action_feed(client, monkeypatch):
     not add a second VOICE "Said: ..." entry for the same utterance."""
     import app.app as app_module
 
-    def fake_say(text):
+    def fake_say(text, on_start=None):
         app_module.action_feed.note("SPEECH", text)
         return {"text": text, "seconds": 0.0, "chunks": 1, "error": None}
 

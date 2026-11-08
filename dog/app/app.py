@@ -920,14 +920,21 @@ def mouth_say(robot_id: str):
     if not text or len(text) > 400:
         return jsonify({"error": "bad_request",
                         "message": "'text' required (max 400 chars)"}), 400
+    def flash_on_start(seconds: float) -> None:
+        # Fired once the clip's real duration is known but before any chunk
+        # is queued, so the LED starts with playback instead of after it —
+        # play_wav() paces its chunk loop close to real time, so flashing
+        # only once mouth.say() returns meant the flash landed near the end
+        # of the clip, not the start.
+        if mood.enabled and seconds:
+            mood.flash("speaking", float(seconds))
+
     try:
-        result = mouth.say(text)
+        result = mouth.say(text, on_start=flash_on_start)
     except RuntimeError as exc:
         return _speaker_error(exc)
     except Exception as exc:
         return jsonify({"error": "tts_failed", "message": str(exc)}), 502
-    if mood.enabled and result.get("seconds"):
-        mood.flash("speaking", float(result["seconds"]))
     log_activity("voice", f"Said: {text}", feed=False)
     return jsonify({"robotId": robot_id, **result})
 
@@ -971,16 +978,18 @@ def mouth_play(robot_id: str):
     name = str((request.get_json(silent=True) or {}).get("sound", "")).strip()
     if not name:
         return jsonify({"error": "bad_request", "message": "'sound' required"}), 400
+    def flash_on_start(seconds: float) -> None:
+        if mood.enabled and seconds:
+            mood.flash("speaking", float(seconds))
+
     try:
-        result = mouth.play_sound(name)
+        result = mouth.play_sound(name, on_start=flash_on_start)
     except KeyError as exc:
         return jsonify({"error": "bad_request", "message": str(exc.args[0])}), 400
     except RuntimeError as exc:
         return _speaker_error(exc)
     except Exception as exc:
         return jsonify({"error": "playback_failed", "message": str(exc)}), 502
-    if mood.enabled and result.get("seconds"):
-        mood.flash("speaking", float(result["seconds"]))
     log_activity("voice", f"Played sound: {name}", feed=False)
     return jsonify({"robotId": robot_id, **result})
 

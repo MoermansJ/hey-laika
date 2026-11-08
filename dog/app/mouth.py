@@ -143,11 +143,11 @@ class MouthService:
 
     # -- public --
 
-    def say(self, text: str) -> dict:
+    def say(self, text: str, on_start=None) -> dict:
         if not self.enabled:
             raise RuntimeError("SPEAKER_PIN is not set")
         wav = self._synthesize(text)
-        return self.play_wav(wav, label=text)
+        return self.play_wav(wav, label=text, on_start=on_start)
 
     def _synthesize(self, text: str) -> bytes:
         try:
@@ -207,16 +207,25 @@ class MouthService:
             self.say(PREVIEW_TEXT)
         return self.voices_view()
 
-    def play_sound(self, name: str) -> dict:
+    def play_sound(self, name: str, on_start=None) -> dict:
         """A clip from the library (positive_bark, ...) on the speaker."""
         if not self.enabled:
             raise RuntimeError("SPEAKER_PIN is not set")
-        return self.play_wav(self.sounds.wav(name), label=f"sound:{name}", kind="SOUND")
+        return self.play_wav(self.sounds.wav(name), label=f"sound:{name}", kind="SOUND",
+                             on_start=on_start)
 
-    def play_wav(self, wav_bytes: bytes, label: str = "", kind: str = "SPEECH") -> dict:
+    def play_wav(self, wav_bytes: bytes, label: str = "", kind: str = "SPEECH",
+                 on_start=None) -> dict:
         """The single funnel for everything audible — say(), play_sound() and
         raw WAV pushes all land here, so this is where the action feed is
-        written and every audible act gets one entry."""
+        written and every audible act gets one entry.
+
+        `on_start(seconds)`, if given, fires once the clip's real duration is
+        known but before any chunk is queued — the chunk loop below paces
+        itself close to real time (see _push's backpressure sleep), so
+        waiting for play_wav() to return before reacting (e.g. flashing a
+        mood light) means reacting only once the clip has essentially
+        already finished playing."""
         if not self.enabled:
             raise RuntimeError("SPEAKER_PIN is not set")
         if not self.user_enabled:
@@ -224,6 +233,8 @@ class MouthService:
         entry = self.feed.speech(label, kind) if self.feed is not None else None
         try:
             pcm = to_pcm8(wav_bytes)
+            if on_start is not None:
+                on_start(len(pcm) / RATE)
             self._attach()
             sent = 0
             chunks = 0
