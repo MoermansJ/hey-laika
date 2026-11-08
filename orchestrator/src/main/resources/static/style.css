@@ -89,13 +89,18 @@ code { background: rgba(77,255,140,0.1); padding: 0.1rem 0.3rem; border-radius: 
   position: absolute;
   top: calc(100% + 0.6rem);
   right: 0;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 6px 18px rgba(0,0,0,0.4);
   z-index: 20;
 }
 
 /* Descendant selector, not a bare class: must outrank .sense-card's own
    width/min-height/padding regardless of each rule's position in the file.
-   Padding grown to cover the space .devmode-settings no longer pads itself. */
+   Padding grown to cover the space .devmode-settings no longer pads itself.
+   width:auto + the column flex's default align-items:stretch is what makes
+   every toggle match the widest one's width instead of shrinking to its
+   own label. */
 .devmode-settings .devmode-setting {
   width: auto;
   min-height: 0;
@@ -107,6 +112,25 @@ code { background: rgba(77,255,140,0.1); padding: 0.1rem 0.3rem; border-radius: 
    is skipped here — the border/glow alone marks on vs. off. */
 .devmode-settings .devmode-setting:not(.active) {
   opacity: 1;
+}
+
+/* LED toast's colour picker rides next to its toggle in one row, not its
+   own stacked row — the toggle keeps stretching (flex: 1) to fill whatever
+   width the row needs, same shared-width rule as the plain toggles above. */
+.devmode-setting-row {
+  display: flex;
+  align-items: stretch;
+}
+.devmode-setting-row .devmode-setting {
+  flex: 1;
+}
+.devmode-color-picker {
+  width: 2.6rem;
+  padding: 0.3rem;
+  border: 2px solid var(--border);
+  border-left: none;
+  background: var(--card);
+  cursor: pointer;
 }
 
 /* ---------- landing (fleet picker) ---------- */
@@ -482,6 +506,16 @@ button.active { background: var(--success); color: var(--primary-dark); border-c
   grid-template-columns: repeat(auto-fit, minmax(140px, 160px));
   gap: 1rem;
 }
+.sense-grid + .sense-subhead {
+  margin-top: 1rem;
+}
+.sense-subhead {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-light);
+  margin-bottom: 0.5rem;
+}
 .sense-card {
   display: flex;
   align-items: center;
@@ -506,6 +540,113 @@ button.active { background: var(--success); color: var(--primary-dark); border-c
 .sense-card:not(.active) {
   opacity: 0.4;
 }
+
+/* ---------- Driver + Navigation side by side (wraps to a stack on
+   narrow viewports; both children sit flush, no extra margin-bottom) ---------- */
+
+.row-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+.row-grid > #driver-card, .row-grid > #nav-card, .row-grid > #sweep-card,
+.row-grid > #posture-card {
+  flex: 1 1 320px;
+  min-width: 280px;
+  margin-bottom: 0;
+}
+
+/* ---------- navigation card (occupancy map + click-to-walk, inline on the
+   robot page -- the full Map tab stays the place for sweep tuning and the
+   error-recovery dialogue, this is the "glance and click" version) ---------- */
+
+.nav-status { margin: 0.6rem 0; font-size: 0.85rem; }
+.nav-status .navstate { text-transform: uppercase; letter-spacing: 0.04em; }
+.nav-status .navstate.arrived { color: var(--success); }
+.nav-status .navstate.blocked { color: var(--warning); }
+.nav-status .navstate.error { color: var(--danger); }
+
+.nav-banner {
+  margin-bottom: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border: 2px solid var(--danger);
+  border-radius: 6px;
+  background: rgba(255,93,93,0.08);
+  font-size: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.nav-banner button { font-size: 0.8rem; padding: 0.3rem 0.6rem; }
+
+.nav-map {
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: #000;
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+  max-width: 420px;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+}
+.nav-map svg { display: block; width: 100%; height: 100%; }
+.nav-map.clicktogo svg { cursor: crosshair; }
+.nav-map .empty { display: flex; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-light); font-size: 0.85rem; text-align: center; padding: 1rem; }
+
+/* ---------- sweep dial (the "Scan room" sweep's 7 readings as a radar
+   semicircle — 12 o'clock is straight ahead, same relative convention the
+   sweep angles already use) ---------- */
+
+.sweep-dial {
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: #000;
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+  max-width: 420px;
+  aspect-ratio: 8 / 5;
+  overflow: hidden;
+}
+.sweep-dial svg { display: block; width: 100%; height: 100%; }
+.sweep-dial .empty { display: flex; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-light); font-size: 0.85rem; text-align: center; padding: 1rem; }
+
+/* ---------- posture dial (3D wireframe of current joint angles + body
+   tilt — orbit with click-drag; see app.js's BITTLE_SKELETON for the
+   geometry source and its approximation caveats) ---------- */
+
+.posture-dial {
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: #000;
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+  max-width: 420px;
+  aspect-ratio: 8 / 5;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+.posture-dial.dragging { cursor: grabbing; }
+.posture-dial svg { display: block; width: 100%; height: 100%; }
+.posture-dial .empty { display: flex; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-light); font-size: 0.85rem; text-align: center; padding: 1rem; }
+
+/* Dedicated single-axis spin controls, next to the free-orbit dial above:
+   drag left/right on one of these to rotate the view around only that
+   axis, instead of the dial's combined yaw+pitch drag. */
+.posture-axes { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+.posture-axis {
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.posture-axis.dragging { cursor: grabbing; }
+.posture-zoom-group { display: flex; gap: 0.5rem; margin-left: 0.6rem; }
+#posture-zoom-out, #posture-zoom-in { cursor: pointer; font-size: 1.1rem; line-height: 1; }
 
 input[type="text"] {
   font: inherit;

@@ -274,6 +274,13 @@ public class RobotController {
         return moveServos.execute(robotId, request);
     }
 
+    @Operation(summary = "Joint angles + body tilt for the posture dial",
+            description = "Relayed to the same path on the adapter.")
+    @GetMapping("/posture")
+    public Map<String, Object> posture(@PathVariable String robotId) {
+        return relayGet.execute(robotId, "/posture");
+    }
+
     @Operation(summary = "Text-in voice chain",
             description = "LLM reply plus buzzer feedback.")
     @PostMapping("/voice/demo")

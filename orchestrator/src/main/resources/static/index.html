@@ -53,6 +53,10 @@
       </button>
       <div class="devmode-settings hidden" id="devmode-settings">
         <button type="button" class="sense-card devmode-setting" id="devmode-audio-toast">Audio toast</button>
+        <div class="devmode-setting-row">
+          <button type="button" class="sense-card devmode-setting" id="devmode-led-toast">LED toast</button>
+          <input type="color" id="devmode-led-toast-color" class="devmode-color-picker" title="LED toast colour">
+        </div>
       </div>
     </div>
   </nav>
@@ -74,29 +78,70 @@
         <span id="sys-clock" class="chip" title="This browser's clock, to compare with the timestamps below"></span>
       </div>
 
-      <div class="panel" id="driver-card">
-        <h3>Driver</h3>
-        <div class="driver-grid" id="driver-options">
-          <button type="button" class="driver-option" data-mode="fruitfly" data-icon="fruitfly">
-            <canvas class="driver-icon" width="104" height="104"></canvas>
-            <span class="driver-label">Fruitfly</span>
-          </button>
-          <button type="button" class="driver-option" data-mode="stationary" data-icon="manual">
-            <canvas class="driver-icon" width="104" height="104"></canvas>
-            <span class="driver-label">Manual</span>
-          </button>
+      <div class="row-grid">
+        <div id="nav-card">
+          <h3>Navigation</h3>
+          <div class="button-row">
+            <button type="button" id="nav-scan">Scan room</button>
+            <button type="button" id="nav-cancel" class="hidden">Cancel route</button>
+            <label class="muted" title="Click the map below to send her there">
+              <input type="checkbox" id="nav-clicktogo"> click to walk
+            </label>
+          </div>
+          <div id="nav-status" class="nav-status muted">loading…</div>
+          <div id="nav-banner" class="nav-banner hidden"></div>
+          <div id="nav-map" class="nav-map"></div>
+        </div>
+
+        <div id="sweep-card">
+          <h3>Scan <span class="muted" id="sweep-age" style="float:right;font-size:0.8rem;font-weight:400"></span></h3>
+          <div id="sweep-dial" class="sweep-dial"><div class="empty">no scan yet — click "Scan room"</div></div>
+        </div>
+
+        <div id="posture-card">
+          <h3>Posture <span class="muted" id="posture-age" style="float:right;font-size:0.8rem;font-weight:400"></span></h3>
+          <div id="posture-dial" class="posture-dial"><div class="empty">loading…</div></div>
+          <div class="posture-axes" title="Drag left/right to spin the view around just this axis">
+            <button type="button" class="posture-axis" id="posture-axis-x">X</button>
+            <button type="button" class="posture-axis" id="posture-axis-y">Y</button>
+            <button type="button" class="posture-axis" id="posture-axis-z">Z</button>
+            <span class="posture-zoom-group" title="Scroll on the view, or click, to zoom">
+              <button type="button" class="posture-axis" id="posture-zoom-out">&minus;</button>
+              <button type="button" class="posture-axis" id="posture-zoom-in">+</button>
+            </span>
+          </div>
+        </div>
+
+        <div class="panel" id="driver-card">
+          <h3>Driver</h3>
+          <div class="driver-grid" id="driver-options">
+            <button type="button" class="driver-option" data-mode="fruitfly" data-icon="fruitfly">
+              <canvas class="driver-icon" width="104" height="104"></canvas>
+              <span class="driver-label">Fruitfly</span>
+            </button>
+            <button type="button" class="driver-option" data-mode="stationary" data-icon="manual">
+              <canvas class="driver-icon" width="104" height="104"></canvas>
+              <span class="driver-label">Manual</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <div id="senses-card">
-        <h3>Senses</h3>
-        <div class="sense-grid" id="sense-options">
-          <button type="button" class="sense-card" data-domain="/ears">Microphone</button>
-          <button type="button" class="sense-card" data-domain="/mouth">Speaker</button>
-          <button type="button" class="sense-card" data-domain="/eyes">Camera</button>
-          <button type="button" class="sense-card" data-domain="/senses/range">Distance sensor</button>
-          <button type="button" class="sense-card" data-domain="/mood/led">LED</button>
-          <button type="button" class="sense-card" data-domain="/senses">WiFi sniffer</button>
+        <h3>Adapters</h3>
+        <div id="sense-options">
+          <div class="sense-subhead">In</div>
+          <div class="sense-grid">
+            <button type="button" class="sense-card" data-domain="/eyes">Camera</button>
+            <button type="button" class="sense-card" data-domain="/ears">Microphone</button>
+            <button type="button" class="sense-card" data-domain="/senses/range">Distance sensor</button>
+            <button type="button" class="sense-card" data-domain="/senses">WiFi sniffer</button>
+          </div>
+          <div class="sense-subhead">Out</div>
+          <div class="sense-grid">
+            <button type="button" class="sense-card" data-domain="/mouth">Speaker</button>
+            <button type="button" class="sense-card" data-domain="/mood/led">LED</button>
+          </div>
         </div>
       </div>
 
@@ -104,6 +149,9 @@
         <h3>Debug</h3>
         <div class="button-row">
           <button type="button" id="debug-bark">Play positive bark</button>
+          <button type="button" id="debug-sit">Sit</button>
+          <button type="button" id="debug-stand">Stand</button>
+          <button type="button" id="debug-lay">Lay down</button>
         </div>
       </div>
 

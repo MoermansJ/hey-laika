@@ -38,6 +38,15 @@ def test_servo_read_returns_physical_joints(client):
     assert [j["index"] for j in body["joints"]] == list(SERVO_INDICES)
 
 
+def test_posture_combines_joints_and_orientation(client):
+    resp = client.get("/api/robots/bittle-1/posture")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert [j["index"] for j in body["joints"]] == list(SERVO_INDICES)
+    assert body["orientation"] == {"yaw": pytest.approx(0.0, abs=0.01),
+                                   "pitch": 0.0, "roll": 0.0}
+
+
 def test_servo_move_updates_mock_state(client):
     resp = client.post("/api/robots/bittle-1/servo",
                        json={"joints": [{"index": 0, "angle": 30},

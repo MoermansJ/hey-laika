@@ -205,7 +205,8 @@ class SensesService:
                     "yawFused": self._yaw_ref is not None}
 
     def reset_pose(self, heading: float = 0.0) -> dict:
-        yaw = self._read_yaw()
+        orientation = self._read_orientation()
+        yaw = None if orientation is None else orientation[0]
         with self._lock:
             self._x = self._y = 0.0
             self._heading = float(heading)
@@ -217,7 +218,18 @@ class SensesService:
 
     def read_yaw(self) -> float | None:
         """One `gp` read: the IMU's unwrapped yaw, None if unreadable."""
-        return self._read_yaw()
+        orientation = self._read_orientation()
+        return None if orientation is None else orientation[0]
+
+    def read_orientation(self) -> dict | None:
+        """One `gp` read as {yaw, pitch, roll} degrees, None if unreadable.
+        Pitch/roll are body tilt — level stance is near 0/0; previously read
+        and discarded (SENSOR_DATA.md), now used by the posture dial."""
+        orientation = self._read_orientation()
+        if orientation is None:
+            return None
+        yaw, pitch, roll = orientation
+        return {"yaw": round(yaw, 1), "pitch": round(pitch, 1), "roll": round(roll, 1)}
 
     def fuse_yaw(self) -> dict | None:
         """Replace the dead-reckoned heading with the IMU's. The first fuse
@@ -225,9 +237,10 @@ class SensesService:
         yaw counts from boot, the map from the last reset), every later one
         corrects it. Returns the correction applied, None when the transport
         cannot read the IMU."""
-        yaw = self._read_yaw()
-        if yaw is None:
+        orientation = self._read_orientation()
+        if orientation is None:
             return None
+        yaw = orientation[0]
         with self._lock:
             self._last_yaw = yaw
             if self._yaw_ref is None:
@@ -271,7 +284,10 @@ class SensesService:
             except Exception:
                 logger.exception("Sniff tick failed")
 
-    def _read_yaw(self) -> float | None:
+    def _read_orientation(self) -> tuple[float, float, float] | None:
+        """One `gp` read, parsed as (yaw, pitch, roll) — `ICM: ax ay az yaw
+        pitch roll` (SPATIAL_MVP_REVIEW.md), fixed-width floats at indices
+        3/4/5."""
         try:
             lines = self.controller.query("gp")
         except Exception:
@@ -282,7 +298,7 @@ class SensesService:
             if "ICM" in line or "MCU" in line:
                 floats = _FLOAT_RE.findall(line)
                 if len(floats) >= 6:
-                    return float(floats[3])
+                    return float(floats[3]), float(floats[4]), float(floats[5])
         return None
 
     def _read_battery(self) -> float | None:
@@ -310,7 +326,8 @@ class SensesService:
                             "rssi": ap["rssi"], "channel": ap.get("channel")})
         if not aps:
             return None
-        yaw = self._read_yaw()
+        orientation = self._read_orientation()
+        yaw = None if orientation is None else orientation[0]
         battery = self._read_battery()
         pose = self.pose()
         sample = WifiSample(t=time.time(), x=pose["x"], y=pose["y"],

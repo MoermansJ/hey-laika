@@ -640,6 +640,24 @@ def robot_servo_read(robot_id: str):
     })
 
 
+@app.get("/api/robots/<robot_id>/posture")
+@robot_scoped
+def robot_posture(robot_id: str):
+    """Joint angles + body tilt in one call — the GUI's 3D posture dial polls
+    this instead of /servo + a separate IMU read. Angles are commanded
+    targets (no servo position feedback); pitch/roll are body-frame tilt
+    from the same `gp` read /mood and /senses use for yaw."""
+    angles = bittle.read_joint_angles()
+    orientation = senses.read_orientation()
+    return jsonify({
+        "robotId": robot_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "joints": (None if angles is None else
+                   [{"index": i, "angle": angles[i]} for i in SERVO_LIMITS]),
+        "orientation": orientation,
+    })
+
+
 @app.post("/api/robots/<robot_id>/servo")
 @robot_scoped
 def robot_servo_move(robot_id: str):
@@ -1308,7 +1326,10 @@ def mood_status(robot_id: str):
 def mood_set(robot_id: str):
     """{"mood": "happy"} pins a named mood; {"mood": "happy", "seconds": 3}
     flashes it; {"r","g","b","effect","periodMs","brightness"} pins a
-    custom colour."""
+    custom colour; add "seconds" to hold the custom colour for that long
+    instead of pinning it (the dev-mode LED toast's colour picker) — a hold,
+    not a flash, so a person in the camera's view can't reclaim the LED
+    mid-toast the way they would mid-flash."""
     if not mood.enabled:
         return jsonify({"error": "not_configured",
                         "message": "SATELLITE_HOST is not set (or MOOD_ENABLED=false)"}), 409
@@ -1320,12 +1341,16 @@ def mood_set(robot_id: str):
             result = mood.flash(name, seconds) if seconds else mood.set(name)
             log_activity("mood", f"Mood {name}" + (f" for {seconds}s" if seconds else ""))
         else:
-            result = mood.set_color(
-                _num_param(data, "r", 0, lo=0, hi=255), _num_param(data, "g", 0, lo=0, hi=255),
-                _num_param(data, "b", 0, lo=0, hi=255), str(data.get("effect", "solid")),
-                _num_param(data, "periodMs", 1500, lo=100, hi=60000),
-                _num_param(data, "brightness", 255, lo=0, hi=255))
-            log_activity("mood", "Mood custom colour")
+            r = _num_param(data, "r", 0, lo=0, hi=255)
+            g = _num_param(data, "g", 0, lo=0, hi=255)
+            b = _num_param(data, "b", 0, lo=0, hi=255)
+            effect = str(data.get("effect", "solid"))
+            period_ms = _num_param(data, "periodMs", 1500, lo=100, hi=60000)
+            brightness = _num_param(data, "brightness", 255, lo=0, hi=255)
+            seconds = _num_param(data, "seconds", None, lo=0.1, hi=600, kind=float)
+            result = (mood.hold_color(r, g, b, effect, period_ms, brightness, seconds)
+                      if seconds else mood.set_color(r, g, b, effect, period_ms, brightness))
+            log_activity("mood", "Mood custom colour" + (f" for {seconds}s" if seconds else ""))
     except ValueError as exc:
         return jsonify({"error": "bad_request", "message": str(exc)}), 400
     if result.get("lastError"):

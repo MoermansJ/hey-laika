@@ -609,9 +609,11 @@ class NavigationService:
             self._pan = 0.0
         yield {"command": "m 0 0", "settleS": float(self.config["sweepSettleS"])}
         result = self.builder.integrate_sweep(readings, pose)
+        per_reading = result.pop("perReading", [False] * len(readings))
         self.stats["sweeps"] += 1
         self.last_sweep = {"at": self._clock(), "pose": pose, **result,
-                           "readings": [{"panDeg": a, "rangeCm": d} for a, d in readings]}
+                           "readings": [{"panDeg": a, "rangeCm": d, "conflict": c}
+                                        for (a, d), c in zip(readings, per_reading)]}
         if result["contradictions"]:
             self._handle(RecoverableError(
                 "map_contradiction",

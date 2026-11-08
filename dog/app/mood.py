@@ -51,11 +51,15 @@ RAINBOW = ((255, 0, 0), (255, 110, 0), (255, 220, 0), (0, 200, 0),
            (0, 90, 255), (60, 0, 200), (170, 0, 255))
 
 # event -> (mood, seconds); None seconds = becomes the base mood
+# vision.person deliberately has no entry: it used to flash "person" (cyan)
+# on the LED, which fought the dev-mode LED toast (and anything else) every
+# ~1.5s for as long as someone stood in the camera's view — the toast is
+# meant to replace that reaction, not race it. vision.clear stays mapped so
+# it can still clear a stale flash once nobody's in view.
 EVENT_MOODS = {
     "robot.online":     ("happy", 4.0),
     "voice.phrase":     ("wake", 2.5),
     "voice.wake":       ("wake", 2.5),
-    "vision.person":    ("person", 1.5),
     "vision.clear":     (None, None),
     "exception.report": ("alert", 3.0),
     "leash.near":       ("idle", None),
@@ -91,6 +95,7 @@ class MoodService:
         self._flash: dict | None = None
         self._hold: dict | None = None
         self._flash_timer: threading.Timer | None = None
+        self._hold_timer: threading.Timer | None = None
         self._manual_until = 0.0
         self.dim = 1.0                      # battery saver scales every brightness
         self.user_enabled = True            # GUI mute, independent of hardware config
@@ -123,6 +128,8 @@ class MoodService:
         with self._lock:
             if self._flash_timer:
                 self._flash_timer.cancel()
+            if self._hold_timer:
+                self._hold_timer.cancel()
 
     # -- public --
 
@@ -155,32 +162,85 @@ class MoodService:
         self._apply(self._current())
         return self.status()
 
-    def flash(self, mood: str, seconds: float) -> dict:
-        """Show a mood for `seconds`, then fall back to the base."""
+    def flash(self, mood: str, seconds: float, manual: bool = True) -> dict:
+        """Show a mood for `seconds`, then fall back to the base. `manual`
+        (default True) is for on_event()'s own call only: event-mapped
+        flashes must stay free to supersede each other (voice.phrase ->
+        wake -> wake_greet in the same beat), so it passes manual=False."""
         spec = dict(_mood_spec(mood), name=mood)
+        self._start_flash_locked(spec, seconds, manual)
+        self._apply(self._current())
+        return self.status()
+
+    def _start_flash_locked(self, spec: dict, seconds: float, manual: bool) -> None:
+        """Shared by flash() and flash_color(). A manual flash also holds off
+        event-driven moods for its own duration, same reasoning as set()'s
+        MANUAL_HOLD_S: without it, vision.person re-fires every ~1.5s and an
+        explicit flash (a dev-mode LED toast, a spoken-line "speaking" cue, an
+        API {"mood", "seconds"} call) gets stomped by "person" mid-flash
+        whenever a person is in view — scoped to the flash's own length, not
+        the full MANUAL_HOLD_S, so real events resume right after instead of
+        staying blocked."""
         with self._lock:
             self._clear_flash_locked()
             self._flash = {**spec, "until": self._clock() + seconds}
+            if manual:
+                self._manual_until = max(self._manual_until, self._clock() + seconds)
             self._flash_timer = threading.Timer(seconds, self._end_flash)
             self._flash_timer.daemon = True
             self._flash_timer.start()
-        self._apply(self._current())
-        return self.status()
 
     def hold(self, mood: str) -> dict:
         """Show a mood on top of everything until release(): the conversation's
         listening / thinking / speaking states, which have no fixed length."""
         spec = dict(_mood_spec(mood), name=mood)
         with self._lock:
+            self._cancel_hold_timer_locked()
             self._hold = spec
+        self._apply(spec)
+        return self.status()
+
+    def hold_color(self, r: int, g: int, b: int, effect: str, period_ms: int,
+                    brightness: int, seconds: float | None = None) -> dict:
+        """Custom-colour sibling of hold(): outranks base, flash, AND every
+        event-driven mood for as long as it's held — unlike flash()/the
+        manual-flash guard above, which only block the event system for
+        their own timed window. The dev-mode LED toast uses this (with
+        `seconds`) so standing in the camera's view — which re-fires
+        vision.person every ~1.5s — can't reclaim the LED mid-toast.
+        seconds=None holds until release(), same as hold()."""
+        if effect not in LED_EFFECTS:
+            raise ValueError(f"effect must be one of {LED_EFFECTS}")
+        spec = {"name": "custom", "r": int(r), "g": int(g), "b": int(b),
+                "effect": effect, "periodMs": int(period_ms),
+                "brightness": int(brightness)}
+        with self._lock:
+            self._cancel_hold_timer_locked()
+            self._hold = spec
+            if seconds:
+                self._hold_timer = threading.Timer(seconds, self._end_timed_hold)
+                self._hold_timer.daemon = True
+                self._hold_timer.start()
         self._apply(spec)
         return self.status()
 
     def release(self) -> dict:
         with self._lock:
+            self._cancel_hold_timer_locked()
             self._hold = None
         self._apply(self._current())
         return self.status()
+
+    def _cancel_hold_timer_locked(self) -> None:
+        if self._hold_timer:
+            self._hold_timer.cancel()
+        self._hold_timer = None
+
+    def _end_timed_hold(self) -> None:
+        with self._lock:
+            self._hold = None
+            self._hold_timer = None
+        self._apply(self._current())
 
     def on_event(self, event: str, payload: dict | None = None) -> None:
         """EventBinder listener: map framework events to moods."""
@@ -199,7 +259,7 @@ class MoodService:
         elif seconds is None:
             self.set(mood, manual=False)
         else:
-            self.flash(mood, seconds)
+            self.flash(mood, seconds, manual=False)
 
     def sync(self) -> bool:
         """Re-send the current state (satellite reboot, GUI refresh)."""

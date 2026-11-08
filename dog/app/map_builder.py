@@ -138,12 +138,16 @@ class MapBuilder:
 
     def integrate_sweep(self, readings: list[tuple[float, float | None]],
                         pose: dict) -> dict:
-        """Head-pan sweep: [(pan_deg, distance_cm), ...] from one standing pose."""
+        """Head-pan sweep: [(pan_deg, distance_cm), ...] from one standing pose.
+        `perReading` mirrors `readings` 1:1 (True where that one reading raised
+        a contradiction) — the sweep dial's per-angle red highlight needs that
+        link, which the aggregated `contradictions` list alone loses."""
         results = [self.integrate(distance, pose, pan) for pan, distance in readings]
         return {"readings": len(readings),
                 "hits": sum(1 for r in results if r["hit"]),
                 "freed": sum(r["freed"] for r in results),
-                "contradictions": [c for r in results for c in r["contradictions"]]}
+                "contradictions": [c for r in results for c in r["contradictions"]],
+                "perReading": [bool(r["contradictions"]) for r in results]}
 
     def apply_correction(self, cells: list[dict], trust: str) -> int:
         """Human verdict on a contradiction: 'sensor' pins the reading's

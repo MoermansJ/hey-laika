@@ -81,3 +81,4 @@ def test_sweep_integrates_every_pan():
     out = builder.integrate_sweep([(-90, 30.0), (0, 30.0), (90, None)], pose)
     assert out["readings"] == 3 and out["hits"] == 2
     assert grid.get_cell(3, 0)["hits"] == 1 and grid.get_cell(0, -3)["hits"] == 1
+    assert out["perReading"] == [False, False, False]

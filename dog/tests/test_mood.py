@@ -175,8 +175,19 @@ def test_manual_pin_outranks_events_for_a_minute():
     sat = FakeSatellite()
     mood = MoodService(sat, clock=lambda: now[0])
     mood.set_color(255, 0, 0)
-    mood.on_event("vision.person")
+    mood.on_event("nav.blocked")
     assert sat.shown["r"] == 255 and sat.shown["g"] == 0          # still red
     now[0] += 61
+    mood.on_event("nav.blocked")
+    assert sat.shown["g"] == MOODS["alert"][1]                     # alert flash wins again
+
+
+def test_vision_person_no_longer_reacts_on_the_led():
+    """The dev-mode LED toast replaces this reaction (2026-11): a person in
+    view used to re-flash cyan every ~1.5s and fight any other LED use."""
+    sat = FakeSatellite()
+    mood = make(sat)
+    mood.set("idle")
     mood.on_event("vision.person")
-    assert sat.shown["g"] == MOODS["person"][1]                    # cyan flash wins again
+    assert mood.status()["mood"] == "idle"
+    assert sat.calls[-1][:4] == MOODS["idle"][:4]
