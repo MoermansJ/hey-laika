@@ -102,4 +102,83 @@ def test_status_reports_the_last_decoded_state_and_signals():
 
     next(drive._drive_steps())
 
-    assert drive.status() == {"lastState": "FORWARD", "lastSignals": {"forward": 0.9}}
+    assert drive.status() == {"lastState": "FORWARD", "lastSignals": {"forward": 0.9},
+                              "gfEnabled": False, "gfRateHz": None, "gfSpikes": None,
+                              "lastGfAt": None, "lastEscapeAt": None}
+
+
+def test_status_surfaces_the_sidecars_rate_and_escape_timing():
+    drive, _ = make_drive_with_gf(
+        [{"state": "STOP", "signals": {}}],
+        [{"gfSpikes": 2, "gfRateHz": 45.3, "lastGfAt": 1000.0}])
+
+    next(drive._drive_steps())   # the escape burst's first step
+    status = drive.status()
+
+    assert status["gfEnabled"] is True
+    assert status["gfRateHz"] == 45.3 and status["gfSpikes"] == 2
+    assert status["lastGfAt"] == 1000.0
+    assert status["lastEscapeAt"] is not None
+
+
+def make_drive_with_gf(responses, gf_responses, **config):
+    """Same as make_drive, but with the giant-fiber sidecar wired in too."""
+    arbiter = FakeArbiter()
+    queue = list(responses)
+    gf_queue = list(gf_responses)
+
+    def fetch_command():
+        return queue.pop(0) if queue else None
+
+    def fetch_gf():
+        return gf_queue.pop(0) if gf_queue else gf_queue_default
+
+    gf_queue_default = None  # sentinel: sidecar unreachable once the queue drains
+    drive = FruitflyDriveService(arbiter, "http://127.0.0.1:8765",
+                                 gf_url="http://127.0.0.1:8767", config=config,
+                                 fetch_command=fetch_command, fetch_gf=fetch_gf)
+    return drive, arbiter
+
+
+def test_a_fresh_giant_fiber_spike_preempts_one_burst_with_a_jump_and_recover():
+    drive, _ = make_drive_with_gf(
+        [{"state": "FORWARD", "signals": {}}],
+        [{"gfSpikes": 3, "lastGfAt": 1000.0}],
+        escapeJumpS=0.8, escapeRecoverS=0.4)
+
+    steps = drive._drive_steps()
+    assert next(steps) == {"command": "kjmp", "label": "ESCAPE (giant fiber)", "settleS": 0.8}
+    assert next(steps) == {"command": "kbalance", "label": "recover", "settleS": 0.4}
+    # Cooldown still open (gfCooldownS defaults to 4.0) -> falls through to the
+    # normal locomotor command instead of re-triggering on the same spike.
+    assert next(steps) == {"command": "kwkF", "label": "FORWARD", "settleS": 1.0}
+
+
+def test_giant_fiber_escape_respects_its_cooldown():
+    drive, _ = make_drive_with_gf(
+        [{"state": "STOP", "signals": {}}, {"state": "STOP", "signals": {}}],
+        [{"gfSpikes": 1, "lastGfAt": 1000.0}, {"gfSpikes": 1, "lastGfAt": 1001.0}],
+        gfCooldownS=4.0)
+
+    steps = drive._drive_steps()
+    assert next(steps)["command"] == "kjmp"          # first spike: escapes
+    next(steps)                                       # the recover step
+    # Second spike arrives a second later, still inside the 4s cooldown.
+    assert next(steps) == {"command": "kbalance", "label": "STOP", "settleS": 1.0}
+
+
+def test_no_giant_fiber_sidecar_configured_behaves_exactly_as_before():
+    drive, _ = make_drive([{"state": "FORWARD", "signals": {}}])
+
+    assert drive.gf_url is None
+    step = next(drive._drive_steps())
+
+    assert step == {"command": "kwkF", "label": "FORWARD", "settleS": 1.0}
+
+
+def test_unreachable_gf_sidecar_falls_through_to_the_normal_locomotor_command():
+    drive, _ = make_drive_with_gf([{"state": "FORWARD", "signals": {}}], [])  # gf_queue empty -> None
+
+    step = next(drive._drive_steps())
+
+    assert step == {"command": "kwkF", "label": "FORWARD", "settleS": 1.0}

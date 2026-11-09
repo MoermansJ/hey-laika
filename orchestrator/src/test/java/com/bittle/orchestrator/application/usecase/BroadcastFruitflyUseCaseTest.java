@@ -31,7 +31,8 @@ class BroadcastFruitflyUseCaseTest {
     @Test
     void givenOneUnreachableRobot_whenExecuted_thenTheOtherRobotIsStillPublished() {
         when(adapter.fruitflyStatus(ONE))
-                .thenReturn(new FruitflyStatus("bittle-1", "FORWARD", Map.of("forward", 0.9)));
+                .thenReturn(new FruitflyStatus("bittle-1", "FORWARD", Map.of("forward", 0.9),
+                        false, null, null, null, null));
         when(adapter.fruitflyStatus(TWO)).thenThrow(new AdapterUnavailableException("http://two", null));
 
         useCase.execute();

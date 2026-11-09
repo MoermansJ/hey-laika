@@ -210,8 +210,10 @@ explorer.init()
 # short gait burst per decoded command at `agent` priority. Started/stopped
 # by mode switches, same as the explorer above.
 fruitfly_drive = FruitflyDriveService(
-    arbiter, Config.FRUITFLY_SIM_URL, trigger=event_binder.trigger,
-    config={"burstS": Config.FRUITFLY_BURST_S})
+    arbiter, Config.FRUITFLY_SIM_URL, gf_url=Config.FRUITFLY_GF_URL,
+    trigger=event_binder.trigger,
+    config={"burstS": Config.FRUITFLY_BURST_S,
+            "gfCooldownS": Config.FRUITFLY_GF_COOLDOWN_S})
 # Personality modes (docs/design/PERSONALITY_MODES_BRIEF.md): the
 # orchestrator owns the mode itself and pushes changes here; this mirror
 # flips conversation/eyes/arbiter on the adapter side.
@@ -1269,8 +1271,17 @@ def eyes_status(robot_id: str):
 @app.get("/api/robots/<robot_id>/eyes/snap")
 @robot_scoped
 def eyes_snap(robot_id: str):
-    """The latest cached frame as image/jpeg (?fresh=1 fetches a new one)."""
+    """The latest cached frame as image/jpeg (?fresh=1 fetches a new one,
+    *unless* the camera is disabled: the Adapters > Camera toggle is meant
+    to mean "stop pointing this at anything," not just "stop running person
+    detection on it" -- ?fresh=1 bypassing that would let any caller (the
+    fly-brain-loom sidecars, in practice) keep pulling real images off the
+    satellite after the GUI says it's off. Disabled callers still get
+    whatever frame was already cached before it was turned off."""
     if request.args.get("fresh") == "1":
+        if not eyes.enabled:
+            return jsonify({"error": "camera_disabled",
+                            "message": "camera is disabled; not capturing a new frame"}), 409
         try:
             eyes.capture()
         except SatelliteError as exc:

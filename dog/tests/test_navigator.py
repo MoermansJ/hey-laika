@@ -114,7 +114,12 @@ def test_arrives_across_open_floor():
 
 
 def test_walks_around_the_box_and_maps_it():
-    h = build(walls=DEFAULT_WALLS)
+    # sweepAtStart default flipped to False (2026-11): a manual GUI scan
+    # followed by click-to-walk no longer re-sweeps redundantly before
+    # moving. This test specifically exercises sweep-built mapping, so it
+    # asks for the old behavior explicitly rather than relying on the
+    # (now different) default.
+    h = build(walls=DEFAULT_WALLS, config={"sweepAtStart": True})
     h.nav.set_target(2.0, 0.0)
     assert settled(h)
     assert h.nav.state == "arrived", h.nav.status()
@@ -241,11 +246,73 @@ def test_yaw_fusion_corrects_heading_and_counts_disagreement():
     assert h.errors.counts.get("localization_drift", 0) == 0
 
 
+def test_a_manual_target_is_not_halted_by_accumulated_drift():
+    # The drift ceiling protects explorer.py's unattended, many-move
+    # autonomous routing (source="agent") from corrupting the occupancy map
+    # it builds over a long session. A manual target -- the GUI's
+    # scan-then-walk, a human confirming a point they can see right now --
+    # doesn't depend on that same long-term trust, so unrelated drift piled
+    # up earlier in the session must not block it.
+    h = build()
+    h.nav.target = {"x": 1.0, "y": 0.0, "source": "manual", "setAt": 0}
+    h.senses._drift_m = h.nav.config["maxDriftM"] + 10.0
+
+    h.nav._after_motion()
+
+    assert h.error_state.blocked is False
+    assert h.nav.state != "error"
+
+
+def test_an_agent_target_is_still_halted_by_accumulated_drift():
+    h = build()
+    h.nav.target = {"x": 1.0, "y": 0.0, "source": "agent", "setAt": 0}
+    h.nav.state = "moving"   # active route in progress, same as a real one
+    h.senses._drift_m = h.nav.config["maxDriftM"] + 10.0
+
+    h.nav._after_motion()
+
+    # UnrecoverableError escalates straight away (no retry streak), and
+    # _escalate() zeroes errors.counts[kind] as part of that -- the blocked
+    # error state is the real signal a "lost" halt fired, same pattern
+    # test_three_contradictions_escalate_and_the_human_resolves uses.
+    assert h.error_state.blocked is True
+    assert h.nav.state == "error"
+
+
 def test_sensor_jump_while_still_is_an_anomaly():
     h = build(walls=ROOM + [((1.9, -1.0), (1.9, 2.0))])
     h.nav.sample()
     h.ctrl.world.walls = ROOM + [((0.2, -1.0), (0.2, 2.0))]
     h.nav.sample()
+    assert h.errors.counts["sensor_anomaly"] == 1
+
+
+def test_missed_echoes_during_a_jump_are_not_a_sensor_anomaly():
+    # A jump (Fruitfly's giant-fiber escape, or a manual/voice backflip)
+    # legitimately bounces the body enough to drop ultrasonic echoes for a
+    # moment -- that must not trip the same alarm a genuinely failing
+    # sensor would, or every jump halts her with a false "she needs help".
+    h = build()
+    h.ctrl.read_range_cm = lambda pin: None       # every read misses
+    h.ctrl.last_command = "kjmp"
+    h.ctrl.last_motion_at = time.time()           # _moving() == True
+
+    for _ in range(h.nav.config["missStreak"] + 1):
+        h.nav.sample()
+
+    assert h.errors.counts.get("sensor_anomaly", 0) == 0
+    assert h.nav._miss_streak == 0
+
+
+def test_missed_echoes_while_actually_walking_still_trip_the_anomaly():
+    h = build()
+    h.ctrl.read_range_cm = lambda pin: None
+    h.ctrl.last_command = "kwkF"
+    h.ctrl.last_motion_at = time.time()
+
+    for _ in range(int(h.nav.config["missStreak"])):
+        h.nav.sample()
+
     assert h.errors.counts["sensor_anomaly"] == 1
 
 

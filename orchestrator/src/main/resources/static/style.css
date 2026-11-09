@@ -113,22 +113,36 @@ code { background: rgba(77,255,140,0.1); padding: 0.1rem 0.3rem; border-radius: 
 .devmode-settings .devmode-setting:not(.active) {
   opacity: 1;
 }
+/* A genuinely disabled dev-mode action (not just "off") still needs to
+   look disabled -- the rule above only meant to stop the on/off opacity
+   fade, not override this. */
+.devmode-settings .devmode-setting:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
-/* LED toast's colour picker rides next to its toggle in one row, not its
-   own stacked row — the toggle keeps stretching (flex: 1) to fill whatever
-   width the row needs, same shared-width rule as the plain toggles above. */
+/* LED toast's colour picker overlays the toggle's right edge instead of
+   sharing the row as a flex sibling — a flex sibling adds its own width to
+   the row, which the column's shrink-to-fit sizing then counts, leaving
+   this toggle narrower than the plain full-width toggles above/below by
+   the swatch's width. Overlaying keeps the toggle's own intrinsic width
+   (and thus every toggle's shared stretch width) identical. */
 .devmode-setting-row {
-  display: flex;
-  align-items: stretch;
+  position: relative;
 }
 .devmode-setting-row .devmode-setting {
-  flex: 1;
+  width: 100%;
+  padding-right: 3.5rem;
 }
 .devmode-color-picker {
+  position: absolute;
+  top: 0;
+  right: 0;
   width: 2.6rem;
+  height: 100%;
   padding: 0.3rem;
-  border: 2px solid var(--border);
-  border-left: none;
+  border: none;
+  border-left: 2px solid var(--border);
   background: var(--card);
   cursor: pointer;
 }
@@ -499,6 +513,44 @@ button.active { background: var(--success); color: var(--primary-dark); border-c
 .driver-icon { width: 72px; height: 72px; image-rendering: pixelated; }
 .driver-label { font-size: 0.85rem; letter-spacing: 0.04em; }
 
+/* Active slot (always shown) + the chevron that opens the dropdown below
+   it. The slot reuses .driver-option.active's glow, just not clickable —
+   switching happens from the dropdown list, not by "re-picking" the
+   current one. */
+.driver-active-row { display: flex; align-items: center; gap: 0.75rem; }
+.driver-active-slot { cursor: default; }
+.driver-dropdown-toggle {
+  width: 2.6rem;
+  height: 2.6rem;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  line-height: 1;
+  align-self: center;
+}
+.driver-dropdown-toggle[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+.driver-dropdown-glyph { display: inline-block; transition: transform 0.15s ease; }
+.driver-dropdown-toggle[aria-expanded="true"] .driver-dropdown-glyph { transform: rotate(180deg); }
+
+/* The dropdown list: a single column, opened below the active row. Its
+   active entry is the one already shown above, so here it fades instead
+   of glowing; the id selector outranks .driver-grid:has(...)'s own
+   opposite rule above (dim the NON-active ones) which would otherwise
+   apply here too since this list keeps the .driver-grid class. */
+#driver-options.driver-dropdown {
+  grid-template-columns: 160px;
+  margin-top: 0.75rem;
+}
+#driver-options.driver-dropdown .driver-option:not(.active) { opacity: 1; }
+#driver-options.driver-dropdown .driver-option.active {
+  opacity: 0.45;
+  border-color: var(--border);
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+}
+
 /* ---------- senses cards (same bell-jar card shell, independently toggled) ---------- */
 
 .sense-grid {
@@ -551,22 +603,89 @@ button.active { background: var(--success); color: var(--primary-dark); border-c
   gap: 1.25rem;
   margin-bottom: 1.25rem;
 }
-.row-grid > #driver-card, .row-grid > #nav-card, .row-grid > #sweep-card,
-.row-grid > #posture-card {
+.row-grid > #driver-card, .row-grid > #sweep-card,
+.row-grid > #posture-card, .row-grid > #camera-card, .row-grid > #fruitfly-card {
   flex: 1 1 320px;
   min-width: 280px;
   margin-bottom: 0;
 }
+/* Posture's dial/foot-row content tops out at 420px (.posture-dial's own
+   max-width) -- without a matching cap here, flex-grow stretches the card
+   itself past that on a wide row, leaving the zoom buttons (pinned to the
+   card's right edge) looking disconnected from the X/Y/Z group next to them. */
+.row-grid > #posture-card {
+  max-width: 440px;
+}
 
-/* ---------- navigation card (occupancy map + click-to-walk, inline on the
-   robot page -- the full Map tab stays the place for sweep tuning and the
-   error-recovery dialogue, this is the "glance and click" version) ---------- */
+/* ---------- fruitfly card (camera -> giant fiber -> jump pipeline,
+   observability only) ---------- */
 
-.nav-status { margin: 0.6rem 0; font-size: 0.85rem; }
-.nav-status .navstate { text-transform: uppercase; letter-spacing: 0.04em; }
-.nav-status .navstate.arrived { color: var(--success); }
-.nav-status .navstate.blocked { color: var(--warning); }
-.nav-status .navstate.error { color: var(--danger); }
+.fruitfly-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.3rem 0;
+  font-size: 0.85rem;
+}
+.fruitfly-row.muted { color: var(--text-light); font-size: 0.78rem; }
+.fruitfly-value { font-weight: 600; }
+.fruitfly-value.escape { color: var(--danger); }
+.fruitfly-bar {
+  position: relative;
+  height: 0.5rem;
+  border-radius: 3px;
+  background: var(--border);
+  margin: 0.3rem 0 0.5rem;
+  overflow: visible;
+}
+.fruitfly-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.fruitfly-bar-fill.over { background: var(--danger); }
+.fruitfly-bar-threshold {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--text-light);
+}
+.fruitfly-legend {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  line-height: 1.4;
+}
+.fruitfly-legend code { font-size: 0.75rem; }
+
+/* ---------- camera card (live satellite feed, polled as plain JPEG
+   snapshots -- same /eyes/snap endpoint the dev-mode Camera sense card's
+   detector already uses) ---------- */
+
+.camera-feed {
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: #000;
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+  max-width: 420px;
+  aspect-ratio: 8 / 5;
+  overflow: hidden;
+}
+.camera-feed img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.camera-feed .empty { display: flex; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-light); font-size: 0.85rem; text-align: center; padding: 1rem; }
+
+/* ---------- navigation click-to-walk, folded into the Scan card below
+   rather than a separate occupancy-map card — the full Map tab stays the
+   place for sweep tuning and the error-recovery dialogue, this is the
+   "glance and click" version ---------- */
+
+/* The foot row under the Scan dial: action buttons on the left, the zoom
+   controls pinned to the card's bottom-right corner. */
+.sweep-foot-row { margin-top: 0.6rem; }
+.sweep-foot-row .posture-zoom-group { margin-left: auto; }
 
 .nav-banner {
   margin-bottom: 0.6rem;
@@ -582,23 +701,10 @@ button.active { background: var(--success); color: var(--primary-dark); border-c
 }
 .nav-banner button { font-size: 0.8rem; padding: 0.3rem 0.6rem; }
 
-.nav-map {
-  border: 2px solid var(--border);
-  border-radius: 6px;
-  background: #000;
-  box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
-  max-width: 420px;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-}
-.nav-map svg { display: block; width: 100%; height: 100%; }
-.nav-map.clicktogo svg { cursor: crosshair; }
-.nav-map .empty { display: flex; align-items: center; justify-content: center;
-  height: 100%; color: var(--text-light); font-size: 0.85rem; text-align: center; padding: 1rem; }
-
 /* ---------- sweep dial (the "Scan room" sweep's 7 readings as a radar
    semicircle — 12 o'clock is straight ahead, same relative convention the
-   sweep angles already use) ---------- */
+   sweep angles already use — and now doubles as the navigation surface:
+   zoom with scroll/the +/- buttons, click to walk there when enabled) ---------- */
 
 .sweep-dial {
   border: 2px solid var(--border);
@@ -608,8 +714,10 @@ button.active { background: var(--success); color: var(--primary-dark); border-c
   max-width: 420px;
   aspect-ratio: 8 / 5;
   overflow: hidden;
+  touch-action: none;
 }
 .sweep-dial svg { display: block; width: 100%; height: 100%; }
+.sweep-dial svg { cursor: crosshair; }
 .sweep-dial .empty { display: flex; align-items: center; justify-content: center;
   height: 100%; color: var(--text-light); font-size: 0.85rem; text-align: center; padding: 1rem; }
 
@@ -637,6 +745,7 @@ button.active { background: var(--success); color: var(--primary-dark); border-c
    drag left/right on one of these to rotate the view around only that
    axis, instead of the dial's combined yaw+pitch drag. */
 .posture-axes { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+.posture-axes .posture-zoom-group { margin-left: auto; }
 .posture-axis {
   width: 2.4rem;
   height: 2.4rem;

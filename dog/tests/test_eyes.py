@@ -185,12 +185,45 @@ def test_eyes_and_mood_routes_without_a_satellite(client):
     eyes = client.get(f"/api/robots/{RID}/eyes").get_json()
     assert eyes["enabled"] is False and eyes["configured"] is False
     assert client.get(f"/api/robots/{RID}/eyes/snap").status_code == 404
+    # Disabled (here: never configured at all) must refuse a fresh capture
+    # outright, not fall through to a satellite call that then 502s --
+    # ?fresh=1 is the exact path a caller outside the GUI (the fly-brain-loom
+    # sidecars) uses, and it must honour "camera is off" same as the GUI's
+    # own toggle, not bypass it.
+    resp = client.get(f"/api/robots/{RID}/eyes/snap?fresh=1")
+    assert resp.status_code == 409 and resp.get_json()["error"] == "camera_disabled"
     assert client.get(f"/api/robots/{RID}/satellite").status_code == 409
     assert client.post(f"/api/robots/{RID}/eyes/config",
                        json={"enabled": True}).status_code == 409
     mood = client.get(f"/api/robots/{RID}/mood").get_json()
     assert mood["enabled"] is False and "happy" in mood["moods"]
     assert client.post(f"/api/robots/{RID}/mood", json={"mood": "happy"}).status_code == 409
+
+
+def test_fresh_snap_is_refused_once_disabled_and_does_not_hit_the_satellite(client, monkeypatch):
+    import app.app as app_module
+
+    satellite = FakeSatellite(enabled=True)
+    live_eyes = EyesService(satellite, FakeBinder(), fps=4.0)
+    # _running.set() (not init()): marks it enabled without starting the
+    # background grab loop, which would otherwise race this test's own
+    # explicit capture with its own periodic ones.
+    live_eyes._running.set()
+    monkeypatch.setattr(app_module, "eyes", live_eyes)
+
+    resp = client.get(f"/api/robots/{RID}/eyes/snap?fresh=1")
+    assert resp.status_code == 200 and satellite.snaps == 1
+
+    live_eyes.set_enabled(False)
+    resp = client.get(f"/api/robots/{RID}/eyes/snap?fresh=1")
+    assert resp.status_code == 409 and resp.get_json()["error"] == "camera_disabled"
+    assert satellite.snaps == 1   # unchanged -- no second capture happened
+
+    # The already-cached frame from before it was disabled is still served
+    # when fresh isn't forced -- turning the camera off doesn't erase the
+    # last picture, only stops taking new ones.
+    resp = client.get(f"/api/robots/{RID}/eyes/snap")
+    assert resp.status_code == 200 and satellite.snaps == 1
 
 
 def test_detect_route_validates_upload(client):

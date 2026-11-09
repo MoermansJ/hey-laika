@@ -80,6 +80,12 @@ services:
       # host.docker.internal; extra_hosts maps that on Linux, where Docker
       # does not provide it for free.
       - FRUITFLY_SIM_URL=${FRUITFLY_SIM_URL:-http://host.docker.internal:8765}
+      # Giant-fiber escape sidecar (Fly Brain Loom Demo design doc, phases
+      # 2-4): same host-process pattern as the sim above, different port.
+      # Laika only -- Mocha has no camera. Empty by default: Fruitfly drive
+      # is walk-only until this is set (and fly-brain-loom/sidecar/
+      # gf_server.py is actually running on the host).
+      - FRUITFLY_GF_URL=${FRUITFLY_GF_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

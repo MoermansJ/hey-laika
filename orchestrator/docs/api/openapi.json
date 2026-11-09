@@ -3333,6 +3333,37 @@
         "tags" : [ "Robot" ]
       }
     },
+    "/api/robots/{robotId}/posture" : {
+      "get" : {
+        "description" : "Relayed to the same path on the adapter.",
+        "operationId" : "posture",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "robotId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Joint angles + body tilt for the posture dial",
+        "tags" : [ "Robot" ]
+      }
+    },
     "/api/robots/{robotId}/power" : {
       "get" : {
         "description" : "Relayed to the same path on the adapter.",
@@ -4488,6 +4519,25 @@
       "FruitflyStatus" : {
         "type" : "object",
         "properties" : {
+          "gfEnabled" : {
+            "type" : "boolean"
+          },
+          "gfRateHz" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "gfSpikes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "lastEscapeAt" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "lastGfAt" : {
+            "type" : "number",
+            "format" : "double"
+          },
           "lastSignals" : {
             "type" : "object",
             "additionalProperties" : {

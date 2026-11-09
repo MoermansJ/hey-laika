@@ -156,6 +156,12 @@ class Config:
     FRUITFLY_SIM_URL = os.getenv("FRUITFLY_SIM_URL", "http://127.0.0.1:8765").rstrip("/")
     FRUITFLY_BURST_S = float(os.getenv("FRUITFLY_BURST_S", "1.0"))
 
+    # Giant-fiber escape override (Fly Brain Loom Demo design doc, §6.1's
+    # camera-loop v2): a second, optional sidecar -- empty/unset disables it
+    # entirely and Fruitfly drive behaves exactly as before.
+    FRUITFLY_GF_URL = os.getenv("FRUITFLY_GF_URL", "").rstrip("/") or None
+    FRUITFLY_GF_COOLDOWN_S = float(os.getenv("FRUITFLY_GF_COOLDOWN_S", "4.0"))
+
     @classmethod
     def sqlalchemy_url(cls) -> str:
         if cls.DATABASE_TYPE == "postgres" and cls.DATABASE_URL:

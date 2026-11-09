@@ -24,6 +24,7 @@ const state = {
   actions: {},             // robotId -> action-feed entries, newest first
   animations: {},          // robotId -> Animation[]
   mode: {},                // robotId -> operating mode ("stationary"/"roaming"/"fruitfly"/"phone")
+  fruitfly: {},            // robotId -> fruitfly_drive.py's status() (observability only)
   activeTab: "personality",
   wsConnected: false,
   wsGaveUp: false,
@@ -121,6 +122,9 @@ function handleMessage(topic, body) {
     } else if (kind === "mode") {
       state.mode[robotId] = (body.mode || "stationary").toLowerCase();
       if (onRobotPage(robotId)) { renderTabBar(); renderDriverCard(robotId); }
+    } else if (kind === "fruitfly") {
+      state.fruitfly[robotId] = body;
+      if (onRobotPage(robotId)) renderFruitflyCard(robotId);
     }
   }
 }
@@ -183,7 +187,7 @@ function subscribeAll() {
   stompClient.subscribe("/topic/fleet/stats",
       (msg) => handleMessage("/topic/fleet/stats", JSON.parse(msg.body)));
   state.robots.forEach((robot) => {
-    ["status", "personality", "display", "actions", "mode"].forEach((kind) => {
+    ["status", "personality", "display", "actions", "mode", "fruitfly"].forEach((kind) => {
       const topic = `/topic/robot/${robot.robotId}/${kind}`;
       stompClient.subscribe(topic, (msg) => handleMessage(topic, JSON.parse(msg.body)));
     });
@@ -267,12 +271,19 @@ async function pollTick() {
  * WS-connect time. */
 async function refreshRobotDetail(robotId) {
   try {
-    const [actions, mode] = await Promise.all([
-      api(`/api/robots/${robotId}/actions/feed?limit=60`),
+    const [actions, mode, fruitfly] = await Promise.all([
+      // dog/app/app.py's /actions/feed caps limit at 50 -- this whole
+      // Promise.all was silently failing with "'limit' must be <= 50" on
+      // every call (a pre-existing bug: 60 was always over that cap), which
+      // meant mode/actions never updated at all whenever the WS fallback
+      // path was the one actually running.
+      api(`/api/robots/${robotId}/actions/feed?limit=50`),
       api(`/api/robots/${robotId}/mode`),
+      api(`/api/robots/${robotId}/fruitfly/status`),
     ]);
     handleMessage(`/topic/robot/${robotId}/actions`, actions);
     handleMessage(`/topic/robot/${robotId}/mode`, mode);
+    handleMessage(`/topic/robot/${robotId}/fruitfly`, fruitfly);
   } catch { /* adapter offline; feed keeps last state */ }
 }
 
@@ -389,18 +400,27 @@ function resetRobotPanels() {
   $("#actions").innerHTML = "";
   $("#actions-age").textContent = "";
   document.querySelectorAll("#driver-options .driver-option").forEach((btn) => btn.classList.remove("active"));
+  $("#driver-options").classList.add("hidden");
+  $("#driver-dropdown-toggle").setAttribute("aria-expanded", "false");
+  $("#driver-active-slot").dataset.icon = "";
+  $("#driver-active-label").textContent = "—";
   document.querySelectorAll("#sense-options .sense-card").forEach((btn) => btn.classList.remove("active"));
   ["#poll-ttl", "#poll-batt", "#poll-mult", "#poll-postures"].forEach((sel) => {
     $(sel).value = "";
   });
   $("#polling-state").textContent = "";
-  $("#nav-status").textContent = "loading…";
-  $("#nav-map").innerHTML = "";
-  $("#nav-map").classList.remove("clicktogo");
   $("#nav-banner").classList.add("hidden");
   $("#nav-cancel").classList.add("hidden");
-  $("#nav-clicktogo").checked = false;
-  navMapGeom = null;
+  sweepDialGeom = null;
+  sweepGhostPoint = null;
+  sweepPinPoint = null;
+  updateWalkButton();
+  $("#camera-feed-img").classList.add("hidden");
+  $("#camera-feed-img").removeAttribute("src");
+  $("#camera-feed-empty").textContent = "loading…";
+  $("#camera-feed-empty").classList.remove("hidden");
+  $("#fruitfly-body").innerHTML = `<div class="empty">not in Fruitfly mode</div>`;
+  $("#fruitfly-age").textContent = "";
 }
 
 // An embedded page's widget wrench asks for another tab of the same robot.
@@ -456,6 +476,8 @@ function showRobotPage(robotId) {
   renderSensesCard(robotId);
   renderNavCard(robotId);
   renderPostureDial(robotId);
+  renderCameraCard(robotId);
+  renderFruitflyCard(robotId);
   if (!state.arbiterCard) {
     state.arbiterCard = hlArbiterCard($("#arbiter-card"), `/api/robots/${robotId}`,
         { title: "Current behavior", runs: 6 });
@@ -665,12 +687,18 @@ const DRIVER_ICON_DRAW = {
 const driverReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function mountDriverIcons() {
-  document.querySelectorAll("#driver-options .driver-option").forEach((btn) => {
+  // .driver-option, not #driver-options .driver-option: the always-shown
+  // active slot lives outside the dropdown list and needs the same
+  // animated icon. Looking up the draw function fresh every frame (not
+  // once at mount) is what lets renderDriverCard swap the slot's
+  // dataset.icon later and have the next tick just pick it up.
+  document.querySelectorAll(".driver-option").forEach((btn) => {
     const canvas = btn.querySelector(".driver-icon");
-    const draw = DRIVER_ICON_DRAW[btn.dataset.icon];
-    if (!canvas || !draw) return;
+    if (!canvas) return;
     const frame = () => {
       if (state.page !== "robot") return;   // skip work while off the robot page
+      const draw = DRIVER_ICON_DRAW[btn.dataset.icon];
+      if (!draw) return;
       driverRasterize(canvas, (hctx) => draw(hctx, performance.now()));
     };
     frame();
@@ -683,17 +711,41 @@ mountDriverIcons();
 // (the only mode with a Control tab for direct driving); "Fruitfly" hands
 // her over to the connectome sim. Two buttons for now — see PERSONALITY_
 // MODES_BRIEF.md if Roaming/Phone need a slot here later.
+//
+// The active one is always shown in its own slot next to the dropdown
+// chevron; the dropdown list (opened/closed separately) shows every
+// option, its own active entry faded since re-picking it is a no-op.
 function renderDriverCard(robotId) {
   if (!onRobotPage(robotId)) return;
   const mode = state.mode[robotId];
+  const match = document.querySelector(`#driver-options .driver-option[data-mode="${mode}"]`);
+  const slot = $("#driver-active-slot");
+  slot.dataset.icon = match ? match.dataset.icon : "";
+  $("#driver-active-label").textContent = match ? match.querySelector(".driver-label").textContent : "—";
   document.querySelectorAll("#driver-options .driver-option").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.mode === mode);
   });
 }
 
-$("#driver-options").addEventListener("click", (e) => {
+const driverToggle = $("#driver-dropdown-toggle");
+const driverDropdown = $("#driver-options");
+driverToggle.addEventListener("click", (e) => {
+  e.stopPropagation();
+  driverDropdown.classList.toggle("hidden");
+  driverToggle.setAttribute("aria-expanded", String(!driverDropdown.classList.contains("hidden")));
+});
+document.addEventListener("click", (e) => {
+  if (driverDropdown.classList.contains("hidden")) return;
+  if (driverDropdown.contains(e.target) || driverToggle.contains(e.target)) return;
+  driverDropdown.classList.add("hidden");
+  driverToggle.setAttribute("aria-expanded", "false");
+});
+
+driverDropdown.addEventListener("click", (e) => {
   const btn = e.target.closest(".driver-option");
   if (!btn || !state.selected) return;
+  driverDropdown.classList.add("hidden");
+  driverToggle.setAttribute("aria-expanded", "false");
   runAction(btn, async () => {
     const result = await api(`/api/robots/${state.selected}/mode/${btn.dataset.mode}`, { method: "POST" });
     handleMessage(`/topic/robot/${state.selected}/mode`, result);
@@ -741,13 +793,133 @@ async function renderSensesCard(robotId) {
   }));
 }
 
+// ---------- camera card (live satellite feed under Driver) ----------
+// Polls /eyes status (same fields the Adapters > Camera sense card already
+// reads) to decide what to show, then refreshes the <img> from the cached
+// /eyes/snap JPEG -- no fresh=1, so this rides the adapter's own grab loop
+// instead of forcing an extra satellite round trip every tick/tab.
+
+async function renderCameraCard(robotId) {
+  if (!onRobotPage(robotId)) return;
+  const img = $("#camera-feed-img");
+  const empty = $("#camera-feed-empty");
+  const age = $("#camera-age");
+  let status;
+  try {
+    status = await api(`/api/robots/${robotId}/eyes`);
+  } catch {
+    if (onRobotPage(robotId)) {
+      img.classList.add("hidden");
+      empty.classList.remove("hidden");
+      empty.textContent = "adapter offline";
+      age.textContent = "";
+    }
+    return;
+  }
+  if (!onRobotPage(robotId)) return;
+  if (!status.configured) {
+    img.classList.add("hidden");
+    empty.classList.remove("hidden");
+    empty.textContent = "no camera configured";
+    age.textContent = "";
+    return;
+  }
+  if (!status.streaming) {
+    img.classList.add("hidden");
+    empty.classList.remove("hidden");
+    empty.textContent = "no signal";
+    age.textContent = "";
+    return;
+  }
+  empty.classList.add("hidden");
+  img.classList.remove("hidden");
+  img.src = `/api/robots/${robotId}/eyes/snap?t=${Date.now()}`;
+  age.textContent = `${status.fps.toFixed(1)} fps`;
+}
+
+// ---------- fruitfly card (what the camera->brain pipeline is doing) ----
+// Rides the existing fruitfly_drive.py status broadcast (STOMP topic
+// "fruitfly", already polled+published server-side -- see
+// BroadcastFruitflyUseCase.java -- this was just never rendered anywhere).
+// gfRateHz/gfSpikes/lastGfAt/lastEscapeAt were added to that status()
+// payload alongside it so this card doesn't need its own new backend route.
+
+const GF_ESCAPE_HZ = 30;     // keep in sync with gf_server.py's ESCAPE_HZ -- the bar's threshold marker only
+const GF_BAR_MAX_HZ = 120;   // visual scale; README's measured looming range is 56-192Hz
+
+function renderFruitflyCard(robotId) {
+  if (!onRobotPage(robotId)) return;
+  const body = $("#fruitfly-body");
+  const age = $("#fruitfly-age");
+  const mode = state.mode[robotId];
+  const ff = state.fruitfly[robotId];
+  if (mode !== "fruitfly" || !ff) {
+    body.innerHTML = `<div class="empty">not in Fruitfly mode</div>`;
+    age.textContent = "";
+    return;
+  }
+  age.textContent = "live";
+  const now = Date.now() / 1000;
+  const rate = ff.gfRateHz ?? 0;
+  const barPct = Math.min(100, (rate / GF_BAR_MAX_HZ) * 100);
+  const overThreshold = rate >= GF_ESCAPE_HZ;
+  const escapedRecently = ff.lastEscapeAt != null && (now - ff.lastEscapeAt) < 2;
+  const gfAgeMs = ff.lastGfAt != null ? (now - ff.lastGfAt) * 1000 : null;
+  const escapeAgeMs = ff.lastEscapeAt != null ? (now - ff.lastEscapeAt) * 1000 : null;
+
+  body.innerHTML = `
+    <div class="fruitfly-row">
+      <span>Camera input (giant fiber)</span>
+      <span class="fruitfly-value">${ff.gfEnabled ? `${rate.toFixed(1)} Hz` : "sidecar not running"}</span>
+    </div>
+    ${ff.gfEnabled ? `
+    <div class="fruitfly-bar" title="escape threshold: ${GF_ESCAPE_HZ} Hz">
+      <div class="fruitfly-bar-fill${overThreshold ? " over" : ""}" style="width:${barPct}%"></div>
+      <div class="fruitfly-bar-threshold" style="left:${Math.min(100, (GF_ESCAPE_HZ / GF_BAR_MAX_HZ) * 100)}%"></div>
+    </div>
+    <div class="fruitfly-row">
+      <span>Decision</span>
+      <span class="fruitfly-value${escapedRecently ? " escape" : ""}">${
+          escapedRecently ? "ESCAPE — jumped" : overThreshold ? "crossing threshold…" : "watching"}</span>
+    </div>
+    <div class="fruitfly-row muted">
+      <span>last spike</span><span>${gfAgeMs != null ? fmtAgo(gfAgeMs) : "never"}</span>
+    </div>
+    <div class="fruitfly-row muted">
+      <span>last jump</span><span>${escapeAgeMs != null ? fmtAgo(escapeAgeMs) : "never"}</span>
+    </div>` : ""}
+    <div class="fruitfly-row">
+      <span>Wander (no camera input)</span>
+      <span class="fruitfly-value">${escapeHtml(ff.lastState || "—")}</span>
+    </div>
+    <p class="fruitfly-legend">Two independent inputs drive her here. A sustained giant-fiber
+      burst above ${GF_ESCAPE_HZ} Hz from the camera → one jump (<code>kjmp</code>) then recover
+      (<code>kbalance</code>), rate-limited to roughly one per few seconds. Everything else
+      (FORWARD / LEFT / RIGHT / STOP above) is a separate, open-loop simulation with no camera or
+      sensor input at all — just internally generated wandering, unrelated to anything in view.</p>`;
+}
+
 // ---------- navigation card (occupancy map + click-to-walk) ----------
 // The glance-and-click version of the Map tab: scan the room, see the
 // grid she's built from the sonar sweeps, click a point to walk there.
 // Error recovery (trust_sensor/trust_map/manual) stays on the full Map
 // tab -- this banner just says something needs a human and links there.
 
-let navMapGeom = null;   // {W,H,mx,my,scale} from the latest render, for click->world
+// {cx, cy, R, maxRangeCm, pose} from the latest sweep-dial render, for
+// converting a click into a world (x,y) navigation target and back.
+let sweepDialGeom = null;
+let lastNav = null;   // so zoom/pin redraws can happen locally instead of refetching
+let sweepZoom = 1;
+const SWEEP_ZOOM_MIN = 0.4, SWEEP_ZOOM_MAX = 2.5;
+const clampSweepZoom = (z) => Math.max(SWEEP_ZOOM_MIN, Math.min(SWEEP_ZOOM_MAX, z));
+
+// Pin-a-point-and-walk: a single target point snapped to the nearest of the
+// dial's own spoke angles (nav.config.sweepAngles -- "an axis", not an
+// arbitrary direction). sweepGhostPoint previews where a click would land
+// as the cursor moves; sweepPinPoint is the committed target the Walk
+// button acts on. Both are {panDeg, distCm} or null.
+let sweepGhostPoint = null;
+let sweepPinPoint = null;
 
 function navStateClass(navState) {
   if (navState === "arrived") return "arrived";
@@ -756,63 +928,17 @@ function navStateClass(navState) {
   return "";
 }
 
-function renderNavMap(mapData) {
-  const el = $("#nav-map");
-  const pose = mapData.pose;
-  if (!pose) { el.innerHTML = `<div class="empty">no pose yet — reset her origin from the Map tab</div>`; navMapGeom = null; return; }
-  const cells = mapData.cells || [], r = mapData.resolutionM, b = mapData.bounds;
-  const xs = [pose.x], ys = [pose.y];
-  if (b) { xs.push(b.minCx * r, (b.maxCx + 1) * r); ys.push(b.minCy * r, (b.maxCy + 1) * r); }
-  if (mapData.target) { xs.push(mapData.target.x); ys.push(mapData.target.y); }
-  const W = 300, H = 300;
-  const minX = Math.min(...xs) - 0.3, maxX = Math.max(...xs) + 0.3;
-  const minY = Math.min(...ys) - 0.3, maxY = Math.max(...ys) + 0.3;
-  const scale = Math.min(W / Math.max(1.5, maxX - minX), H / Math.max(1.5, maxY - minY));
-  const mx = (minX + maxX) / 2, my = (minY + maxY) / 2;
-  navMapGeom = { W, H, mx, my, scale };
-  const sx = (x) => W / 2 + (x - mx) * scale, sy = (y) => H / 2 - (y - my) * scale;
-  const size = Math.max(1, r * scale);
-
-  let html = `<svg viewBox="0 0 ${W} ${H}">`;
-  cells.forEach(([cx, cy, st, lo]) => {
-    const t = Math.min(1, Math.abs(lo) / 3);
-    const fill = st === "o" ? `rgba(236,240,241,${(0.55 + 0.45 * t).toFixed(2)})`
-                             : `rgba(77,255,140,${(0.10 + 0.25 * t).toFixed(2)})`;
-    html += `<rect x="${sx(cx * r).toFixed(1)}" y="${sy((cy + 1) * r).toFixed(1)}" width="${size.toFixed(1)}" height="${size.toFixed(1)}" fill="${fill}"/>`;
-  });
-  if (mapData.route?.waypoints?.length) {
-    const pts = [[pose.x, pose.y], ...mapData.route.waypoints].map(([x, y]) => `${sx(x).toFixed(1)},${sy(y).toFixed(1)}`).join(" ");
-    html += `<polyline points="${pts}" fill="none" stroke="#4da8ff" stroke-width="1.5" stroke-dasharray="5 3"/>`;
-  }
-  if (mapData.target) {
-    html += `<circle cx="${sx(mapData.target.x).toFixed(1)}" cy="${sy(mapData.target.y).toFixed(1)}" r="5" fill="none" stroke="#4dff8c" stroke-width="1.5"/>`;
-  }
-  html += `<g transform="translate(${sx(pose.x).toFixed(1)} ${sy(pose.y).toFixed(1)}) rotate(${(-pose.heading).toFixed(1)})">` +
-    `<polyline points="-6,-7 6,0 -6,7" fill="none" stroke="#ffcc4d" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/></g>`;
-  html += `</svg>`;
-  el.innerHTML = html;
-}
-
 async function renderNavCard(robotId) {
   if (!onRobotPage(robotId)) return;
-  let nav, mapData;
+  let nav;
   try {
-    [nav, mapData] = await Promise.all([
-      api(`/api/robots/${robotId}/navigation`),
-      api(`/api/robots/${robotId}/navigation/map`),
-    ]);
+    nav = await api(`/api/robots/${robotId}/navigation`);
   } catch {
-    if (onRobotPage(robotId)) $("#nav-status").textContent = "adapter offline";
     return;
   }
   if (!onRobotPage(robotId)) return;   // user moved on; stale answer
 
   const t = nav.target;
-  $("#nav-status").innerHTML =
-    `<span class="navstate ${navStateClass(nav.state)}">${escapeHtml(nav.state)}</span>` +
-    (t ? ` → ${t.x}, ${t.y} m` : " · no target") +
-    (nav.remainingM != null ? ` · ${nav.remainingM} m left` : "") +
-    ` · ${nav.map.grid.free} floor / ${nav.map.grid.occupied} obstacle cells`;
   $("#nav-cancel").classList.toggle("hidden", !t);
 
   const banner = $("#nav-banner");
@@ -825,7 +951,6 @@ async function renderNavCard(robotId) {
     banner.classList.add("hidden");
   }
 
-  renderNavMap(mapData);
   renderSweepDial(nav);
 }
 
@@ -836,11 +961,12 @@ async function renderNavCard(robotId) {
 // reading is a radial line out to its distance, red when the backend
 // flagged it as contradicting the map (map_builder.py's integrate_sweep).
 function renderSweepDial(nav) {
+  lastNav = nav;
   const el = $("#sweep-dial");
   const ageEl = $("#sweep-age");
   const sweep = nav.lastSweep;
   if (!sweep || !sweep.readings?.length) {
-    el.innerHTML = `<div class="empty">no scan yet — click "Scan room"</div>`;
+    el.innerHTML = `<div class="empty">no scan yet — click "Update"</div>`;
     ageEl.textContent = "";
     return;
   }
@@ -851,7 +977,14 @@ function renderSweepDial(nav) {
   const minRangeCm = cfg.minRangeCm ?? 4.0;
 
   const W = 320, H = 200, cx = W / 2, cy = H - 24;
+  // R (the rim/bezel) is fixed — zoom doesn't resize or move it off-screen,
+  // it narrows or widens the distance this fixed-size dial covers instead,
+  // like a radar's range ring changing inside a bezel that never moves.
   const R = Math.min(W / 2 - 24, cy - 28);
+  const effMaxRangeCm = maxRangeCm / sweepZoom;
+  const sweepAngles = nav.config?.sweepAngles?.length ? nav.config.sweepAngles
+      : [-90, -60, -30, 0, 30, 60, 90];
+  sweepDialGeom = { W, H, cx, cy, R, maxRangeCm: effMaxRangeCm, pose: nav.pose, sweepAngles };
   // panDeg 0 = straight up (12 o'clock); -90/+90 = left/right (9/3 o'clock).
   const point = (panDeg, radius) => {
     const rad = (90 - panDeg) * Math.PI / 180;
@@ -868,21 +1001,38 @@ function renderSweepDial(nav) {
   html += `<path d="${arcPath(R)}" fill="none" stroke="var(--border)" stroke-width="1.5"/>`;
 
   // minimum-range threshold: readings this close are noise, not real
-  // (map_builder.py's minRangeCm) — labelled off in the corner, not at its
-  // own tiny arc, since that arc sits right where the radial lines converge
-  const minR = Math.max(4, (minRangeCm / maxRangeCm) * R);
+  // (map_builder.py's minRangeCm) — just the dashed arc, no caption label
+  const minR = Math.max(4, (minRangeCm / effMaxRangeCm) * R);
   html += `<path d="${arcPath(minR)}" fill="none" stroke="var(--warning)" stroke-width="1" stroke-dasharray="3 3"/>`;
-  html += `<text x="6" y="${(H - 6).toFixed(1)}" font-size="8" fill="var(--warning)">min range ${minRangeCm}cm</text>`;
+
+  // range rings every 20cm, for gauging a pinned point's distance by eye --
+  // fixed cm steps (not fixed on-screen spacing), so zooming in/out changes
+  // how many rings fit rather than what they mean. Labels only every other
+  // ring (and off the horizontal baseline, at 75 deg) -- at 20cm steps on
+  // a ~200cm range, labelling every ring crams 9 of them into the same
+  // row and they overlap.
+  const RING_STEP_CM = 20;
+  let ringIndex = 0;
+  for (let d = RING_STEP_CM; d < effMaxRangeCm - 1; d += RING_STEP_CM, ringIndex++) {
+    const ringR = (d / effMaxRangeCm) * R;
+    html += `<path d="${arcPath(ringR)}" fill="none" stroke="var(--border)" stroke-width="1" opacity="0.5"/>`;
+    if (ringIndex % 2 === 1) {
+      const [rx, ry] = point(75, ringR);
+      html += `<text x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" text-anchor="middle" font-size="8" ` +
+          `fill="var(--text-light)" opacity="0.7">${d}</text>`;
+    }
+  }
 
   // chevron at 12 o'clock: forward
   const [chx, chy] = point(0, R + 11);
   html += `<polygon points="${(chx - 5).toFixed(1)},${(chy + 7).toFixed(1)} ${(chx + 5).toFixed(1)},${(chy + 7).toFixed(1)} ${chx.toFixed(1)},${(chy - 3).toFixed(1)}" fill="#ffcc4d"/>`;
 
-  // scan lines: one per reading, out to its measured distance
+  // scan lines: one per reading, out to its measured distance (clamped to
+  // the rim if zoomed in far enough that it would otherwise reach past it)
   sweep.readings.forEach((rdg) => {
     const hasRange = rdg.rangeCm != null;
-    const dist = hasRange ? Math.min(rdg.rangeCm, maxRangeCm) : maxRangeCm;
-    const radius = (dist / maxRangeCm) * R;
+    const dist = hasRange ? Math.min(rdg.rangeCm, effMaxRangeCm) : effMaxRangeCm;
+    const radius = (dist / effMaxRangeCm) * R;
     const [ex, ey] = point(rdg.panDeg, radius);
     const color = rdg.conflict ? "var(--danger)" : (hasRange ? "var(--accent)" : "var(--text-light)");
     const dash = hasRange ? "" : ` stroke-dasharray="2 3"`;
@@ -893,11 +1043,63 @@ function renderSweepDial(nav) {
     html += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="9" fill="${color}">${label}</text>`;
   });
 
+  // where she's walking to, if anywhere — world (x,y) converted into this
+  // dial's robot-relative polar space, same convention as a click-to-walk
+  // click (worldToLocal below), just run the other direction
+  if (nav.target && nav.pose) {
+    const dx = nav.target.x - nav.pose.x, dy = nav.target.y - nav.pose.y;
+    const distCm = Math.hypot(dx, dy) * 100;
+    const bearingDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+    const panDeg = bearingDeg - nav.pose.heading;
+    const radius = Math.min(distCm, effMaxRangeCm) / effMaxRangeCm * R;
+    const [tx, ty] = point(panDeg, radius);
+    html += `<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="6" fill="none" stroke="var(--accent)" stroke-width="1.5"/>`;
+    html += `<line x1="${cx}" y1="${cy}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>`;
+  }
+
+  // The committed pin the Walk button acts on, then the ghost preview on
+  // top of it — the ghost keeps tracking the cursor even with a point
+  // already pinned, since clicking it replaces that pin (drawn last so the
+  // live preview is never hidden behind the committed marker).
+  if (sweepPinPoint) {
+    const radius = Math.min(sweepPinPoint.distCm, effMaxRangeCm) / effMaxRangeCm * R;
+    const [px, py] = point(sweepPinPoint.panDeg, radius);
+    html += `<line x1="${cx}" y1="${cy}" x2="${px.toFixed(1)}" y2="${py.toFixed(1)}" ` +
+        `stroke="var(--success)" stroke-width="2"/>`;
+    html += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="6" fill="var(--success)"/>`;
+    const distM = (sweepPinPoint.distCm / 100).toFixed(2);
+    const [lx, ly] = point(sweepPinPoint.panDeg, radius + 15);
+    html += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="9" ` +
+        `fill="var(--success)">${distM} m</text>`;
+  }
+  if (sweepGhostPoint) {
+    const radius = Math.min(sweepGhostPoint.distCm, effMaxRangeCm) / effMaxRangeCm * R;
+    const [gx, gy] = point(sweepGhostPoint.panDeg, radius);
+    html += `<line x1="${cx}" y1="${cy}" x2="${gx.toFixed(1)}" y2="${gy.toFixed(1)}" ` +
+        `stroke="var(--text-light)" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.7"/>`;
+    html += `<circle cx="${gx.toFixed(1)}" cy="${gy.toFixed(1)}" r="5" fill="none" ` +
+        `stroke="var(--text-light)" stroke-width="1.5" opacity="0.7"/>`;
+    const clampedCm = Math.min(sweepGhostPoint.distCm, effMaxRangeCm);
+    html += `<text x="${(gx + 8).toFixed(1)}" y="${(gy - 8).toFixed(1)}" font-size="9" ` +
+        `fill="var(--text-light)" opacity="0.9">${Math.round(clampedCm)} cm</text>`;
+  }
+
   // robot's position at the dial's center
   html += `<circle cx="${cx}" cy="${cy}" r="4" fill="var(--text)"/>`;
 
   html += `</svg>`;
   el.innerHTML = html;
+  updateWalkButton();
+}
+
+function updateWalkButton() {
+  const btn = $("#nav-walk");
+  if (!btn) return;
+  btn.disabled = !sweepPinPoint;
+  btn.title = sweepPinPoint ? "Walk to the pinned point" : "Pin a point on one of the dial's spokes first";
+  // The projected travel distance straight along the pinned spoke -- shown
+  // right on the commit button, not just the small label on the dial.
+  btn.textContent = sweepPinPoint ? `Walk (${(sweepPinPoint.distCm / 100).toFixed(2)} m)` : "Walk";
 }
 
 // ---------- posture dial: 3D wireframe of the current joint angles + body
@@ -1283,27 +1485,106 @@ $("#nav-cancel").addEventListener("click", () => {
   });
 });
 
-$("#nav-clicktogo").addEventListener("change", (e) => {
-  $("#nav-map").classList.toggle("clicktogo", e.target.checked);
-});
+// Pin-a-point-and-walk, on the Scan dial instead of a separate occupancy
+// map or an instant-click toggle: hovering snaps a ghost preview to the
+// nearest of the dial's own spoke angles (nav.config.sweepAngles — "an
+// axis", not an arbitrary direction); clicking commits it as the one pin,
+// clicking the pin again removes it instead of replacing it. Nothing moves
+// her until Walk is pressed — that's the one step that converts the pinned
+// (panDeg, distanceCm) into a world (x,y) target, the same bearing =
+// heading + pan convention map_builder.py's sweep rays use, just run
+// forward instead of cast, and sends it.
 
-$("#nav-map").addEventListener("click", (e) => {
-  if (!$("#nav-clicktogo").checked || !navMapGeom || !state.selected) return;
+function dialPointFromEvent(e) {
+  if (!sweepDialGeom) return null;
   const svg = e.currentTarget.querySelector("svg");
-  if (!svg) return;
+  if (!svg) return null;
+  const { W, H, cx, cy, R, maxRangeCm, sweepAngles } = sweepDialGeom;
   const rect = svg.getBoundingClientRect();
-  const { W, H, mx, my, scale } = navMapGeom;
   const px = (e.clientX - rect.left) / rect.width * W;
   const py = (e.clientY - rect.top) / rect.height * H;
-  const x = Math.round((mx + (px - W / 2) / scale) * 100) / 100;
-  const y = Math.round((my - (py - H / 2) / scale) * 100) / 100;
-  runAction(null, async () => {
+  const dx = px - cx, dy = cy - py;
+  const radius = Math.min(Math.hypot(dx, dy), R);
+  const rawPanDeg = Math.max(-90, Math.min(90, 90 - Math.atan2(dy, dx) * 180 / Math.PI));
+  const panDeg = sweepAngles.reduce((best, a) =>
+      Math.abs(a - rawPanDeg) < Math.abs(best - rawPanDeg) ? a : best, sweepAngles[0]);
+  const distCm = radius / R * maxRangeCm;
+  return { panDeg, distCm };
+}
+
+// Screen-space distance between two dial points, for "clicking the pin
+// again removes it" — compared the way it looks on screen (a marker you
+// click on), not by exact angle/distance equality.
+function dialPointScreenDist(a, b) {
+  if (!sweepDialGeom || !a || !b) return Infinity;
+  const { R, maxRangeCm } = sweepDialGeom;
+  const xy = (p) => {
+    const radius = Math.min(p.distCm, maxRangeCm) / maxRangeCm * R;
+    const rad = (90 - p.panDeg) * Math.PI / 180;
+    return [radius * Math.cos(rad), -radius * Math.sin(rad)];
+  };
+  const [ax, ay] = xy(a), [bx, by] = xy(b);
+  return Math.hypot(ax - bx, ay - by);
+}
+
+const samePoint = (a, b) => a === b || (a && b && a.panDeg === b.panDeg && a.distCm === b.distCm);
+
+$("#sweep-dial").addEventListener("mousemove", (e) => {
+  // The ghost keeps previewing even with a point already pinned -- clicking
+  // it overwrites the old pin (same as placing the first one), so you can
+  // see where the replacement will land before committing to it.
+  if (!sweepDialGeom) return;
+  const next = dialPointFromEvent(e);
+  if (samePoint(next, sweepGhostPoint)) return;  // same snapped cell -- skip the redraw
+  sweepGhostPoint = next;
+  if (lastNav) renderSweepDial(lastNav);
+});
+$("#sweep-dial").addEventListener("mouseleave", () => {
+  if (!sweepGhostPoint) return;
+  sweepGhostPoint = null;
+  if (lastNav) renderSweepDial(lastNav);
+});
+$("#sweep-dial").addEventListener("click", (e) => {
+  const clicked = dialPointFromEvent(e);
+  if (!clicked) return;
+  sweepPinPoint = (sweepPinPoint && dialPointScreenDist(clicked, sweepPinPoint) < 14)
+      ? null : clicked;
+  sweepGhostPoint = null;
+  if (lastNav) renderSweepDial(lastNav);
+});
+
+$("#nav-walk").addEventListener("click", () => {
+  if (!sweepPinPoint || !sweepDialGeom?.pose || !state.selected) return;
+  const { pose } = sweepDialGeom;
+  const { panDeg, distCm } = sweepPinPoint;
+  const bearingRad = (pose.heading + panDeg) * Math.PI / 180;
+  const x = Math.round((pose.x + (distCm / 100) * Math.cos(bearingRad)) * 100) / 100;
+  const y = Math.round((pose.y + (distCm / 100) * Math.sin(bearingRad)) * 100) / 100;
+  runAction($("#nav-walk"), async () => {
     await api(`/api/robots/${state.selected}/navigation/target`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ x, y }),
     });
+    sweepPinPoint = null;
     await renderNavCard(state.selected);
   });
+});
+
+// Zoom: scroll on the dial itself, or the dedicated +/- buttons. Redraws
+// from the cached last nav fetch — no need to hit the adapter again just
+// to change scale.
+$("#sweep-dial").addEventListener("wheel", (e) => {
+  e.preventDefault();
+  sweepZoom = clampSweepZoom(sweepZoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+  if (lastNav) renderSweepDial(lastNav);
+}, { passive: false });
+$("#sweep-zoom-in").addEventListener("click", () => {
+  sweepZoom = clampSweepZoom(sweepZoom * 1.2);
+  if (lastNav) renderSweepDial(lastNav);
+});
+$("#sweep-zoom-out").addEventListener("click", () => {
+  sweepZoom = clampSweepZoom(sweepZoom / 1.2);
+  if (lastNav) renderSweepDial(lastNav);
 });
 
 $("#sense-options").addEventListener("click", (e) => {
@@ -1604,6 +1885,59 @@ document.addEventListener("click", (e) => {
   devSettingsToggle.setAttribute("aria-expanded", "false");
 });
 
+// Dismisses whatever navigation error is currently blocking (map
+// contradiction, sensor anomaly, ...) the same way the Map tab's "she
+// needs help" dialog would, but one click: choice "manual" clears the
+// target/route and drops the error without touching the map data (no
+// cell corrections applied), same as walking over and picking her up.
+$("#devmode-clear-error").onclick = () => {
+  if (!state.selected) return;
+  runAction($("#devmode-clear-error"), async () => {
+    try {
+      await api(`/api/robots/${state.selected}/navigation/errors/respond`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ choice: "manual", note: "cleared via dev-mode button" }),
+      });
+      toast("Error state cleared");
+    } catch (e) {
+      if (e.message?.includes("no error is waiting")) toast("No active error");
+      else throw e;
+    }
+  });
+};
+
+// Fly-brain sidecar launch buttons: the browser can't spawn a native
+// process itself, so these call a tiny always-on helper on this same PC
+// (fly-brain-loom/sidecar/launcher.py, localhost:8768 -- not through the
+// orchestrator/Docker, since the browser's already on the right machine).
+// If that helper isn't running, the fetch itself fails -- surfaced as a
+// toast telling Jon to start it once, not a silent no-op.
+const FLY_BRAIN_LAUNCHER_URL = "http://localhost:8768";
+
+async function launchFlyBrainSidecar(name, label) {
+  let resp;
+  try {
+    resp = await fetch(`${FLY_BRAIN_LAUNCHER_URL}/launch/${name}`, { method: "POST" });
+  } catch {
+    throw new Error(`Launcher not reachable at ${FLY_BRAIN_LAUNCHER_URL} — ` +
+        `run fly-brain-loom/sidecar/launcher.py once`);
+  }
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok || body.ok === false) {
+    throw new Error(body.error || `launch failed (HTTP ${resp.status})`);
+  }
+  toast(body.already ? `${label} already running` : `${label} starting — check its console window`);
+}
+
+$("#devmode-launch-gf-server").onclick = () => {
+  runAction($("#devmode-launch-gf-server"),
+      () => launchFlyBrainSidecar("gf_server", "GF sidecar"));
+};
+$("#devmode-launch-fly-cam").onclick = () => {
+  runAction($("#devmode-launch-fly-cam"),
+      () => launchFlyBrainSidecar("fly_cam", "Fly-cam viewer"));
+};
+
 // Robot page tabs. Embedded per-robot pages lazy-load on first activation
 // (frames are cleared whenever the selected robot changes or the user
 // returns to the dashboard). The tab bar's buttons are rebuilt on every mode
@@ -1634,6 +1968,11 @@ async function boot() {
   setInterval(() => {
     if (state.page === "robot" && state.selected && !document.hidden) renderPostureDial(state.selected);
   }, 2000);
+  // Matches the adapter's own default grab cadence (eyes.py's fps=4.0) —
+  // no point polling the cached snapshot faster than it actually refreshes.
+  setInterval(() => {
+    if (state.page === "robot" && state.selected && !document.hidden) renderCameraCard(state.selected);
+  }, 250);
 
   try {
     state.robots = await api("/api/fleet/robots");

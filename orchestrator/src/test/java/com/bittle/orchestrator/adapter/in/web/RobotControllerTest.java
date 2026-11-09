@@ -138,7 +138,8 @@ class RobotControllerTest {
     @Test
     void givenFruitflyStatusRequested_whenGet_thenItIsProxiedFromTheAdapter() {
         when(getFruitflyStatus.execute("bittle-1"))
-                .thenReturn(new FruitflyStatus("bittle-1", "FORWARD", Map.of("forward", 0.9)));
+                .thenReturn(new FruitflyStatus("bittle-1", "FORWARD", Map.of("forward", 0.9),
+                        false, null, null, null, null));
 
         var result = mvc.get().uri("/api/robots/bittle-1/fruitfly/status").exchange();
 

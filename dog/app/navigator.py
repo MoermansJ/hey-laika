@@ -61,7 +61,12 @@ DEFAULTS = {
     "rangerOnHead": True,
     "sweepAngles": [-90, -60, -30, 0, 30, 60, 90],
     "sweepSettleS": 0.6,
-    "sweepAtStart": True,
+    # Was True: every click-to-walk target re-swept before moving, right on
+    # top of whatever scan the user had just taken manually — redundant,
+    # and that fresh sweep could itself raise a map_contradiction and block
+    # the route before it even started. Walk off the existing scan instead;
+    # still toggleable per robot via POST /navigation/config.
+    "sweepAtStart": False,
     "yawDisagreeDeg": 30.0,
     "maxDriftM": 3.0,
     "jumpCm": 100.0,
@@ -224,7 +229,17 @@ class NavigationService:
         previous = self._last_reading
         self._last_reading = recorded
         if raw and not raw.get("cached"):
-            self._miss_streak = 0 if raw.get("ok") else self._miss_streak + 1
+            # A jump (Fruitfly's giant-fiber escape, or a manual/voice
+            # backflip) legitimately bounces the body enough to drop
+            # ultrasonic echoes for a moment -- that is not the sensor
+            # fault _check_anomaly's missStreak threshold exists to catch,
+            # so a jump landing resets the streak instead of ever tripping
+            # it, the same way a fresh "ok" reading would.
+            _, gait = classify(reading.get("command") or "")
+            if gait == "jmp":
+                self._miss_streak = 0
+            else:
+                self._miss_streak = 0 if raw.get("ok") else self._miss_streak + 1
             self._check_anomaly(previous, recorded)
         return recorded
 
@@ -508,7 +523,18 @@ class NavigationService:
             else:
                 self.errors.clear("localization_drift")
         pose = self.senses.pose()
-        if pose["driftM"] > float(self.config["maxDriftM"]):
+        # The drift ceiling protects unattended, many-move dead reckoning
+        # (explorer.py's autonomous frontier exploration, source="agent")
+        # from quietly corrupting the occupancy map it's building over a
+        # long session -- that's what accumulated driftM threatens there.
+        # A manual target (the GUI's scan-then-walk: a human just looked at
+        # a fresh sweep and picked a point they can see) doesn't depend on
+        # that same long-term trust, so it isn't halted by a ceiling crossed
+        # from unrelated earlier activity -- driftM keeps climbing and
+        # stays visible, it just doesn't block this kind of short, human-
+        # confirmed hop.
+        manual_target = self.target is not None and self.target.get("source") == "manual"
+        if pose["driftM"] > float(self.config["maxDriftM"]) and not manual_target:
             self._handle(UnrecoverableError(
                 "lost", f"dead-reckoning uncertainty reached {pose['driftM']} m",
                 {"pose": pose}))
